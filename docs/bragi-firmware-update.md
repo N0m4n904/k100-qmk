@@ -198,9 +198,51 @@ about whether commands get through. "Capabilities not found" could mean its quer
 device failed — matching our results — or simply that this product ID is missing from
 OpenRGB's static capability table, in which case it never tried.
 
-The test that distinguishes them is asking OpenRGB to set a colour and watching the
-keyboard: visible light means writes work and the fault is ours, no change means the device
-is refusing commands from every client.
+**Resolved by reading OpenRGB's source: that run never talked to the keyboard.**
+`IsDeviceSupported()` is `device_index < CORSAIR_V2_DEVICE_COUNT` — a pure table-index check
+with no device I/O — and the detector deletes the controller before issuing anything when it
+misses. The accompanying comment says so: *"A device whose PID is not in the device list has
+no zone or LED data to build an RGBController from."* The 1.0rc3 build simply lacks this PID.
+So the OpenRGB run is no evidence either way, and the colour test with that build could not
+have worked.
+
+### OpenRGB's constants confirm our framing byte-for-byte
+
+Current OpenRGB master *does* list `Corsair K100 RGB Optical V1 1B1C:1B7C`, and its
+`CorsairPeripheralV2Controller` gives the authoritative packet shape:
+
+```c
+#define CORSAIR_V2_WRITE_WIRED_ID   8      /* the "magic" byte          */
+#define CORSAIR_V2_WRITE_SIZE       65     /* 1 report-id byte + 64     */
+#define CORSAIR_V2_PACKET_SIZE      1024   /* read buffer               */
+#define CORSAIR_V2_TIMEOUT          50     /* milliseconds              */
+CORSAIR_V2_CMD_SET = 0x01, CORSAIR_V2_CMD_GET = 0x02
+
+buffer[1] = write_cmd;            /* buffer[0] left 0 as the report id */
+buffer[2] = CORSAIR_V2_CMD_GET;
+buffer[3] = property;
+hid_write(dev, buffer, CORSAIR_V2_WRITE_SIZE);
+```
+
+Two consequences. First, every constant matches what this project already uses: magic `8`,
+`GET` `0x02`, `SET` `0x01`, report id in byte 0. Second, **OpenRGB writes 65 bytes over plain
+hidraw** — which is byte-for-byte what `probe-hidraw.py` sent in its 64-byte case, and that
+was rejected with `ETIMEDOUT`.
+
+One detail differs and is worth noting for later: OpenRGB places a SET's value at `buffer[5]`,
+leaving byte 4 unused, whereas `k100-bragi` packs the payload from byte 4. GETs are
+unaffected, since they carry no payload.
+
+**So the framing has now been independently confirmed against two reference implementations,
+and the device still refuses every command.** That points at the state of this particular
+keyboard rather than at the host code.
+
+### Also found: a second source for the LED map
+
+`CorsairPeripheralV2Devices.cpp` in OpenRGB master carries a zone definition and a
+`corsair_k100_layout` keymap overlay for `1B1C:1B7C`. That is an independent cross-check on
+the 174-versus-193 LED discrepancy noted in `qmk-layout.md`, and worth mining regardless of
+how the transport question resolves.
 
 ### Status codes
 
