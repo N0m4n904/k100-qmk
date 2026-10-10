@@ -61,6 +61,50 @@ payloads begin — index 3 for two-byte, index 5 for four-byte. The version is r
 device at runtime, so this must be determined empirically; `k100-bragi info` does that by
 probing both and keeping whichever answers coherently.
 
+### Linux transport: hidraw does not work
+
+Established empirically against a real K100 (`1b1c:1b7c`), see `tools/probe-hidraw.py`.
+
+The keyboard exposes three HID interfaces:
+
+| hidraw node | Interface | Descriptor | Endpoints |
+| --- | --- | --- | --- |
+| `hidraw12` | 0 | Generic Desktop / Keyboard, report IDs 1-3 | EP `0x81` IN, 16 B |
+| `hidraw13` | 1 | Vendor page `0xFF42` usage `0x01`, 1024 B In + Out, **unnumbered** | EP `0x82` IN, EP `0x01` **OUT**, 1024 B |
+| `hidraw14` | 2 | Vendor page `0xFF42` usage `0x02`, 64 B In only | EP `0x83` IN, 64 B |
+
+Interface 1 is the Bragi command interface, and its 1024-byte reports confirm
+`BRAGI_JUMBO_SIZE`. The descriptor contains no Report ID item, so reports are **unnumbered**
+and `0x08` is the first payload byte rather than a report ID — which is how
+`k100-color-oxide` already had it.
+
+**Every write to `hidraw13` fails with `ETIMEDOUT` (errno 110).** Tested at 1024, 512, 256,
+128, 64, 32, 16, 8 and 4 bytes, with and without the leading report-id byte: all eighteen
+combinations fail identically, so this is not a framing or length problem. Writes to
+`hidraw12` and `hidraw14` are reported as successful but do nothing, because neither
+interface has an OUT endpoint and the kernel silently falls back to a control `SET_REPORT`.
+Responses do not arrive on a sibling interface either; that was tested too.
+
+Ruled out: no other process holds any of the nodes, the kernel log is clean, and the user had
+no control software running.
+
+**ckb-next does not use hidraw.** `src/daemon/usb_linux.c` drives the device through usbdevfs
+ioctls on `/dev/bus/usb/...` — `USBDEVFS_CONTROL`, `USBDEVFS_BULK`, and `USBDEVFS_SUBMITURB`
+with `USBDEVFS_URB_TYPE_INTERRUPT` — detaching the kernel driver and claiming the interface
+first. `bragi_usb_write()` in `usb_bragi.c` sends through
+`os_usb_interrupt_out(kb, bragi_out_ep, out_ep_packet_size, ...)` with `bragi_out_ep = 0x01`,
+and reads come from a URB reaper thread rather than a paired read.
+
+So the command does go to interrupt OUT on EP `0x01` — the same endpoint hidraw targets — but
+only works when the interface has been claimed through usbdevfs. Why hidraw's path is
+rejected is not fully explained here; the actionable fact is that the mature implementation
+that supports this exact product ID avoids hidraw, and hidraw demonstrably fails.
+
+**Consequence for this project:** any host tool must use usbdevfs directly, or libusb (which
+does the same detach-and-claim underneath). `tools/k100-bragi` is built on hidapi's default
+hidraw backend and therefore cannot work as written; it needs either hidapi's libusb backend
+or a usbdevfs transport.
+
 ### Status codes
 
 `SUCCESS = 0`, `BUSY = 1`, `INSUFFICIENT_BUFFER_SIZE = 2`, `INVALID_STATE = 3`,

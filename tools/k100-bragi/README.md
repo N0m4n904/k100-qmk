@@ -15,8 +15,13 @@ nix develop            # from the repository root
 cargo build --manifest-path tools/k100-bragi/Cargo.toml
 ```
 
-The HID backend needs read/write access to the keyboard's `hidraw` node, so either run as
-root or install a udev rule for Corsair's vendor ID `1b1c`.
+**This tool cannot currently talk to the keyboard.** It is built on hidapi's default hidraw
+backend, and hidraw writes to the K100's Bragi interface are rejected with `ETIMEDOUT`; see the
+Linux transport section of `docs/bragi-firmware-update.md`. It needs hidapi's libusb backend
+or a usbdevfs transport before `info` will work against real hardware.
+
+Whichever transport replaces it will need privileged access to the device, so expect to run
+as root or add a udev rule for Corsair's vendor ID `1b1c`.
 
 ## Commands
 
