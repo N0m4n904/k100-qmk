@@ -15,13 +15,18 @@ nix develop            # from the repository root
 cargo build --manifest-path tools/k100-bragi/Cargo.toml
 ```
 
-**This tool cannot currently talk to the keyboard.** It is built on hidapi's default hidraw
-backend, and hidraw writes to the K100's Bragi interface are rejected with `ETIMEDOUT`; see the
-Linux transport section of `docs/bragi-firmware-update.md`. It needs hidapi's libusb backend
-or a usbdevfs transport before `info` will work against real hardware.
+**This tool cannot yet talk to the keyboard: it needs a usbdevfs transport.** Neither of
+hidapi's backends works here — hidraw writes are rejected with `ETIMEDOUT` and the libusb
+backend fails without a reportable error. `tools/probe-usbdevfs.py` does work, by detaching
+the kernel driver from all three interfaces and claiming them, so the transport to port
+across is known and proven. See the Linux transport section of
+`docs/bragi-firmware-update.md`.
 
-Whichever transport replaces it will need privileged access to the device, so expect to run
-as root or add a udev rule for Corsair's vendor ID `1b1c`.
+No elevated privileges are needed; the usbfs node carries an ACL granting the logged-in user
+access, as OpenRGB's and ckb-next's udev rules arrange.
+
+The protocol layer is already correct against hardware: two-byte header framing, payload at
+response offset 3, and a reply whose byte 0 is `0x00` rather than the request's `0x08` magic.
 
 ## Commands
 

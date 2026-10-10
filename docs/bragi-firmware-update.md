@@ -133,7 +133,66 @@ and that is the mechanism ckb-next actually uses.
 The keyboard is `1b1c:1b7c` on bus 010 device 004, so its usbfs node is
 `/dev/bus/usb/010/004`, and its interfaces appear as `10-3:1.0`, `10-3:1.1`, `10-3:1.2`.
 
-### usbdevfs does not work either, and the transport is not the fault
+### Resolved: a power cycle fixed it, and usbdevfs works
+
+**Try replugging the keyboard first.** Every failure described below was cleared by
+unplugging and reconnecting the keyboard. Afterwards `tools/probe-usbdevfs.py` worked on the
+first attempt with no code change, and the device answered every query.
+
+The keyboard typed normally throughout, so its controller, matrix scanning and USB stack were
+healthy the whole time; only the vendor command endpoint was unresponsive. What left it in
+that state is unknown — it was already failing before any interface of ours was detached.
+
+Working configuration, confirmed against hardware:
+
+| Item | Value |
+| --- | --- |
+| Transport | usbdevfs on `/dev/bus/usb/<bus>/<dev>`, all three interfaces detached and claimed |
+| Transfer | `USBDEVFS_BULK`, OUT `0x01`, IN `0x82`, 1024-byte reports |
+| Request | `08 <cmd> <prop> …` zero padded (no HID report-id byte on usbdevfs) |
+| Header layout | **two-byte** — payload begins at response offset 3 |
+
+**Response layout**, which differs from the request and is easy to get wrong:
+
+```
+[0] 0x00            <- NOT the 0x08 magic
+[1] command echo    (0x02 for GET)
+[2] status          (0x00 = SUCCESS)
+[3..] payload
+```
+
+Two-byte framing is not inferred here but proven: `USB_VID` returns `0x1b1c` and `USB_PID`
+returns `0x1b7c` when read at offset 3, both independently known to be correct.
+
+### Values read from the keyboard
+
+| Property | Raw | Meaning |
+| --- | --- | --- |
+| `USB_VID` (0x11) | `00 02 00 1c 1b` | `0x1b1c` |
+| `USB_PID` (0x12) | `00 02 00 7c 1b` | `0x1b7c` |
+| `FIRMWARE_VERSION` (0x13) | `00 02 00 00 20 06` | **0.32.6** |
+| `BOOTLOADER_VERSION` (0x14) | `00 02 00 00 0a 2d` | **0.10.45** |
+| `OPERATING_MODE` (0x03) | `00 02 00 01` | **1 = SELF_OPERATED** |
+| `HWLAYOUT` (0x41) | `00 02 00 02` | **2 = ISO** |
+
+Versions are three payload bytes read as major, minor, patch — so `00 0a 2d` is 0.10.45.
+That decoding is corroborated from outside: ckb-next's `device_bragi.c` records a K100 at
+"fw 0.32.6, bld 0.10.45", which matches this keyboard exactly.
+
+`HWLAYOUT` returning 2 matches `LAYOUT_ISO = 2` in ckb-next's enum, and this board is ISO DE,
+so the device reports that enum **directly rather than zero-based**. (ckb-next adds one to
+the layout byte for the *legacy* protocol; that adjustment does not apply here.)
+
+Note the installed firmware is 0.32.6 while the published packages offer application
+0.35.288 and 0.30.257, so this unit is not running either of the images in
+`firmware-format.md`.
+
+### What follows below is the superseded diagnosis
+
+Kept because it rules out a long list of causes, and because the ioctl and endpoint details
+were verified against ckb-next's source and remain correct.
+
+### usbdevfs appeared not to work, and the transport was not the fault
 
 `tools/probe-usbdevfs.py` replicates ckb-next's access method with no dependencies, and the
 mechanics all succeed: the kernel driver detaches from every interface, each is claimed, and

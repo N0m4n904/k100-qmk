@@ -75,6 +75,32 @@ pub enum Property {
     UsbPid = 18,
     FirmwareVersion = 19,
     BootloaderVersion = 20,
+    /// Physical layout. Returns ckb-next's `LAYOUT_*` enum directly, not zero-based:
+    /// an ISO board reports 2. Verified on hardware.
+    HwLayout = 0x41,
+}
+
+/// Physical layouts, matching ckb-next's `structures.h`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Layout {
+    Ansi = 1,
+    Iso = 2,
+    Abnt = 3,
+    Jis = 4,
+    Dubeolsik = 5,
+}
+
+impl Layout {
+    pub fn from_raw(value: u8) -> Option<Self> {
+        Some(match value {
+            1 => Self::Ansi,
+            2 => Self::Iso,
+            3 => Self::Abnt,
+            4 => Self::Jis,
+            5 => Self::Dubeolsik,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -280,10 +306,13 @@ impl Response {
 
     /// Plausibility check used to pick the header layout: a Get of a known property should
     /// answer with the command echoed and a success status.
+    ///
+    /// A reply does **not** begin with the Bragi magic the way a request does. Observed on
+    /// hardware, byte 0 is `0x00`, byte 1 echoes the command and byte 2 carries the status;
+    /// see the response layout in `docs/bragi-firmware-update.md`. Byte 0 is deliberately
+    /// not checked, since nothing documents what it means.
     pub fn looks_valid(&self, expected: Command) -> bool {
-        self.raw.first() == Some(&BRAGI_MAGIC)
-            && self.raw.get(1) == Some(&(expected as u8))
-            && self.status().is_success()
+        self.raw.get(1) == Some(&(expected as u8)) && self.status().is_success()
     }
 }
 

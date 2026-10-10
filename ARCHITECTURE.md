@@ -35,6 +35,11 @@ format is fully verified — see `docs/firmware-format.md`. What we now know:
 - Images are **plaintext, unencrypted, and validated by CRC32/MPEG-2 only** — no signature
   appears anywhere in the container.
 - We hold a **verified-authentic recovery image**, reproducible via `tools/fetch-firmware.py`.
+- **The keyboard can now be talked to**, over usbdevfs with all interfaces claimed. Framing
+  is settled (two-byte header, payload at response offset 3), and the unit reports firmware
+  **0.32.6**, bootloader **0.10.45**, `OPERATING_MODE` **SELF_OPERATED** and `HWLAYOUT`
+  **ISO**. If commands ever stop being answered, **replug the keyboard first** — that is what
+  unblocked this. See `docs/bragi-firmware-update.md`.
 
 Remaining steps, cheapest and least destructive first:
 
