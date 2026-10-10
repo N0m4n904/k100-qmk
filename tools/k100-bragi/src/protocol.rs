@@ -1,0 +1,333 @@
+//! Bragi wire protocol: pure data, no I/O.
+//!
+//! Constants are taken from Corsair's own web firmware updater bundle, cross-checked
+//! against ckb-next's independently reverse-engineered values. See
+//! `docs/bragi-firmware-update.md` for provenance of each enum.
+
+use anyhow::{bail, Result};
+
+/// Bragi rides on its own HID report ID. ckb-next calls this the "magic byte" because it
+/// reads the interrupt endpoint raw and sees it as the first payload byte.
+pub const REPORT_ID: u8 = 0x08;
+
+pub const CORSAIR_VID: u16 = 0x1b1c;
+
+/// The three K100 RGB SKUs. Only `OpticalOpx` has been researched in depth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Model {
+    OpticalOpx,
+    Mechanical,
+    OpticalVariant,
+}
+
+impl Model {
+    pub const fn pid(self) -> u16 {
+        match self {
+            Self::OpticalOpx => 0x1b7c,
+            Self::Mechanical => 0x1b7d,
+            Self::OpticalVariant => 0x1bc5,
+        }
+    }
+
+    pub const ALL: [Self; 3] = [Self::OpticalOpx, Self::Mechanical, Self::OpticalVariant];
+
+    pub fn from_pid(pid: u16) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.pid() == pid)
+    }
+
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::OpticalOpx => "K100 RGB (OPX optical)",
+            Self::Mechanical => "K100 RGB (Cherry MX Speed)",
+            Self::OpticalVariant => "K100 RGB (optical, later variant)",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Command {
+    Set = 1,
+    Get = 2,
+    UnbindBuffers = 5,
+    WriteBufferBegin = 6,
+    WriteBuffer = 7,
+    ReadBuffer = 8,
+    DescribeBuffer = 9,
+    OpenFile = 13,
+    ResetToDefaults = 15,
+    ApplyFirmware = 16,
+    ApplyFirmwareExtended = 22,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Property {
+    Brightness = 2,
+    OperatingMode = 3,
+    UsbVid = 17,
+    UsbPid = 18,
+    FirmwareVersion = 19,
+    BootloaderVersion = 20,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum OperatingMode {
+    Reserved = 0,
+    SelfOperated = 1,
+    HostControlled = 2,
+    Bootloader = 3,
+    Sleep = 4,
+}
+
+impl OperatingMode {
+    pub fn from_raw(value: u8) -> Option<Self> {
+        Some(match value {
+            0 => Self::Reserved,
+            1 => Self::SelfOperated,
+            2 => Self::HostControlled,
+            3 => Self::Bootloader,
+            4 => Self::Sleep,
+            _ => return None,
+        })
+    }
+}
+
+/// Firmware image kinds the protocol can write.
+///
+/// Only [`ImageType::Firmware`] is ever safe for this project: the bootloader is the
+/// recovery path, so replacing it removes the only thing that makes a bad write
+/// survivable. Corsair's own updater refuses bootloader updates too, logging
+/// "Chip needs isp update which is not supported for now". See `docs/recovery.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ImageType {
+    Firmware = 1,
+    Bootloader = 2,
+    FirmwareWithBootloader = 3,
+    SecondaryChipFirmware = 4,
+}
+
+impl ImageType {
+    /// Rule 1 from `docs/recovery.md`, enforced in the type system rather than by comment.
+    pub fn ensure_recoverable(self) -> Result<Self> {
+        match self {
+            Self::Firmware | Self::SecondaryChipFirmware => Ok(self),
+            Self::Bootloader | Self::FirmwareWithBootloader => bail!(
+                "refusing to write image type {self:?}: this replaces the bootloader, \
+                 which is the recovery path (see docs/recovery.md)"
+            ),
+        }
+    }
+}
+
+/// Device status codes returned in responses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    Success,
+    Busy,
+    InsufficientBufferSize,
+    InvalidState,
+    CommandNotSupported,
+    InvalidDeviceAddress,
+    HardwareError,
+    InvalidOperation,
+    InvalidFirmwareFile,
+    MalformedReport,
+    Unknown(u8),
+}
+
+impl Status {
+    pub fn from_raw(value: u8) -> Self {
+        match value {
+            0 => Self::Success,
+            1 => Self::Busy,
+            2 => Self::InsufficientBufferSize,
+            3 => Self::InvalidState,
+            4 => Self::CommandNotSupported,
+            6 => Self::InvalidDeviceAddress,
+            7 => Self::HardwareError,
+            9 => Self::InvalidOperation,
+            10 => Self::InvalidFirmwareFile,
+            15 => Self::MalformedReport,
+            other => Self::Unknown(other),
+        }
+    }
+
+    pub fn is_success(self) -> bool {
+        self == Self::Success
+    }
+}
+
+/// How many bytes sit between the property byte and the payload.
+///
+/// The updater picks this per device: `getHeaderLayout()` returns `FOUR_BYTE` when the
+/// device reports Bragi protocol version 1.5, and `TWO_BYTE` otherwise. The version comes
+/// from the device at runtime, so this cannot be known statically — [`crate::device`]
+/// determines it empirically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeaderLayout {
+    TwoByte,
+    FourByte,
+}
+
+impl HeaderLayout {
+    /// Index of the first payload byte in a response, counting the report ID at index 0.
+    pub const fn payload_offset(self) -> usize {
+        match self {
+            Self::TwoByte => 3,
+            Self::FourByte => 5,
+        }
+    }
+}
+
+/// A request, before the report ID is prepended by the transport.
+#[derive(Debug, Clone)]
+pub struct Request {
+    pub command: Command,
+    pub property: u8,
+    pub payload: Vec<u8>,
+}
+
+impl Request {
+    pub fn new(command: Command, property: u8, payload: impl Into<Vec<u8>>) -> Self {
+        Self { command, property, payload: payload.into() }
+    }
+
+    /// `sendCommand(cmd, prop, payload)` in the updater; `property` is 0 for every command
+    /// other than Get and Set.
+    pub fn command(command: Command, payload: impl Into<Vec<u8>>) -> Self {
+        Self::new(command, 0, payload)
+    }
+
+    pub fn get(property: Property) -> Self {
+        Self::new(Command::Get, property as u8, vec![])
+    }
+
+    /// `setOperatingMode` sends the mode as a 4-byte little-endian value.
+    pub fn set_operating_mode(mode: OperatingMode) -> Self {
+        Self::new(Command::Set, Property::OperatingMode as u8, vec![mode as u8, 0, 0, 0])
+    }
+
+    pub fn open_file(buffer_index: u8, file_id: u16) -> Self {
+        let [lo, hi] = file_id.to_le_bytes();
+        Self::command(Command::OpenFile, vec![buffer_index, lo, hi])
+    }
+
+    pub fn describe_buffer(buffer_index: u8) -> Self {
+        Self::command(Command::DescribeBuffer, vec![buffer_index])
+    }
+
+    pub fn unbind_buffers(buffer_index: u8) -> Self {
+        Self::command(Command::UnbindBuffers, vec![1, buffer_index])
+    }
+
+    /// Serialise into a report body of `report_length` bytes, zero padded.
+    pub fn encode(&self, report_length: usize) -> Result<Vec<u8>> {
+        let mut report = vec![0u8; report_length];
+        report[0] = REPORT_ID;
+        report[1] = self.command as u8;
+        report[2] = self.property;
+
+        let body = 3 + self.payload.len();
+        if body > report_length {
+            bail!("payload of {} bytes overflows a {report_length}-byte report", self.payload.len());
+        }
+        report[3..body].copy_from_slice(&self.payload);
+        Ok(report)
+    }
+}
+
+/// A decoded response.
+#[derive(Debug, Clone)]
+pub struct Response {
+    pub raw: Vec<u8>,
+    layout: HeaderLayout,
+}
+
+impl Response {
+    pub fn new(raw: Vec<u8>, layout: HeaderLayout) -> Self {
+        Self { raw, layout }
+    }
+
+    /// The status byte sits immediately after the command echo.
+    pub fn status(&self) -> Status {
+        self.raw.get(2).copied().map_or(Status::Unknown(0xff), Status::from_raw)
+    }
+
+    pub fn payload(&self) -> &[u8] {
+        self.raw.get(self.layout.payload_offset()..).unwrap_or(&[])
+    }
+
+    /// Reads a little-endian u16 from the start of the payload. Firmware versions are
+    /// encoded this way.
+    pub fn u16_payload(&self) -> Option<u16> {
+        let p = self.payload();
+        Some(u16::from_le_bytes([*p.first()?, *p.get(1)?]))
+    }
+
+    /// Plausibility check used to pick the header layout: a Get of a known property should
+    /// answer with the command echoed and a success status.
+    pub fn looks_valid(&self, expected: Command) -> bool {
+        self.raw.first() == Some(&REPORT_ID)
+            && self.raw.get(1) == Some(&(expected as u8))
+            && self.status().is_success()
+    }
+}
+
+/// CRC-32/MPEG-2: poly 0x04C11DB7, init all ones, no reflection, no final XOR.
+///
+/// The only checksum algorithm Bragi defines (`CRC32_MPEG2 = 1`), and the one the K100
+/// manifest names. Verified against both official images in `docs/firmware-format.md`.
+pub fn crc32_mpeg2(data: &[u8]) -> u32 {
+    data.iter().fold(u32::MAX, |crc, &byte| {
+        (0..8).fold(crc ^ ((byte as u32) << 24), |acc, _| {
+            if acc & 0x8000_0000 != 0 {
+                (acc << 1) ^ 0x04C1_1DB7
+            } else {
+                acc << 1
+            }
+        })
+    })
+}
+
+/// The 512-byte-aligned container Corsair ships firmware in.
+pub struct Image<'a> {
+    pub bytes: &'a [u8],
+}
+
+impl<'a> Image<'a> {
+    pub fn parse(bytes: &'a [u8]) -> Result<Self> {
+        if bytes.len() < 0x2c {
+            bail!("firmware image is too short to contain a header");
+        }
+        let image = Self { bytes };
+
+        if image.declared_length() as usize != bytes.len() {
+            bail!(
+                "header declares {} bytes but the file is {}",
+                image.declared_length(),
+                bytes.len()
+            );
+        }
+        let actual = crc32_mpeg2(&bytes[4..]);
+        if actual != image.declared_crc() {
+            bail!("CRC mismatch: header says {:#010x}, computed {actual:#010x}", image.declared_crc());
+        }
+        Ok(image)
+    }
+
+    pub fn declared_crc(&self) -> u32 {
+        u32::from_le_bytes(self.bytes[0..4].try_into().expect("checked length"))
+    }
+
+    pub fn declared_length(&self) -> u32 {
+        u32::from_le_bytes(self.bytes[4..8].try_into().expect("checked length"))
+    }
+
+    /// ASCII build date and time the vendor stamps into the header.
+    pub fn build_stamp(&self) -> String {
+        String::from_utf8_lossy(&self.bytes[0x0e..0x23]).replace('\0', " ").trim().to_string()
+    }
+}

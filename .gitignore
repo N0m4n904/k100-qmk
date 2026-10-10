@@ -1,0 +1,18 @@
+# Corsair firmware images are copyrighted and must never be committed.
+# Reproduce them with tools/fetch-firmware.py instead.
+*.bin
+*.zip
+firmware/
+
+# Build output
+build/
+target/
+*.elf
+*.hex
+*.map
+
+# Logic analyser captures can be large; keep only what is documented.
+hardware/captures/*.sr
+
+# Compiled keymap extractor (build it with tools/extract-ckb-keymap/Makefile)
+tools/extract-ckb-keymap/extract-ckb-keymap

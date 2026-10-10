@@ -1,0 +1,10 @@
+[package]
+name = "k100-bragi"
+version = "0.1.0"
+edition = "2021"
+description = "Bragi protocol client for the Corsair K100, used to verify the firmware recovery path"
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+hidapi = "2.6.7"
