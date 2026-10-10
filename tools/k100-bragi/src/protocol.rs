@@ -6,9 +6,15 @@
 
 use anyhow::{bail, Result};
 
-/// Bragi rides on its own HID report ID. ckb-next calls this the "magic byte" because it
-/// reads the interrupt endpoint raw and sees it as the first payload byte.
-pub const REPORT_ID: u8 = 0x08;
+/// First byte of every Bragi report body. ckb-next calls it the magic byte.
+///
+/// It is *not* a HID report ID: the K100's vendor interface declares no Report ID item, so
+/// its reports are unnumbered and this is ordinary payload. Verified by reading the device's
+/// report descriptor — see the Linux transport section of `docs/bragi-firmware-update.md`.
+pub const BRAGI_MAGIC: u8 = 0x08;
+
+/// What HID APIs expect in byte 0 when a device uses unnumbered reports.
+pub const HID_REPORT_ID: u8 = 0x00;
 
 pub const CORSAIR_VID: u16 = 0x1b1c;
 
@@ -223,18 +229,23 @@ impl Request {
         Self::command(Command::UnbindBuffers, vec![1, buffer_index])
     }
 
-    /// Serialise into a report body of `report_length` bytes, zero padded.
+    /// Serialises a buffer ready to hand to a HID write.
+    ///
+    /// Layout is a leading `0x00` report-id byte, which the HID layer consumes because this
+    /// device's reports are unnumbered, followed by a `report_length`-byte body that starts
+    /// with the Bragi magic. The returned buffer is therefore `report_length + 1` bytes.
     pub fn encode(&self, report_length: usize) -> Result<Vec<u8>> {
-        let mut report = vec![0u8; report_length];
-        report[0] = REPORT_ID;
-        report[1] = self.command as u8;
-        report[2] = self.property;
-
-        let body = 3 + self.payload.len();
-        if body > report_length {
+        let body_used = 3 + self.payload.len();
+        if body_used > report_length {
             bail!("payload of {} bytes overflows a {report_length}-byte report", self.payload.len());
         }
-        report[3..body].copy_from_slice(&self.payload);
+
+        let mut report = vec![0u8; report_length + 1];
+        report[0] = HID_REPORT_ID;
+        report[1] = BRAGI_MAGIC;
+        report[2] = self.command as u8;
+        report[3] = self.property;
+        report[4..1 + body_used].copy_from_slice(&self.payload);
         Ok(report)
     }
 }
@@ -270,7 +281,7 @@ impl Response {
     /// Plausibility check used to pick the header layout: a Get of a known property should
     /// answer with the command echoed and a success status.
     pub fn looks_valid(&self, expected: Command) -> bool {
-        self.raw.first() == Some(&REPORT_ID)
+        self.raw.first() == Some(&BRAGI_MAGIC)
             && self.raw.get(1) == Some(&(expected as u8))
             && self.status().is_success()
     }

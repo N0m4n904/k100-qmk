@@ -100,10 +100,43 @@ only works when the interface has been claimed through usbdevfs. Why hidraw's pa
 rejected is not fully explained here; the actionable fact is that the mature implementation
 that supports this exact product ID avoids hidraw, and hidraw demonstrably fails.
 
-**Consequence for this project:** any host tool must use usbdevfs directly, or libusb (which
-does the same detach-and-claim underneath). `tools/k100-bragi` is built on hidapi's default
-hidraw backend and therefore cannot work as written; it needs either hidapi's libusb backend
-or a usbdevfs transport.
+### hidapi's libusb backend does not work either
+
+Tried next, as the smaller change. `tools/k100-bragi` was switched to
+`hidapi = { default-features = false, features = ["linux-static-libusb"] }`, which should do
+the detach-and-claim that hidraw does not.
+
+It fails the same way: writes to interface 1 are rejected, while interfaces 0 and 2 accept
+writes that do nothing. Worse, the libusb backend reports every failure as
+`hid_error is not implemented yet`, so there is no errno and no diagnosis. Rebuilding hidapi
+with `CFLAGS=-DDETACH_KERNEL_DRIVER` — the compile-time flag that gates its
+`libusb_detach_kernel_driver` call, off by default — changed nothing, though with no error
+text it is not possible to tell whether the flag even propagated.
+
+**So neither hidraw nor hidapi-over-libusb can currently drive this keyboard, and the Rust
+tool has no working transport.**
+
+### Privileges: root is not needed
+
+Worth knowing before anyone reaches for `sudo`:
+
+| Path | Permissions |
+| --- | --- |
+| `/dev/hidraw12-14` | `crw-rw-rw-` plus an ACL — world writable |
+| `/dev/bus/usb/010/004` | `crw-rw-r--` with ACL `user:noah:rw-` |
+
+The usbfs node is writable by the logged-in user, which is how OpenRGB and ckb-next operate
+unprivileged. Writing to `/sys/bus/usb/drivers/usbhid/unbind` *does* need root, so detaching
+the kernel driver that way is not available, but `USBDEVFS_DISCONNECT` on the usbfs node is,
+and that is the mechanism ckb-next actually uses.
+
+The keyboard is `1b1c:1b7c` on bus 010 device 004, so its usbfs node is
+`/dev/bus/usb/010/004`, and its interfaces appear as `10-3:1.0`, `10-3:1.1`, `10-3:1.2`.
+
+**Consequence for this project:** a usbdevfs transport is the remaining route, replicating
+what `src/daemon/usb_linux.c` does — `USBDEVFS_DISCONNECT` to release the kernel driver,
+`USBDEVFS_CLAIMINTERFACE` on interface 1, then interrupt transfers on EP `0x01` out and
+`0x82` in, releasing and reconnecting afterwards. It needs no elevated privileges.
 
 ### Status codes
 

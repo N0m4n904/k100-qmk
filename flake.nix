@@ -21,8 +21,9 @@
             pkg-config
           ];
 
-          # hidapi builds its Linux hidraw backend against libudev.
-          buildInputs = [ pkgs.systemdLibs ];
+          # hidapi needs libudev for enumeration and libusb for the backend we use; the
+          # default hidraw backend cannot drive the K100's Bragi interface.
+          buildInputs = with pkgs; [ systemdLibs libusb1 ];
 
           packages = with pkgs; [
             python3

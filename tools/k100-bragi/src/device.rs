@@ -22,6 +22,10 @@ pub const STANDARD_REPORT_LENGTH: usize = 64;
 
 const READ_TIMEOUT: Duration = Duration::from_millis(1000);
 
+fn hex(data: &[u8], count: usize) -> String {
+    data.iter().take(count).map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")
+}
+
 pub struct Device {
     hid: HidDevice,
     pub model: Model,
@@ -52,7 +56,7 @@ impl Device {
             match info.open_device(api) {
                 Ok(hid) => match Self::establish(hid, model) {
                     Ok(device) => return Ok(device),
-                    Err(error) => failures.push(format!("{path}: {error}")),
+                    Err(error) => failures.push(format!("{path}: {error:#}")),
                 },
                 Err(error) => failures.push(format!("{path}: cannot open ({error})")),
             }
@@ -67,18 +71,31 @@ impl Device {
     /// Probes one interface: ask for the firmware version under each header layout and keep
     /// whichever answers coherently.
     fn establish(mut hid: HidDevice, model: Model) -> Result<Self> {
+        // A rejected write and a silent device are different faults and must not look alike,
+        // so every attempt's outcome is kept and reported if none succeeds.
+        let mut attempts = Vec::new();
+
         for report_length in [JUMBO_REPORT_LENGTH, STANDARD_REPORT_LENGTH] {
             for layout in [HeaderLayout::TwoByte, HeaderLayout::FourByte] {
                 let device = Self { hid, model, report_length, layout };
 
                 match device.exchange(&Request::get(Property::FirmwareVersion)) {
                     Ok(response) if response.looks_valid(Command::Get) => return Ok(device),
-                    // Reclaim the handle and try the next framing.
-                    _ => hid = device.hid,
+                    Ok(response) => {
+                        attempts.push(format!(
+                            "{report_length}B/{layout:?}: replied but incoherent: {}",
+                            hex(&response.raw, 12)
+                        ));
+                        hid = device.hid;
+                    }
+                    Err(error) => {
+                        attempts.push(format!("{report_length}B/{layout:?}: {error:#}"));
+                        hid = device.hid;
+                    }
                 }
             }
         }
-        bail!("interface did not respond to a firmware version query under any known framing")
+        bail!("no framing worked:\n      {}", attempts.join("\n      "))
     }
 
     /// Sends a request and reads the reply.

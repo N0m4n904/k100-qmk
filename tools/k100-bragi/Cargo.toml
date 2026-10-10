@@ -7,4 +7,7 @@ description = "Bragi protocol client for the Corsair K100, used to verify the fi
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
-hidapi = "2.6.7"
+# The libusb backend, not the default hidraw one: hidraw writes to the K100's Bragi
+# interface are rejected with ETIMEDOUT, while libusb detaches the kernel driver and claims
+# the interface the way ckb-next does. See docs/bragi-firmware-update.md.
+hidapi = { version = "2.6.7", default-features = false, features = ["linux-static-libusb"] }
