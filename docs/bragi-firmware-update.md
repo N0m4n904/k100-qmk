@@ -133,10 +133,45 @@ and that is the mechanism ckb-next actually uses.
 The keyboard is `1b1c:1b7c` on bus 010 device 004, so its usbfs node is
 `/dev/bus/usb/010/004`, and its interfaces appear as `10-3:1.0`, `10-3:1.1`, `10-3:1.2`.
 
-**Consequence for this project:** a usbdevfs transport is the remaining route, replicating
-what `src/daemon/usb_linux.c` does — `USBDEVFS_DISCONNECT` to release the kernel driver,
-`USBDEVFS_CLAIMINTERFACE` on interface 1, then interrupt transfers on EP `0x01` out and
-`0x82` in, releasing and reconnecting afterwards. It needs no elevated privileges.
+### usbdevfs does not work either, and the transport is not the fault
+
+`tools/probe-usbdevfs.py` replicates ckb-next's access method with no dependencies, and the
+mechanics all succeed: the kernel driver detaches from every interface, each is claimed, and
+everything is released and reattached on exit. **Only the transfers fail**, with `ETIMEDOUT`
+on the OUT to EP `0x01`.
+
+Verified correct rather than assumed:
+
+- All eight usbdevfs ioctl numbers are computed from the struct sizes and match the kernel's
+  values exactly (`USBDEVFS_BULK` `0xC0185502`, `USBDEVFS_IOCTL` `0xC0105512`, and so on).
+- `os_usb_interrupt_out()` in ckb-next uses **`USBDEVFS_BULK`** with a
+  `usbdevfs_bulktransfer`, which is precisely what the probe does.
+- `bragi_fill_input_eps()` puts `P_K100_OPTICAL` in the case group setting
+  `bragi_out_ep = 0x1`, `bragi_in_ep = 0x82`. The probe uses those.
+- ckb-next's `usbclaim()` claims **every** interface, not just the vendor one. The probe does
+  the same.
+
+Ruled out with evidence:
+
+| Hypothesis | Finding |
+| --- | --- |
+| Wrong report length | hidraw fails identically at 4, 8, 16, 32, 64, 128, 256, 512 and 1024 bytes |
+| Wrong report framing | Found and fixed a real bug (magic byte in the report-id slot); behaviour unchanged |
+| Wrong endpoint | `0x01`/`0x82` confirmed from ckb-next's source for this exact PID |
+| Wrong ioctl or transfer type | Matches ckb-next; all endpoints are Interrupt, which the kernel's BULK ioctl handles |
+| Insufficient ownership | All three interfaces detached and claimed |
+| Missing privileges | usbfs ACL grants the user `rw`; detach, claim, release and reattach all succeed |
+| Another process holding it | Nothing holds any node; no control software was running |
+| Runtime power management | `runtime_status` is `active`, `control` is `on` |
+| Timeout too short | 1 s and 5 s both fail; ckb-next uses 5 s |
+
+**The one structural difference left** is that ckb-next keeps interrupt IN URBs permanently
+submitted on every input endpoint, through `USBDEVFS_SUBMITURB` with
+`USBDEVFS_URB_TYPE_INTERRUPT` and a reaper thread, rather than doing a synchronous OUT
+followed by a synchronous IN. If the device will not accept a command until the host has an
+IN transfer armed to receive the reply, that would produce exactly this symptom.
+
+That remains untested, and it is a hypothesis rather than a diagnosis.
 
 ### Status codes
 
