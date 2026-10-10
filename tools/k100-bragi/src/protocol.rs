@@ -158,10 +158,11 @@ impl ImageType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     Success,
-    Busy,
+    InvalidArgumentValue,
     InsufficientBufferSize,
     InvalidState,
     CommandNotSupported,
+    PropertyNotSupported,
     InvalidDeviceAddress,
     HardwareError,
     InvalidOperation,
@@ -174,10 +175,11 @@ impl Status {
     pub fn from_raw(value: u8) -> Self {
         match value {
             0 => Self::Success,
-            1 => Self::Busy,
+            1 => Self::InvalidArgumentValue,
             2 => Self::InsufficientBufferSize,
             3 => Self::InvalidState,
             4 => Self::CommandNotSupported,
+            5 => Self::PropertyNotSupported,
             6 => Self::InvalidDeviceAddress,
             7 => Self::HardwareError,
             9 => Self::InvalidOperation,
@@ -214,64 +216,72 @@ impl HeaderLayout {
     }
 }
 
-/// A request, before the report ID is prepended by the transport.
+/// A request, before any report-ID byte is prepended by the transport.
+///
+/// A command's arguments begin at **body byte 2**, immediately after the magic and the
+/// command. There is no separate "property" slot: a property ID is simply the first argument,
+/// as a 16-bit little-endian value. Modelling it that way is not cosmetic — treating the
+/// property as one byte and the payload as separate put a SET's value one byte too early,
+/// which the keyboard rejects with `INVALID_STATE`. Verified on hardware; see the request
+/// layouts in `docs/bragi-firmware-update.md`.
 #[derive(Debug, Clone)]
 pub struct Request {
     pub command: Command,
-    pub property: u8,
-    pub payload: Vec<u8>,
+    pub args: Vec<u8>,
 }
 
 impl Request {
-    pub fn new(command: Command, property: u8, payload: impl Into<Vec<u8>>) -> Self {
-        Self { command, property, payload: payload.into() }
+    pub fn new(command: Command, args: impl Into<Vec<u8>>) -> Self {
+        Self { command, args: args.into() }
     }
 
-    /// `sendCommand(cmd, prop, payload)` in the updater; `property` is 0 for every command
-    /// other than Get and Set.
-    pub fn command(command: Command, payload: impl Into<Vec<u8>>) -> Self {
-        Self::new(command, 0, payload)
-    }
-
+    /// `08 02 <prop16>`
     pub fn get(property: Property) -> Self {
-        Self::new(Command::Get, property as u8, vec![])
+        Self::new(Command::Get, (property as u16).to_le_bytes().to_vec())
     }
 
-    /// `setOperatingMode` sends the mode as a 4-byte little-endian value.
+    /// `08 01 <prop16> <value…>`
+    pub fn set(property: Property, value: impl AsRef<[u8]>) -> Self {
+        let mut args = (property as u16).to_le_bytes().to_vec();
+        args.extend_from_slice(value.as_ref());
+        Self::new(Command::Set, args)
+    }
+
     pub fn set_operating_mode(mode: OperatingMode) -> Self {
-        Self::new(Command::Set, Property::OperatingMode as u8, vec![mode as u8, 0, 0, 0])
+        Self::set(Property::OperatingMode, [mode as u8])
     }
 
-    pub fn open_file(buffer_index: u8, file_id: u16) -> Self {
+    /// `08 0D <handle> <fileId>`
+    pub fn open_file(handle: u8, file_id: u16) -> Self {
         let [lo, hi] = file_id.to_le_bytes();
-        Self::command(Command::OpenFile, vec![buffer_index, lo, hi])
+        Self::new(Command::OpenFile, vec![handle, lo, hi])
     }
 
-    pub fn describe_buffer(buffer_index: u8) -> Self {
-        Self::command(Command::DescribeBuffer, vec![buffer_index])
+    /// `08 09 <handle>`
+    pub fn describe_buffer(handle: u8) -> Self {
+        Self::new(Command::DescribeBuffer, vec![handle])
     }
 
-    pub fn unbind_buffers(buffer_index: u8) -> Self {
-        Self::command(Command::UnbindBuffers, vec![1, buffer_index])
+    /// `08 05 <count> <handle>`
+    pub fn unbind_buffers(handle: u8) -> Self {
+        Self::new(Command::UnbindBuffers, vec![1, handle])
     }
 
-    /// Serialises a buffer ready to hand to a HID write.
+    /// Serialises the request body, optionally behind a leading report-ID byte.
     ///
-    /// Layout is a leading `0x00` report-id byte, which the HID layer consumes because this
-    /// device's reports are unnumbered, followed by a `report_length`-byte body that starts
-    /// with the Bragi magic. The returned buffer is therefore `report_length + 1` bytes.
-    pub fn encode(&self, report_length: usize) -> Result<Vec<u8>> {
-        let body_used = 3 + self.payload.len();
-        if body_used > report_length {
-            bail!("payload of {} bytes overflows a {report_length}-byte report", self.payload.len());
+    /// usbdevfs writes the body directly; a HID API consumes a leading report id, which is
+    /// `0x00` here because this device's reports are unnumbered.
+    pub fn encode(&self, report_length: usize, report_id: bool) -> Result<Vec<u8>> {
+        let used = 2 + self.args.len();
+        if used > report_length {
+            bail!("{} argument bytes overflow a {report_length}-byte report", self.args.len());
         }
 
-        let mut report = vec![0u8; report_length + 1];
-        report[0] = HID_REPORT_ID;
-        report[1] = BRAGI_MAGIC;
-        report[2] = self.command as u8;
-        report[3] = self.property;
-        report[4..1 + body_used].copy_from_slice(&self.payload);
+        let offset = usize::from(report_id);
+        let mut report = vec![0u8; report_length + offset];
+        report[offset] = BRAGI_MAGIC;
+        report[offset + 1] = self.command as u8;
+        report[offset + 2..offset + used].copy_from_slice(&self.args);
         Ok(report)
     }
 }

@@ -164,6 +164,104 @@ Working configuration, confirmed against hardware:
 Two-byte framing is not inferred here but proven: `USB_VID` returns `0x1b1c` and `USB_PID`
 returns `0x1b7c` when read at offset 3, both independently known to be correct.
 
+### Request layouts, verified on hardware
+
+**Arguments start at byte 2, not byte 3.** Corsair's own updater bundle builds
+`sendCommand(cmd, prop, payload)` with the payload after a property byte, and **that layout
+is rejected by this keyboard**. ckb-next's convention is the correct one here.
+
+| Command | Wire bytes | Status |
+| --- | --- | --- |
+| `PING` (0x12) | `08 12` | SUCCESS |
+| `GET` (0x02) | `08 02 <prop16 LE>` | SUCCESS |
+| `SET` (0x01) | `08 01 <prop16 LE> <value>` | SUCCESS |
+| `OPEN_FILE` (0x0D) | `08 0D <handle> <fileId>` | SUCCESS |
+| `UNBIND_BUFFERS` (0x05) | `08 05 <count> <handle>` | SUCCESS |
+
+Each was confirmed by a status-0 reply with the observable effect it should have; the
+rejected alternatives returned `INVALID_ARGUMENT_VALUE(1)`.
+
+The decisive comparisons:
+
+```
+SET OPERATING_MODE -> HOST_CONTROLLED
+  08 01 03 02 00 00 00     (updater: value right after property)  INVALID_STATE(3)
+  08 01 03 00 02 00 00     (value one byte later)                 SUCCESS(0), mode changed
+
+OPEN_FILE handle 1, file 0x22
+  08 0D 01 22 00           (ckb-next: args from byte 2)           SUCCESS(0)
+  08 0D 00 01 22 00        (updater: args from byte 3)            INVALID_ARGUMENT_VALUE(1)
+```
+
+**Why SET appears to have a "gap" byte:** property IDs are almost certainly **16-bit little
+endian at bytes 2–3**. That explains the zero byte with no special-casing, and it has to be
+true anyway, since `BRAGI_PROTOCOL_VERSION` is 261 and does not fit in a byte. A GET is then
+`08 02 <prop16>`, which is exactly what already works.
+
+This also unifies the two-byte / four-byte header business: those are **two protocol
+generations**, and the updater bundle documents the newer one. `getHeaderLayout()` selects
+four-byte only at protocol version 1.5; this keyboard is the older generation, so every
+reference in that bundle sits one byte further along than it should for us. Treat the bundle
+as authoritative for *semantics* and ckb-next as authoritative for *byte positions*.
+
+### Operating mode gates everything
+
+Buffer and file commands are refused with `INVALID_STATE(3)` while the keyboard is
+`SELF_OPERATED`, which is its power-on state. Switching to `HOST_CONTROLLED` first makes them
+work; this is the ordinary software-control handshake iCUE, ckb-next and `k100-color-oxide`
+all perform, and `probe-usbdevfs.py` restores `SELF_OPERATED` afterwards.
+
+No session is needed. `startSession` / `HOST_SOFTWARE_SESSION_CONTROL` (27) exists, but
+`isReady()` only requires a session when the protocol version is 1.5 — the newer generation.
+
+### Which files exist on this keyboard
+
+Opening `handle 1` and unbinding it again, in `HOST_CONTROLLED` mode:
+
+| File ID | Name | Result |
+| --- | --- | --- |
+| `0x22` (34) | lighting, RGBRGB ordering | **SUCCESS** — this is the one this board uses |
+| `0x01` (1) | lighting, RRRGGGBBB ordering | `INVALID_ARGUMENT_VALUE` |
+| 36 | `PAIRED_SUBDEVICES_IDS` | `INVALID_ARGUMENT_VALUE` |
+| 54 | `CONNECTED_SUBDEVICES_IDS` | `INVALID_ARGUMENT_VALUE` |
+
+The three failures are all wireless or dongle concepts, so a wired keyboard not having them
+is the expected answer rather than a protocol error. `0x22` matches
+`BRAGI_RES_ALT_LIGHTING` in ckb-next, described there as being for devices that take
+RGBRGBRGB packets, and is the resource `k100-color-oxide` already opens.
+
+A leaked handle is worth knowing about: while handle 1 was left open by a faulty unbind,
+every subsequent `OPEN_FILE` returned `INVALID_STATE(3)` instead. Always unbind.
+
+### The complete file ID enum
+
+From `Ft` in the updater bundle, so no sweep was needed to find the firmware file:
+
+| ID | Name |
+| --- | --- |
+| **3** | **FIRMWARE** |
+| 5 | `PAIRING_ID` |
+| 6 | `WIRELESS_ENCRYPTION_KEY` |
+| 18 | `SECONDARY_CHIP_FIRMWARE` |
+| 20 | `BLUETOOTH_DEVICE_ADDRESS` |
+| 36 | `PAIRED_SUBDEVICES_IDS` |
+| 53 | `PAIRING_ID_V2` |
+| 54 | `CONNECTED_SUBDEVICES_IDS` |
+| 59 | `SCREEN_MODULE_FIRMWARE` |
+| 60 | `DIAL_MODULE_FIRMWARE` |
+
+`FIRMWARE = 3` closes the last unknown in gate 0. It is deliberately **not** opened by the
+probe: the ID is known, and opening it may imply write intent.
+
+### Corrected status codes
+
+From the updater bundle's own enum. An earlier version of this document had `1 = BUSY`, which
+was wrong:
+
+`0 SUCCESS`, `1 INVALID_ARGUMENT_VALUE`, `2 INSUFFICIENT_BUFFER_SIZE`, `3 INVALID_STATE`,
+`4 COMMAND_NOT_SUPPORTED`, `5 PROPERTY_NOT_SUPPORTED`, `6 INVALID_DEVICE_ADDRESS`,
+`7 HARDWARE_ERROR`, `9 INVALID_OPERATION`, `10 INVALID_FIRMWARE_FILE`.
+
 ### Values read from the keyboard
 
 | Property | Raw | Meaning |
@@ -304,6 +402,8 @@ the 174-versus-193 LED discrepancy noted in `qmk-layout.md`, and worth mining re
 how the transport question resolves.
 
 ### Status codes
+
+Superseded — see "Corrected status codes" above; `1` is `INVALID_ARGUMENT_VALUE`, not `BUSY`.
 
 `SUCCESS = 0`, `BUSY = 1`, `INSUFFICIENT_BUFFER_SIZE = 2`, `INVALID_STATE = 3`,
 `COMMAND_NOT_SUPPORTED = 4`, `INVALID_DEVICE_ADDRESS = 6`, `HARDWARE_ERROR = 7`,

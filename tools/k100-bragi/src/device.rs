@@ -119,7 +119,7 @@ impl Device {
     /// where the device drops off the bus instead of answering — the updater passes
     /// `expectResponse: false` for exactly this.
     pub fn write(&self, request: &Request) -> Result<()> {
-        let report = request.encode(self.report_length)?;
+        let report = request.encode(self.report_length, true)?;
         self.hid.write(&report).with_context(|| format!("sending {:?}", request.command))?;
         Ok(())
     }
