@@ -243,8 +243,8 @@ Rejected alternatives, recorded so the reasoning is not lost:
   See `docs/recovery.md`.
 - Existing local work: `k100-color-oxide` already drives per-key colour over Bragi (init
   handshake, open-handle on resource `0x22`, `0x08 0x06/0x07` colour writes, 175-LED map taken
-  from OpenRGB). Note ckb-next's `led_bragi.c` uses **193** LEDs for the K100, so our map is
-  probably incomplete.
+  from OpenRGB). ckb-next's `led_bragi.c` uses **193** LEDs for the K100; that gap is now
+  explained rather than a defect — see the resolution in `docs/qmk-layout.md`.
 
 ## Settled
 

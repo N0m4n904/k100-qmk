@@ -82,11 +82,34 @@ bar and top bar land correctly.
 
 Four keys carry a scancode but no LED, which is why 123 keys yield only 119 key LEDs.
 
-### Two caveats
+### The 174 versus 193 question, resolved
 
-- `led_bragi.c` reports **193** LEDs for the K100 but only **174** have positions in the GUI
-  map. The remaining 19 are unaccounted for — possibly undrawn zones or padding. Worth
-  resolving before the RGB driver is finalised.
+`led_bragi.c` reports **193** LEDs while our map positions **174**. Cross-checking ckb-next's
+`keymap_bragi` against OpenRGB master's `corsair_k100_layout` accounts for all 19, and the
+count 193 is confirmed from the other side too: OpenRGB's LED indices run to a maximum of
+**192**, so 0–192 inclusive.
+
+| LED indices | Count | What they are |
+| --- | --- | --- |
+| 0–3 | 4 | Reserved. The first four `keymap_bragi` entries are `{0, -1, KEY_NONE}` padding. |
+| 49 | 1 | `bslash`, the ANSI backslash. **Not present on an ISO board**, so correctly absent. |
+| 103, 104, 112, 113, 115, 116, 127, 130 | 8 | `volup`, `voldn`, `rwin`, `light`, `ro`, `ctrlwheelcw`, `mr`, `ctrlwheelccw` |
+| 117–121, 129 | 6 | Unnamed in both ckb-next and OpenRGB. Genuinely unknown. |
+
+**So 174 is correct for this board, not deficient.** Four are padding, one is ANSI-only, and
+six are unknown to every public source.
+
+The middle group needs a second look though. Those eight carry LED indices in
+`keymap_bragi` but are flagged `hasLed == false` in ckb-next's GUI geometry — the two tables
+in the same project disagree. `volup`, `voldn` and the two wheel-rotation entries are real
+controls on this keyboard, so they may well be lit in hardware and simply missing from the
+GUI's drawing data. If so, our `rgb_matrix` layout omits up to four real LEDs. Worth checking
+once anything can actually drive the LEDs.
+
+Useful corroboration from OpenRGB for later: it names indices our map already covers,
+including `Lock` at 114, the media keys at 123–126, `Profile` at 128, `iCue` at 137,
+`Wheel 1`–`8` at 182–189 and `Logo L` at 190. The iCUE wheel therefore has **eight LEDs of
+its own**, which is worth knowing when the LightEdge and wheel zones are wired up.
 - The LED **order** here follows Corsair's own Bragi indexing. That is a well-founded
   starting assumption, but the index to hardware mapping depends on how the LED driver ICs
   are actually wired, which is still unknown. Expect to revisit once the RGB bus is traced.
