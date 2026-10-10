@@ -173,6 +173,35 @@ IN transfer armed to receive the reply, that would produce exactly this symptom.
 
 That remains untested, and it is a hypothesis rather than a diagnosis.
 
+### OpenRGB reaches the same node but also reports no capabilities
+
+OpenRGB 1.0rc3 run with `--list-devices` finds the keyboard on the very node our writes fail
+on:
+
+```
+2: Corsair K100 RGB Optical
+  Description:  Corsair Peripheral V2 HW Device
+  Location:     HID: /dev/hidraw13
+  Serial:       F50019045EA4FBE0AB70D8010C01D003
+  Modes: [Direct] Static
+  Zones: Keyboard
+  LEDs: 'Keyboard 0' ... 'Keyboard 5'
+```
+
+Note "Corsair Peripheral V2", which is OpenRGB's name for Bragi. But it also prints
+`[Corsair K100 RGB Optical] device capabilities not found. Please creata a new device
+request.` and exposes only six generic LEDs instead of the K100's 193.
+
+This is **ambiguous evidence and should not be read as confirmation either way.** Reading the
+serial is a descriptor read, not an OUT transfer, so enumeration succeeding says nothing
+about whether commands get through. "Capabilities not found" could mean its queries to the
+device failed — matching our results — or simply that this product ID is missing from
+OpenRGB's static capability table, in which case it never tried.
+
+The test that distinguishes them is asking OpenRGB to set a colour and watching the
+keyboard: visible light means writes work and the fault is ours, no change means the device
+is refusing commands from every client.
+
 ### Status codes
 
 `SUCCESS = 0`, `BUSY = 1`, `INSUFFICIENT_BUFFER_SIZE = 2`, `INVALID_STATE = 3`,
