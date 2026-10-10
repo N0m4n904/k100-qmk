@@ -8,7 +8,6 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use hidapi::HidApi;
 
 use crate::device::Device;
 use crate::protocol::OperatingMode;
@@ -77,11 +76,10 @@ fn reconnect() -> Result<Device> {
     while Instant::now() < deadline {
         sleep(POLL_INTERVAL);
 
-        // A fresh HidApi avoids a stale device list across re-enumeration.
-        match HidApi::new().and_then(|api| Ok(Device::open(&api))) {
-            Ok(Ok(device)) => return Ok(device),
-            Ok(Err(error)) => last_error = Some(error),
-            Err(error) => last_error = Some(error.into()),
+        // Re-opens from scratch: the bus address changes across re-enumeration.
+        match Device::open() {
+            Ok(device) => return Ok(device),
+            Err(error) => last_error = Some(error),
         }
     }
 

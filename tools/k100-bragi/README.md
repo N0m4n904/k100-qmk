@@ -15,39 +15,56 @@ nix develop            # from the repository root
 cargo build --manifest-path tools/k100-bragi/Cargo.toml
 ```
 
-**This tool cannot yet talk to the keyboard: it needs a usbdevfs transport.** Neither of
-hidapi's backends works here — hidraw writes are rejected with `ETIMEDOUT` and the libusb
-backend fails without a reportable error. `tools/probe-usbdevfs.py` does work, by detaching
-the kernel driver from all three interfaces and claiming them, so the transport to port
-across is known and proven. See the Linux transport section of
-`docs/bragi-firmware-update.md`.
+## Transport
 
-No elevated privileges are needed; the usbfs node carries an ACL granting the logged-in user
-access, as OpenRGB's and ckb-next's udev rules arrange.
+**usbdevfs, with no HID dependency at all.** Neither of hidapi's backends can reach this
+keyboard — hidraw writes are rejected with `ETIMEDOUT`, and the libusb backend fails without
+a reportable error. `transport.rs` instead does what ckb-next does: open
+`/dev/bus/usb/<bus>/<dev>`, detach the kernel driver from all three interfaces, claim them,
+and use `USBDEVFS_BULK` on endpoints `0x01` out and `0x82` in. Interfaces are released and
+the driver reattached on drop, so a dropped handle always leaves the keyboard usable.
 
-The protocol layer is already correct against hardware: two-byte header framing, payload at
-response offset 3, and a reply whose byte 0 is `0x00` rather than the request's `0x08` magic.
+Two consequences worth knowing:
+
+- **Typing pauses** while the tool holds the interfaces, because interface 0 is the keyboard.
+  ckb-next claims all of them too, and claiming fewer was observed not to work.
+- **No elevated privileges are needed.** The usbfs node carries an ACL granting the
+  logged-in user access, as OpenRGB's and ckb-next's udev rules arrange.
+
+The ioctl request numbers are computed from the struct sizes rather than hardcoded, and a
+unit test pins them to the values the kernel defines. A wrong number would otherwise be
+indistinguishable from a device fault at runtime:
+
+```sh
+cargo test --manifest-path tools/k100-bragi/Cargo.toml
+```
 
 ## Commands
 
 | Command | Touches the keyboard? | What it does |
 | --- | --- | --- |
 | `verify-image <path>` | No | Parses a firmware container and verifies its CRC32/MPEG-2. Fully offline. |
-| `info` | Reads only | Identifies the device, reads firmware and bootloader versions, and reports the operating mode. |
+| `info` | Reads only | Identifies the device and reports firmware and bootloader versions, physical layout and operating mode. |
+| `files` | Writes | Opens and closes each known Bragi file to report which exist. Needs host control, which it takes and restores. Never opens firmware. |
 | `enter-bootloader` | Writes | `SET OPERATING_MODE 3`, then waits for re-enumeration and confirms the device landed in bootloader. |
 | `exit-bootloader` | Writes | The vendor transition back: `Bootloader → SelfOperated → HostControlled`. |
 
 Flashing is **not** implemented. See below.
 
-## Run `info` first
+## What `info` reports, and what it settled
 
-`info` is not just a status dump — it resolves something the protocol cannot tell us
-statically. Corsair's updater chooses its header layout from the Bragi protocol version the
-*device* reports (`FOUR_BYTE` at version 1.5, `TWO_BYTE` otherwise), so the framing has to be
-discovered at runtime. This tool probes both layouts and both report lengths against a known
-property and keeps whichever answers coherently, then prints what it settled on.
+Framing is no longer probed: it is settled for this device. `USB_VID` and `USB_PID` read
+back as `0x1b1c` and `0x1b7c` at response offset 3, which proves the two-byte header rather
+than inferring it. Corsair's updater selects a four-byte header at Bragi protocol version
+1.5; this keyboard is the older generation.
 
-That result is the input the flash path needs, which is why flashing is gated behind it.
+A real unit reports firmware **0.32.6**, bootloader **0.10.45**, layout **Iso** and mode
+**SelfOperated**. The versions corroborate externally: ckb-next's source records a K100 at
+"fw 0.32.6, bld 0.10.45".
+
+Note that **`SelfOperated` is the power-on state and most commands are refused in it** with
+`InvalidState`. `files` therefore wraps its work in host control via
+`Device::with_host_control`, which restores the previous mode afterwards even on failure.
 
 ## Why flashing is still a stub
 
@@ -55,16 +72,21 @@ The command set is known: `OPEN_FILE`, then `WRITE_BUFFER_BEGIN` carrying a 4-by
 little-endian total length plus the first chunk, then `WRITE_BUFFER` for the remainder, then
 `APPLY_FIRMWARE_EXTENDED` (22) — the K100 manifest asks for `apply-extended` specifically.
 
-Two things are not yet pinned down from static reading:
+Both of the things that used to be unknown are now settled: the firmware file ID is **3**,
+from the `Ft` enum in Corsair's updater bundle, and the header layout is two-byte, confirmed
+on hardware. Argument placement is settled too — arguments begin at body byte 2, not byte 3
+as the updater bundle has them.
 
-- the file ID that selects the firmware buffer, and
-- which header layout this device uses, which `info` answers.
-
-Writing firmware on a guess at either is the one mistake that could cost the keyboard, so
-`roundtrip::flash` refuses rather than improvising. Confirming both is cheap; guessing is not.
+What remains unverified is the part that cannot be checked without doing it: whether the
+bootloader validates anything beyond the CRC, and whether the upload sequence works as read.
+`roundtrip::flash` therefore still refuses, and the next step is **rule 2** of
+`docs/recovery.md` — prove the round trip with a verified official image before any custom
+one. Note that this unit runs firmware 0.32.6 while the published packages offer 0.35.288 and
+0.30.257, so flashing either is an upgrade rather than a restore to its current state.
 
 ## Safety properties worth knowing
 
+- The firmware file (ID 3) is never opened on this tool's own initiative.
 - `ImageType::ensure_recoverable` rejects `Bootloader` and `FirmwareWithBootloader` at the
   type level. The bootloader *is* the recovery path, and Corsair's own updater refuses to
   touch it too, logging "Chip needs isp update which is not supported for now".

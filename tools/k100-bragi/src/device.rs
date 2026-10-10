@@ -1,174 +1,181 @@
-//! HID transport for Bragi, plus the runtime probing the protocol requires.
+//! Bragi device logic, on top of the usbdevfs transport.
 //!
-//! Two things genuinely cannot be known without talking to the device: which of its HID
-//! interfaces carries Bragi, and which header layout it uses. Both are discovered here by
-//! trying and checking rather than assumed, because a wrong frame on a firmware command is
-//! exactly the mistake worth engineering out.
-
-use std::time::Duration;
+//! This replaced a HID-based implementation that could not reach the keyboard at all. The
+//! header-layout probing it carried is also gone: the framing is settled for this device.
 
 use anyhow::{anyhow, bail, Context, Result};
-use hidapi::{HidApi, HidDevice};
 
 use crate::protocol::{
-    Command, HeaderLayout, Model, OperatingMode, Property, Request, Response, CORSAIR_VID,
+    HeaderLayout, Layout, Model, OperatingMode, Property, Request, Response, CORSAIR_VID,
 };
+use crate::transport::{self, UsbDevice};
 
-/// Bragi "jumbo" report size, which every K100 SKU uses (`USES_BRAGI_JUMBO` in ckb-next).
-pub const JUMBO_REPORT_LENGTH: usize = 1024;
+/// Bragi command endpoints, from ckb-next's `bragi_fill_input_eps()` for this product ID,
+/// corroborated by the device's own descriptors.
+const BRAGI_EP_OUT: u8 = 0x01;
+const BRAGI_EP_IN: u8 = 0x82;
 
-/// Standard Bragi report size, for devices that are not jumbo.
-pub const STANDARD_REPORT_LENGTH: usize = 64;
+/// "Jumbo" report size, which every K100 uses.
+const REPORT_SIZE: usize = 1024;
 
-const READ_TIMEOUT: Duration = Duration::from_millis(1000);
+/// ckb-next claims all interfaces rather than only the vendor one, and anything less was
+/// observed not to work. This stops the keyboard typing until the handle is dropped.
+const INTERFACES: [u8; 3] = [0, 1, 2];
 
-fn hex(data: &[u8], count: usize) -> String {
-    data.iter().take(count).map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")
-}
+/// ckb-next's transfer timeout.
+const TIMEOUT_MS: u32 = 5000;
 
 pub struct Device {
-    hid: HidDevice,
+    usb: UsbDevice,
     pub model: Model,
-    pub report_length: usize,
     pub layout: HeaderLayout,
 }
 
 impl Device {
-    /// Finds a K100, then establishes which interface and header layout actually work.
-    pub fn open(api: &HidApi) -> Result<Self> {
-        let candidates: Vec<_> = api
-            .device_list()
-            .filter(|info| info.vendor_id() == CORSAIR_VID)
-            .filter_map(|info| Model::from_pid(info.product_id()).map(|model| (info, model)))
-            .collect();
+    /// Finds a K100 and takes its interfaces from the kernel.
+    pub fn open() -> Result<Self> {
+        let pids: Vec<u16> = Model::ALL.iter().map(|m| m.pid()).collect();
+        let candidates = transport::find(CORSAIR_VID, &pids)?;
 
-        if candidates.is_empty() {
-            bail!(
-                "no K100 found. Expected Corsair VID {CORSAIR_VID:#06x} with one of the \
-                 K100 product IDs; is the keyboard connected and does this user have \
-                 hidraw access?"
-            );
-        }
+        let found = candidates.first().ok_or_else(|| {
+            anyhow!(
+                "no K100 found. Expected Corsair VID {CORSAIR_VID:#06x} with one of {}; is the \
+                 keyboard connected, and does this user have access to its /dev/bus/usb node?",
+                pids.iter().map(|p| format!("{p:#06x}")).collect::<Vec<_>>().join(", ")
+            )
+        })?;
 
-        let mut failures = Vec::new();
-        for (info, model) in candidates {
-            let path = info.path().to_string_lossy().into_owned();
-            match info.open_device(api) {
-                Ok(hid) => match Self::establish(hid, model) {
-                    Ok(device) => return Ok(device),
-                    Err(error) => failures.push(format!("{path}: {error:#}")),
-                },
-                Err(error) => failures.push(format!("{path}: cannot open ({error})")),
-            }
-        }
+        let model = Model::from_pid(found.product)
+            .ok_or_else(|| anyhow!("unexpected product {:#06x}", found.product))?;
 
-        Err(anyhow!(
-            "found a K100 but no interface answered Bragi:\n  {}",
-            failures.join("\n  ")
-        ))
-    }
+        let usb = UsbDevice::open(&found.node, &INTERFACES)
+            .with_context(|| format!("taking interfaces of {}", found.node.display()))?;
 
-    /// Probes one interface: ask for the firmware version under each header layout and keep
-    /// whichever answers coherently.
-    fn establish(mut hid: HidDevice, model: Model) -> Result<Self> {
-        // A rejected write and a silent device are different faults and must not look alike,
-        // so every attempt's outcome is kept and reported if none succeeds.
-        let mut attempts = Vec::new();
-
-        for report_length in [JUMBO_REPORT_LENGTH, STANDARD_REPORT_LENGTH] {
-            for layout in [HeaderLayout::TwoByte, HeaderLayout::FourByte] {
-                let device = Self { hid, model, report_length, layout };
-
-                match device.exchange(&Request::get(Property::FirmwareVersion)) {
-                    Ok(response) if response.looks_valid(Command::Get) => return Ok(device),
-                    Ok(response) => {
-                        attempts.push(format!(
-                            "{report_length}B/{layout:?}: replied but incoherent: {}",
-                            hex(&response.raw, 12)
-                        ));
-                        hid = device.hid;
-                    }
-                    Err(error) => {
-                        attempts.push(format!("{report_length}B/{layout:?}: {error:#}"));
-                        hid = device.hid;
-                    }
-                }
-            }
-        }
-        bail!("no framing worked:\n      {}", attempts.join("\n      "))
+        // Two-byte framing is settled for this device rather than probed: USB_VID and
+        // USB_PID read back correctly at that offset. See docs/bragi-firmware-update.md.
+        Ok(Self { usb, model, layout: HeaderLayout::TwoByte })
     }
 
     /// Sends a request and reads the reply.
     pub fn exchange(&self, request: &Request) -> Result<Response> {
-        self.write(request)?;
+        let body = request.encode(REPORT_SIZE, false)?;
+        self.usb
+            .transfer(BRAGI_EP_OUT, Some(&body), REPORT_SIZE, TIMEOUT_MS)
+            .with_context(|| format!("sending {:?}", request.command))?;
 
-        let mut buffer = vec![0u8; self.report_length];
-        let read = self
-            .hid
-            .read_timeout(&mut buffer, READ_TIMEOUT.as_millis() as i32)
-            .context("reading Bragi response")?;
+        let reply = self
+            .usb
+            .transfer(BRAGI_EP_IN, None, REPORT_SIZE, TIMEOUT_MS)
+            .with_context(|| format!("reading the reply to {:?}", request.command))?;
 
-        if read == 0 {
-            bail!("device did not answer within {READ_TIMEOUT:?}");
+        Ok(Response::new(reply, self.layout))
+    }
+
+    /// Issues a request and fails unless the device reported success.
+    fn expect_ok(&self, request: &Request) -> Result<Response> {
+        let response = self.exchange(request)?;
+        if !response.status().is_success() {
+            bail!("{:?} returned {:?}", request.command, response.status());
         }
-        buffer.truncate(read);
-        Ok(Response::new(buffer, self.layout))
+        Ok(response)
     }
 
-    /// Sends a request without waiting for a reply. Used for the bootloader transition,
-    /// where the device drops off the bus instead of answering — the updater passes
-    /// `expectResponse: false` for exactly this.
-    pub fn write(&self, request: &Request) -> Result<()> {
-        let report = request.encode(self.report_length, true)?;
-        self.hid.write(&report).with_context(|| format!("sending {:?}", request.command))?;
-        Ok(())
+    pub fn firmware_version(&self) -> Result<String> {
+        self.read_version(Property::FirmwareVersion)
     }
 
-    pub fn firmware_version(&self) -> Result<u16> {
-        self.read_u16(Property::FirmwareVersion)
+    pub fn bootloader_version(&self) -> Result<String> {
+        self.read_version(Property::BootloaderVersion)
     }
 
-    pub fn bootloader_version(&self) -> Result<u16> {
-        self.read_u16(Property::BootloaderVersion)
+    /// Versions are three payload bytes: major, minor, patch. Corroborated by ckb-next
+    /// recording a K100 at "fw 0.32.6, bld 0.10.45", which matches a real unit exactly.
+    fn read_version(&self, property: Property) -> Result<String> {
+        let response = self.expect_ok(&Request::get(property))?;
+        let payload = response.payload();
+        if payload.len() < 3 {
+            bail!("{property:?} payload was only {} bytes", payload.len());
+        }
+        Ok(format!("{}.{}.{}", payload[0], payload[1], payload[2]))
     }
 
     pub fn usb_pid(&self) -> Result<u16> {
-        self.read_u16(Property::UsbPid)
+        let response = self.expect_ok(&Request::get(Property::UsbPid))?;
+        response.u16_payload().ok_or_else(|| anyhow!("USB_PID payload was too short"))
     }
 
     pub fn operating_mode(&self) -> Result<OperatingMode> {
-        let response = self.exchange(&Request::get(Property::OperatingMode))?;
+        let response = self.expect_ok(&Request::get(Property::OperatingMode))?;
         let raw = *response
             .payload()
             .first()
-            .ok_or_else(|| anyhow!("operating mode response carried no payload"))?;
+            .ok_or_else(|| anyhow!("operating mode payload was empty"))?;
 
         OperatingMode::from_raw(raw).ok_or_else(|| anyhow!("unknown operating mode {raw:#04x}"))
     }
 
-    fn read_u16(&self, property: Property) -> Result<u16> {
-        let response = self.exchange(&Request::get(property))?;
-        if !response.status().is_success() {
-            bail!("{property:?} returned {:?}", response.status());
-        }
-        response
-            .u16_payload()
-            .ok_or_else(|| anyhow!("{property:?} response was too short"))
+    /// Physical layout. The device reports ckb-next's enum directly, not zero-based.
+    pub fn hw_layout(&self) -> Result<Layout> {
+        let response = self.expect_ok(&Request::get(Property::HwLayout))?;
+        let raw = *response
+            .payload()
+            .first()
+            .ok_or_else(|| anyhow!("layout payload was empty"))?;
+
+        Layout::from_raw(raw).ok_or_else(|| anyhow!("unknown physical layout {raw}"))
     }
 
-    /// Changes operating mode. `Bootloader` is sent fire-and-forget because the device
-    /// re-enumerates rather than replying; see `docs/bragi-firmware-update.md`.
+    /// Changes operating mode and confirms it took effect.
+    ///
+    /// File and buffer commands are refused with `InvalidState` while the keyboard is
+    /// `SelfOperated`, its power-on state, so host control is a prerequisite for most work.
+    /// `Bootloader` is fire-and-forget because the device re-enumerates instead of replying.
     pub fn set_operating_mode(&self, mode: OperatingMode) -> Result<()> {
         let request = Request::set_operating_mode(mode);
 
         if mode == OperatingMode::Bootloader {
-            return self.write(&request);
+            let body = request.encode(REPORT_SIZE, false)?;
+            self.usb
+                .transfer(BRAGI_EP_OUT, Some(&body), REPORT_SIZE, TIMEOUT_MS)
+                .context("requesting bootloader mode")?;
+            return Ok(());
         }
 
-        let response = self.exchange(&request)?;
-        if !response.status().is_success() {
-            bail!("setting mode to {mode:?} returned {:?}", response.status());
+        self.expect_ok(&request)?;
+        let landed = self.operating_mode()?;
+        if landed != mode {
+            bail!("asked for {mode:?} but the keyboard reports {landed:?}");
         }
         Ok(())
+    }
+
+    /// Opens a file into a buffer handle, returning the device's status unjudged: callers
+    /// legitimately probe for files that may not exist on a given model.
+    pub fn open_file(&self, handle: u8, file_id: u16) -> Result<Response> {
+        self.exchange(&Request::open_file(handle, file_id))
+    }
+
+    pub fn unbind_buffers(&self, handle: u8) -> Result<Response> {
+        self.exchange(&Request::unbind_buffers(handle))
+    }
+
+    /// Runs `body` with the keyboard in host-controlled mode, restoring the previous mode
+    /// afterwards whether or not it succeeded.
+    pub fn with_host_control<T>(&self, body: impl FnOnce() -> Result<T>) -> Result<T> {
+        let entry = self.operating_mode()?;
+        if entry == OperatingMode::HostControlled {
+            return body();
+        }
+
+        self.set_operating_mode(OperatingMode::HostControlled)
+            .context("taking host control")?;
+
+        let outcome = body();
+
+        if let Err(error) = self.set_operating_mode(entry) {
+            // Reported, but it must not mask the original failure.
+            eprintln!("warning: could not restore {entry:?}: {error:#}");
+        }
+        outcome
     }
 }

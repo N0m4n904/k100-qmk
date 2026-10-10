@@ -6,6 +6,7 @@
 
 mod device;
 mod roundtrip;
+mod transport;
 
 /// The full Bragi command set is defined here even where it is not wired up yet, so the
 /// protocol stays documented in one place rather than being discovered twice.
@@ -14,7 +15,6 @@ mod protocol;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use hidapi::HidApi;
 
 use device::Device;
 use protocol::{Image, OperatingMode};
@@ -37,6 +37,10 @@ enum Action {
         path: std::path::PathBuf,
     },
 
+    /// Report which Bragi files this keyboard exposes. Opens and closes each; never
+    /// touches firmware.
+    Files,
+
     /// Put the keyboard into bootloader mode. Reversible with `exit-bootloader`.
     EnterBootloader,
 
@@ -48,14 +52,14 @@ fn main() -> Result<()> {
     match Cli::parse().command {
         Action::Info => info(),
         Action::VerifyImage { path } => verify_image(&path),
+        Action::Files => files(),
         Action::EnterBootloader => enter_bootloader(),
         Action::ExitBootloader => exit_bootloader(),
     }
 }
 
 fn open() -> Result<Device> {
-    let api = HidApi::new().context("initialising hidapi")?;
-    Device::open(&api)
+    Device::open()
 }
 
 fn info() -> Result<()> {
@@ -63,7 +67,6 @@ fn info() -> Result<()> {
 
     println!("{}", device.model.description());
     println!("  product id        {:#06x}", device.model.pid());
-    println!("  report length     {} bytes", device.report_length);
     println!("  header layout     {:?}", device.layout);
 
     match device.usb_pid() {
@@ -73,6 +76,11 @@ fn info() -> Result<()> {
 
     print_version("firmware", device.firmware_version());
     print_version("bootloader", device.bootloader_version());
+
+    match device.hw_layout() {
+        Ok(layout) => println!("  physical layout   {layout:?}"),
+        Err(error) => println!("  physical layout   unavailable ({error:#})"),
+    }
 
     match device.operating_mode() {
         Ok(mode) => {
@@ -89,10 +97,10 @@ fn info() -> Result<()> {
     Ok(())
 }
 
-fn print_version(label: &str, version: Result<u16>) {
+fn print_version(label: &str, version: Result<String>) {
     match version {
-        Ok(raw) => println!("  {label:<17} {}.{} (raw {raw:#06x})", raw >> 8, raw & 0xff),
-        Err(error) => println!("  {label:<17} unavailable ({error})"),
+        Ok(text) => println!("  {label:<17} {text}"),
+        Err(error) => println!("  {label:<17} unavailable ({error:#})"),
     }
 }
 
@@ -105,6 +113,40 @@ fn verify_image(path: &std::path::Path) -> Result<()> {
     println!("  built             {}", image.build_stamp());
     println!("  crc32-mpeg2       {:#010x} (verified)", image.declared_crc());
     Ok(())
+}
+
+/// Probes each known file ID, skipping firmware.
+///
+/// Needs host control: these commands are refused with `InvalidState` while the keyboard is
+/// self-operated. The previous mode is restored afterwards.
+fn files() -> Result<()> {
+    let device = open()?;
+    const HANDLE: u8 = 1;
+
+    println!("{}", device.model.description());
+    println!("  probing {} file ids in host-controlled mode\n",
+             protocol::FILE_IDS.len() - 1);
+
+    device.with_host_control(|| {
+        for &(id, name) in protocol::FILE_IDS {
+            if id == protocol::FILE_ID_FIRMWARE {
+                println!("  {id:>3} {name:<26} skipped deliberately (see docs/recovery.md)");
+                continue;
+            }
+
+            let opened = device.open_file(HANDLE, id)?;
+            let status = opened.status();
+
+            // Unbind unconditionally: a handle left open makes every later open fail with
+            // InvalidState, which looks exactly like a protocol error.
+            let released = device.unbind_buffers(HANDLE)?.status();
+
+            let note = if released.is_success() { String::new() }
+                       else { format!("  (unbind {released:?})") };
+            println!("  {id:>3} {name:<26} {status:?}{note}");
+        }
+        Ok(())
+    })
 }
 
 fn enter_bootloader() -> Result<()> {

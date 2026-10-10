@@ -80,6 +80,28 @@ pub enum Property {
     HwLayout = 0x41,
 }
 
+/// File IDs, from the `Ft` enum in Corsair's web updater bundle.
+///
+/// `FIRMWARE` is listed for completeness but must never be opened casually: opening it may
+/// imply write intent, and the bootloader is the recovery path. See `docs/recovery.md`.
+pub const FILE_IDS: &[(u16, &str)] = &[
+    (0x01, "LIGHTING"),
+    (0x22, "ALT_LIGHTING"),
+    (3, "FIRMWARE"),
+    (5, "PAIRING_ID"),
+    (6, "WIRELESS_ENCRYPTION_KEY"),
+    (18, "SECONDARY_CHIP_FIRMWARE"),
+    (20, "BLUETOOTH_DEVICE_ADDRESS"),
+    (36, "PAIRED_SUBDEVICES_IDS"),
+    (53, "PAIRING_ID_V2"),
+    (54, "CONNECTED_SUBDEVICES_IDS"),
+    (59, "SCREEN_MODULE_FIRMWARE"),
+    (60, "DIAL_MODULE_FIRMWARE"),
+];
+
+/// The one file this tool refuses to open on its own initiative.
+pub const FILE_ID_FIRMWARE: u16 = 3;
+
 /// Physical layouts, matching ckb-next's `structures.h`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Layout {
