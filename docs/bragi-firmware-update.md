@@ -135,13 +135,24 @@ The keyboard is `1b1c:1b7c` on bus 010 device 004, so its usbfs node is
 
 ### Resolved: a power cycle fixed it, and usbdevfs works
 
-**Try replugging the keyboard first.** Every failure described below was cleared by
-unplugging and reconnecting the keyboard. Afterwards `tools/probe-usbdevfs.py` worked on the
-first attempt with no code change, and the device answered every query.
+**Try replugging the keyboard first.** After unplugging and reconnecting the keyboard,
+`tools/probe-usbdevfs.py` worked on the first attempt with no code change, and the device
+answered every query.
 
 The keyboard typed normally throughout, so its controller, matrix scanning and USB stack were
-healthy the whole time; only the vendor command endpoint was unresponsive. What left it in
-that state is unknown — it was already failing before any interface of ours was detached.
+healthy the whole time; only the vendor command endpoint was unresponsive to usbdevfs. What
+left it in that state is unknown — it was already failing before any interface of ours was
+detached.
+
+**The power cycle did not fix hidraw.** Retested afterwards, writes to the Bragi interface
+still fail with `ETIMEDOUT` at every report length, exactly as before. So the hidraw result
+below is **not** a transient fault state: it is a persistent property of this keyboard,
+reproducible across a power cycle, and only the usbdevfs path works.
+
+That has a practical consequence. Chromium's WebHID uses hidraw `write()` for output reports
+on Linux, so **Corsair's browser-based firmware updater is very unlikely to work on Linux**
+regardless of what their documentation says about root permissions, and a Windows host or VM
+is the realistic route for an official firmware update.
 
 Working configuration, confirmed against hardware:
 
@@ -285,10 +296,11 @@ Note the installed firmware is 0.32.6 while the published packages offer applica
 0.35.288 and 0.30.257, so this unit is not running either of the images in
 `firmware-format.md`.
 
-### What follows below is the superseded diagnosis
+### What follows below is the earlier diagnosis
 
-Kept because it rules out a long list of causes, and because the ioctl and endpoint details
-were verified against ckb-next's source and remain correct.
+Its conclusion about hidraw still holds, confirmed by retest after the power cycle. Only the
+usbdevfs section's verdict was overturned. Kept in full because it rules out a long list of
+causes, and because the ioctl and endpoint details were verified against ckb-next's source.
 
 ### usbdevfs appeared not to work, and the transport was not the fault
 
