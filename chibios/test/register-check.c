@@ -12,6 +12,10 @@
 
 #include "LPC54605.h"
 
+/* The LPC11Uxx-named USB macros, mapped to this part. Including it here means a
+   mapping that does not resolve is a compile error. */
+#include "lpc546xx_usb_compat.h"
+
 void lpc546xx_register_check(void);
 
 void lpc546xx_register_check(void) {
@@ -50,4 +54,36 @@ void lpc546xx_register_check(void) {
   (void)GPIO->PIN[1];
   (void)GPIO->DIR[1];
   (void)GPIO->B[1][18];
+}
+
+/*
+ * Every USB macro the shared LLD/USB driver uses, written exactly as the driver
+ * writes it. These names come from lpc546xx_usb_compat.h, so this fails if any
+ * mapping is wrong or if NXP renames a field underneath it.
+ */
+void lpc546xx_usb_compat_check(void);
+
+void lpc546xx_usb_compat_check(void) {
+  unsigned ep = 2U;
+
+  /* The nine registers the driver touches that this part has. INTROUTING is
+     absent here, which is the one thing the shared driver needs guarded. */
+  LPC_USB->DEVCMDSTAT = USB_DEVCMDSTAT_DEV_EN | USB_DEVCMDSTAT_SETUP |
+                        USB_DEVCMDSTAT_DCON | USB_DEVCMDSTAT_DRES_C |
+                        USB_DEVCMDSTAT_DSUS_C | USB_DEVCMDSTAT_INTONNAK_CO |
+                        USB_DEVCMDSTAT_DSUP |
+                        (1U & USB_DEVCMDSTAT_DEVADDR_MASK);
+  (void)((LPC_USB->INFO & USB_INFO_FRAME_NR_MASK) >> USB_INFO_FRAME_NR_POS);
+  LPC_USB->EPLISTSTART = 0x20000000U & USB_EPLISTSTART_MASK;
+  LPC_USB->DATABUFSTART = 0x20000000U & USB_DATABUFSTART_MASK;
+  LPC_USB->EPSKIP = 0U;
+  LPC_USB->EPINUSE = 0U;
+  LPC_USB->EPBUFCFG = 0U;
+
+  /* Interrupt bits, including the shifted forms the driver builds. */
+  LPC_USB->INTSTAT = USB_INT_DEV_INT | USB_INT_FRAME_INT | USB_INT_EP_ALL_INT;
+  LPC_USB->INTEN = USB_INT_DEV_INT | USB_INT_FRAME_INT;
+  LPC_USB->INTEN |= USB_INT_EP(ep * 2U);
+  LPC_USB->INTEN |= USB_INT_EP((ep * 2U) + 1U);
+  (void)(LPC_USB->INTSTAT & (USB_INT_EPn_INT << (2U * ep)));
 }

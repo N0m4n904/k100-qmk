@@ -10,14 +10,18 @@ ChibiOS-Contrib checkout and later submitted upstream:
 
 ```
 chibios/os/hal/ports/LPC/LPC546xx/
-    hal_lld.c          clock tree
-    hal_lld.h          clock configuration, derived frequencies, flash wait states
-    lpc_registry.h     sub-family detection, capabilities, interrupt vectors
-    platform.mk        sources and the shared drivers pulled in
+    hal_lld.c              clock tree
+    hal_lld.h              clock configuration, derived frequencies, flash wait states
+    lpc_registry.h         sub-family detection, capabilities, interrupt vectors
+    lpc546xx_usb_compat.h  LPC11Uxx USB register names, mapped to this part
+    platform.mk            sources and the shared drivers pulled in
 chibios/test/
-    register-check.c   every SYSCON field the port uses
-    check-registers.sh compiles it against NXP's real header
+    register-check.c       every SYSCON and USB field the port uses
+    check-registers.sh     compiles it against NXP's real header
 ```
+
+Because of that destination these files are **Apache-2.0**, matching the rest of
+ChibiOS-Contrib's LPC tree, and not the repository's GPL-3. See `LICENSING.md`.
 
 ## Status
 
@@ -30,7 +34,7 @@ skeleton and a clock tree whose register names are verified against NXP's device
 | `hal_lld` clock tree | written, register names verified, **never executed** |
 | `lpc_registry.h` | written, interrupt vectors from NXP's `IRQn_Type` |
 | System timer (SysTick) | pulled in unchanged from the shared LLD |
-| USB device | not started; adapt the shared LLD, same NXP IP |
+| USB device | register names mapped, driver not yet wired in — see below |
 | PAL / GPIO | not started; adapt the shared LLD |
 | SPI | not started; needs writing, this part uses Flexcomm |
 | PLL | not implemented, and not needed yet — see below |
@@ -48,6 +52,45 @@ configuration options are already shaped for it: `LPC_MAINCLKSELB` accepts the P
 
 Flash wait states scale with the core clock and are set before it rises, since raising the
 clock past what the flash can serve fetches garbage.
+
+## USB: the shared driver nearly fits
+
+USB is the layer that decides whether this whole approach works, so it was surveyed before
+anything was built on it. The verdict is good. This part's USB0 is the **same NXP device IP** the
+shared `LLD/USB` driver already targets — an endpoint command/status list in SRAM, `DEVCMDSTAT`,
+five logical endpoints — and the driver touches exactly ten registers:
+
+`EPSKIP` · `DEVCMDSTAT` · `INTEN` · `INTSTAT` · `INTROUTING` · `INFO` · `EPLISTSTART` ·
+`EPINUSE` · `EPBUFCFG` · `DATABUFSTART`
+
+**Nine of the ten exist here under the same names.** Only the bit macros differ, because NXP's
+newer headers suffix them `_MASK` and name one interrupt bit per endpoint direction instead of
+providing a single shifted macro. `lpc546xx_usb_compat.h` maps them, so the shared driver stays
+unmodified and upstreamable and the whole family difference sits in one file. Every mapping in it
+is compile-checked against NXP's header by the register check, written exactly as the driver
+writes it.
+
+Two caveats, both recorded in that header:
+
+- **`INTROUTING` does not exist on this part.** It is the one thing the shared driver cannot
+  survive unchanged. On LPC11Uxx it routes USB interrupts between two handlers; LPC546xx has no
+  such register, and it is absent from NXP's `USB_Type` — a compile error, not a silent
+  misconfiguration. The driver writes it once, as `0`, in `usb_lld_reset()`, which is the no-op
+  case, so the fix upstream is a one-line guard:
+
+  ```c
+  #if LPC_USB_HAS_INTROUTING
+    LPC_USB->INTROUTING = 0;
+  #endif
+  ```
+
+  with the capability declared in each family's `lpc_registry.h`, which is where that port already
+  keeps its capability flags.
+
+- **`DSUP` is the one uncertain mapping.** The driver spells the suspend bit `DSUP`, which appears
+  in neither family's NXP naming; this part calls it `DSUS`. Both of the driver's uses read as
+  suspend, so `DSUS` is the reading taken, but it wants confirming against UM10912's `DEVCMDSTAT`
+  table before suspend and remote wakeup are trusted. Enumeration does not depend on it.
 
 ## The register check
 

@@ -42,16 +42,17 @@ EOF
 echo "compiling the register check"
 arm-none-eabi-gcc -c "$here/register-check.c" -o "$work/check.o" \
     -mcpu=cortex-m4 -mthumb -Wall -Wextra -Werror \
-    -I"$work" -I"$work/CMSIS" "-D$cpu"
+    -I"$work" -I"$work/CMSIS" -I"$here/../os/hal/ports/LPC/LPC546xx" "-D$cpu"
 
-echo "ok: every register field used by the LPC546xx hal_lld exists in $part.h"
+echo "ok: every register field used by the hal_lld and the USB compat header exists in $part.h"
 
 # Prove the check can fail, so a passing run means something.
 echo "verifying the check rejects a bad field name"
 sed 's/SYSCON_FROCTRL_HSPDCLK_MASK/SYSCON_FROCTRL_NO_SUCH_FIELD/' \
     "$here/register-check.c" > "$work/bad.c"
 if arm-none-eabi-gcc -c "$work/bad.c" -o /dev/null \
-       -mcpu=cortex-m4 -mthumb -I"$work" -I"$work/CMSIS" "-D$cpu" 2>/dev/null; then
+       -mcpu=cortex-m4 -mthumb -I"$work" -I"$work/CMSIS" \
+       -I"$here/../os/hal/ports/LPC/LPC546xx" "-D$cpu" 2>/dev/null; then
     echo "FAIL: a nonexistent field compiled, so this check proves nothing" >&2
     exit 1
 fi

@@ -15,9 +15,11 @@ PLATFORMINC := ${CHIBIOS}/os/hal/ports/common/ARMCMx \
 # included yet:
 #
 #   USB    the same NXP device IP as this part's USB0, with an endpoint
-#          command/status list and five logical endpoints, so it should adapt
-#          rather than be rewritten; it needs its register names mapped from
-#          LPC11Uxx CMSIS to this part's.
+#          command/status list and five logical endpoints. Its register names
+#          are already mapped to this part by lpc546xx_usb_compat.h; it is not
+#          included yet only because the driver needs its one INTROUTING write
+#          guarded, that register being absent here. See the comment at the
+#          foot of lpc546xx_usb_compat.h.
 #   GPIO   close, as both parts use IOCON plus byte and word pin registers.
 #   SPI    needs rewriting: this part uses Flexcomm, unrelated to the LPC11Uxx
 #          peripheral.
