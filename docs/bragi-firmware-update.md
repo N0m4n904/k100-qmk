@@ -159,11 +159,21 @@ Running it against this keyboard produces:
         NotAllowedError: Failed to write the report.
 ```
 
-The device opened successfully — the page got as far as issuing a command — and only the
-write failed, which is the same wall as hidraw. (`cmd: 2` and `propId: 3` are `GET` and
-`OPERATING_MODE`, incidentally corroborating those two values from an independent client. A
-separate `iCUE WebSocket connection failed` line in the same log is unrelated: the page probes
-for a local iCUE install as a fallback.)
+The device opened successfully — the page got as far as issuing commands — and only the
+writes failed, which is the same wall as hidraw. It retries five times per command, and every
+attempt fails, across `PING`, `GET(OPERATING_MODE)` and the firmware-version read:
+
+```
+{id: 2, cmd: 18, propId: 0, …}  NotAllowedError  -> command PING failed after all retries
+{id: 3, cmd: 2,  propId: 3, …}  NotAllowedError  -> command GET(OPERATING_MODE) failed
+```
+
+Usefully, the page labels its own commands, which corroborates three values of the command
+and property tables above from a client independent of this project: **`PING` is 18, `GET` is
+2, and `OPERATING_MODE` is 3.**
+
+A separate `iCUE WebSocket connection failed` line in the same log is unrelated: the page
+probes for a local iCUE install as a fallback.
 
 **So a Windows host or VM is the route for an official firmware update.**
 
