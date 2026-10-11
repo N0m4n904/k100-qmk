@@ -461,58 +461,67 @@ configurations or board revisions rather than two subsystems. An earlier note in
 guessed one of them was "the SPI pin config" from its proximity in flash to the SPI HAL; that
 guess was unfounded and is withdrawn.
 
-### The SPI pins: the P0_23-P0_28 hypothesis is disproved
+### The SPI pins: P0_23-P0_28 is the SPIFI bus, not the LED drivers
 
 An earlier version of this section proposed `P0_23`-`P0_28` as the LED driver bus, on the
 grounds that it is six consecutive pins on FUNC6 and the drivers need six signals, and that
 NXP's datasheet listed `FC3_RXD_SDA_MOSI` as an alternate function of `PIO0_24`.
 
-**That second claim was wrong, and it was the load-bearing one.** `PIO0_24`'s Flexcomm function
-is `FC0_RXD_SDA_MOSI`. No FC3 signal appears on any of those six pins at any FUNC value.
+**Those six pins are the SPIFI bus** — external quad-SPI flash. `CSN`, `IO(0)`, `IO(1)`, `CLK`,
+`IO(3)`, `IO(2)` on `P0_23` through `P0_28` respectively, all at **FUNC6**.
 
-The function lists below come from NXP's own MCUXpresso SDK examples, whose `pin_mux.c` files
-carry a `pin_signal:` string per pin enumerating its functions **in FUNC order**. That ordering
-is not assumed: the same files configure `PIO0_26` as `FC2_RXD_SDA_MOSI` with
-`IOCON_PIO_FUNC1`, and `FC2_RXD_SDA_MOSI` is the second entry in its list. Four such pairs agree.
+This is not inferred. NXP's own SDK SPIFI example for the LPCXpresso54628 configures those exact
+six pins, in that order, with `IOCON_PIO_FUNC6` — the same value, `0x106`, that this firmware
+writes. The coincidence of arity with the LED drivers' six signals is what made the old reading
+look strong, and a matching count is not evidence.
 
-| Pin | FUNC5 | FUNC6 | Full list |
-| --- | --- | --- | --- |
-| `PIO0_23` | `SPIFI_CSN` | `ADC0_11` | `MCLK/CTIMER1_MAT2/CTIMER3_MAT3/SCT0_OUT4/SPIFI_CSN/ADC0_11` |
-| `PIO0_24` | `SPIFI_IO(0)` | — | `FC0_RXD_SDA_MOSI/SD_D(0)/CTIMER2_CAP0/SCT0_GPI0/SPIFI_IO(0)` |
-| `PIO0_25` | `SPIFI_IO(1)` | — | `FC0_TXD_SCL_MISO/SD_D(1)/CTIMER2_CAP1/SCT0_GPI1/SPIFI_IO(1)` |
-| `PIO0_26` | `PDM0_CLK` | `SPIFI_CLK` | `FC2_RXD_SDA_MOSI/CLKOUT/CTIMER3_CAP2/SCT0_OUT5/PDM0_CLK/SPIFI_CLK/USB0_IDVALUE` |
-| `PIO0_27` | `SPIFI_IO(3)` | — | `FC2_TXD_SCL_MISO/CTIMER3_MAT2/SCT0_OUT6/PDM0_DATA/SPIFI_IO(3)` |
-| `PIO0_28` | `SPIFI_IO(2)` | `USB0_OVERCURRENTN` | `FC0_SCK/CTIMER2_CAP3/SCT0_OUT7/TRACEDATA(3)/SPIFI_IO(2)/USB0_OVERCURRENTN` |
+That the K100 carries an external serial flash is unsurprising: 190 LEDs of stored animation is
+more than is comfortable in 512 KB alongside the application.
 
-What those six pins are is the **SPIFI bus** — `CSN`, `IO0`, `IO1`, `CLK`, `IO3`, `IO2`, which is
-why they are six consecutive pins. The coincidence of count is what made the old hypothesis look
-strong.
+#### A trap in NXP's pin lists, recorded because it produced a wrong answer
 
-**An open inconsistency, recorded rather than resolved.** SPIFI is FUNC5 on five of these pins
-and FUNC6 only on `PIO0_26`, so **no single uniform IOCON value can configure SPIFI across the
-range** — and the pin enumeration above reports one value, `0x106`, for all six. Either the
-enumeration collapsed distinct values into one row, or the firmware parks these pins on a
-function that is not SPIFI at all. Re-deriving the writes for `P0_23`-`P0_28` individually would
-settle it. The writes are table-driven rather than literal `str [r, #imm]`, which is why this was
-not checked in passing.
+NXP's `pin_mux.c` files carry a `pin_signal:` string per pin, listing its functions. **The
+position in that list is not the FUNC number**, because undefined functions are omitted rather
+than held open. `SPIFI_CSN` is the sixth entry for `PIO0_23`, at index 5, and is FUNC6.
 
-### Where FC3 actually is
+An intermediate version of this section published a FUNC table built on the assumption that index
+equals FUNC. It was checked against NXP's code only at index 1, where it happens to hold, and the
+generalisation was wrong. **Use these lists to learn whether a signal exists on a pin, never to
+learn its FUNC number** — for that, find NXP code configuring the signal and read the
+`IOCON_PIO_FUNCn` it uses.
 
-FC3 signals found so far, all on **port 2 at FUNC2**:
+### Where the LED driver's SPI pins are: not in this image
 
-| Pin | FUNC2 |
-| --- | --- |
-| `PIO2_18` | `FC3_RXD_SDA_MOSI` |
-| `PIO2_19` | `FC3_TXD_SCL_MISO` |
-| `PIO2_20` | `FC3_RTS_SCL_SSEL1` |
-| `PIO2_21` | `FC3_CTS_SDA_SSEL0` |
+The pin enumeration has been reproduced independently and its coverage is now closed, which
+changes the conclusion.
 
-`FC3_SCK` and the remaining chip selects are not yet located; the sample covers 35 pins of the
-part's ~160, so FC3 may appear elsewhere too.
+Exactly three literals in the image hold the IOCON base `0x40001000`, at `0x11b34`, `0x124a4` and
+`0x17284`, and the base is never constructed with `movw`/`movt` instead. Every store in all three
+functions goes through `r3` at a literal offset between 0 and 252 — IOCON words 0 to 63, which is
+**ports 0 and 1 and nothing else.** Port 2 begins at word 64 and is never written.
 
-This points at why the bus was never found: the IOCON enumeration covered **ports 0 and 1**, and
-FC3 lives on port 2. The next step is to look for IOCON writes at word indices 64-95, which is
-`port * 32 + pin` for port 2, in the three functions that load the IOCON base.
+Across the whole firmware, the only pins given a non-zero FUNC are:
+
+| Pins | FUNC | What |
+| --- | --- | --- |
+| `P0_0`, `P0_1` | 2 | in one initialiser only |
+| `P0_23`-`P0_28` | 6 | the SPIFI bus, above |
+
+**So the application configures no Flexcomm 3 pins at all**, while its SPI HAL demonstrably
+drives FLEXCOMM3 at `0x40089000`. The pins must therefore be muxed by something else, and the
+only candidate is the **bootloader**, which is a separate flash region that Corsair does not
+publish and which is absent from the `Heracles_Application_Firmware` images. It would have reason
+to: an updater that cannot light the keyboard cannot show progress.
+
+FC3 signals do exist elsewhere — `PIO2_18` to `PIO2_21` carry `FC3_RXD_SDA_MOSI`,
+`FC3_TXD_SCL_MISO`, `FC3_RTS_SCL_SSEL1` and `FC3_CTS_SDA_SSEL0` — but port 2 is never configured
+here, so that is where FC3 *can* go, not where it *is*.
+
+**This question is closed to static analysis of what is obtainable.** It is wide open to the
+obvious alternative: once custom firmware runs on the part, reading `IOCON->PIO[port][pin]` back
+reports whatever configuration the bootloader left, for all 160 pins, in a few lines of code. That
+is the same argument `ARCHITECTURE.md` makes for the encoder pins — past a first flash, GPIO is a
+better instrument than disassembly — and it now applies here too.
 
 ### The encoder pins: a hypothesis, not a finding
 
@@ -545,9 +554,9 @@ pull-up/pull-down configuration alone.
   *logical* 7x22 matrix, which was the right call while the electrical one was unknown. It can
   now be replaced by the real 8x18 mapping, which also removes the need for the custom matrix
   driver to translate between the two.
-- ~~RGB driver bus and pins.~~ **The bus is answered** and the old pin hypothesis is
-  **disproved**; FC3 is on port 2, which the IOCON enumeration did not cover — see below. The
-  SPI *pin* assignments are not yet read out of IOCON, though Flexcomm 3's options are fixed by the
+- ~~RGB driver bus and pins.~~ **The bus is answered**; the pins are **not in this image** and
+  are most likely set by the bootloader, which is not published — see below. Reading IOCON back
+  from custom firmware answers it. Flexcomm 3's options are fixed by the
   LPC546xx datasheet once the instance is known.
 - **Encoder pins — attempted, not found.** Much harder than the matrix, because nothing
   asserts on an encoder table, so there is no string naming one. What was established:
