@@ -181,6 +181,39 @@ actually block something.
    cheapest item and the last needed. 24 MS/s is ample: a 4000 Hz full-matrix scan implies
    per-strobe activity in the tens of kHz, far below that ceiling.
 
+## What gates what, and why the pin work is not urgent
+
+Nothing pin-related gates a first flash. That needs a working transport (done), the image
+container format (done), the `apply-extended` upload sequence (commands known, framing
+unverified) and — the real blocker — **something to flash**, which means the ChibiOS port.
+
+Each pin group is needed at a different point, and only the first was ever early:
+
+| Pins | Needed when | Status |
+| --- | --- | --- |
+| matrix strobes and senses | keys must work | **done** |
+| SPI signal assignment | the RGB driver is written | open |
+| encoder pins | encoders are wired up, last | open |
+
+**Some of it gets easier after the port exists.** Once our own code runs, GPIO is a better
+instrument than disassembly: finding the encoder pins empirically — read a port, turn the
+wheel, see which bits change — takes minutes, where static analysis could not even locate the
+read path. Confirming the SPI signal order is likewise quicker with a logic analyser or a
+loopback test than with the IOCON table. Deferring is deliberate, not a backlog.
+
+So the order is:
+
+1. **ChibiOS LPC546xx port** on the devboard: clocks, then USB enumerating
+2. **Prove the flash and recover round trip with a verified official image** — rule 2 of
+   `docs/recovery.md` — before any custom one. This is where having the keyboard's firmware
+   upgraded first earns its keep, so that the image restored matches what is installed.
+3. First custom firmware: minimal QMK that enumerates, no LEDs, no encoders
+4. Matrix driver, whose pins are already known
+5. RGB driver, which needs the SPI signal assignment
+6. Encoders, whose pins are findable empirically by then
+
+Steps 1 and 2 are the critical path and neither touches the open pin questions.
+
 ## Phase gates
 
 | Gate | Proves |
