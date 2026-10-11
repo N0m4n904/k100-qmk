@@ -18,6 +18,24 @@ services.udev.extraRules = builtins.readFile ./udev/99-corsair-k100.rules;
 The rules assume a `users` group, matching the `TAG+="uaccess"` and `TAG+="udev-acl"`
 convention; adjust `GROUP=` if your system uses something else.
 
+## Verified against the keyboard
+
+With these rules in place, `k100-bragi info` reads the device over usbdevfs:
+
+```
+K100 RGB (OPX optical)
+  product id        0x1b7c
+  reported pid      0x1b7c
+  firmware          0.32.6
+  bootloader        0.10.45
+  physical layout   Iso
+  operating mode    SelfOperated
+```
+
+**Replug the keyboard first.** The vendor command endpoint can be left unresponsive by a failed
+HID client, and every transfer then times out even though opening and claiming succeed. A power
+cycle clears it; see `docs/bragi-firmware-update.md`.
+
 ## The `usb` rule is the one that matters
 
 `k100-bragi` talks to `/dev/bus/usb/...` through usbdevfs, not to `/dev/hidraw*`. That is not a

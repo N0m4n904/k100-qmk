@@ -144,6 +144,57 @@ healthy the whole time; only the vendor command endpoint was unresponsive to usb
 left it in that state is unknown — it was already failing before any interface of ours was
 detached.
 
+#### Reproduced, and with a probable cause
+
+The wedge recurred, and the remedy held, so neither is a one-off.
+
+`k100-bragi info` opened the keyboard, detached all three interfaces from `usbhid` and claimed
+them without error, and then timed out on **every** transfer on endpoint `0x01` with `ETIMEDOUT`:
+
+```
+  reported pid      unavailable (sending Get)
+  firmware          unavailable (sending Get: transfer on endpoint 0x01: Connection timed out)
+```
+
+A single unplug and replug restored it completely, with no code change:
+
+```
+K100 RGB (OPX optical)
+  product id        0x1b7c
+  header layout     TwoByte
+  reported pid      0x1b7c
+  firmware          0.32.6
+  bootloader        0.10.45
+  physical layout   Iso
+  operating mode    SelfOperated
+```
+
+**What preceded the wedge this time is known**, which was not true before: Corsair's web updater
+had just been run against the keyboard. It retries five times per command and every attempt fails,
+so it fires a stream of failed writes at the same endpoint. That is a plausible way to leave the
+vendor endpoint unresponsive, and it fits the earlier observation that the endpoint was already
+failing before any interface of ours was touched.
+
+Two things follow. **Replugging is a precondition of any Bragi session, not a troubleshooting
+step** — see the round trip in `docs/recovery.md`. And a failed HID client is enough to cause it,
+so do not run anything else against the keyboard first.
+
+#### What this run confirms
+
+Besides the transport, the output above settles several things that were previously taken from
+other people's records or from static reading:
+
+| Reported | Previously | Now |
+| --- | --- | --- |
+| `reported pid 0x1b7c` | the two-byte header layout was argued from where `USB_PID` should land | the value read back matches the descriptor, so the layout is right |
+| `firmware 0.32.6` | ckb-next's record of a real K100 | observed on this keyboard |
+| `bootloader 0.10.45` | `BOOTLOADER_VERSION` argued to be a property distinct from `FIRMWARE_VERSION` | both read back, different values, on the same device |
+| `physical layout Iso` | the ISO mask was identified by its marker keys | the keyboard says ISO itself |
+| `operating mode SelfOperated` | — | `GET(OPERATING_MODE)` works, which is the exact command the web updater could not issue |
+
+The bootloader version is the significant one: layer 1 of `docs/recovery.md` rests on the
+bootloader being a separate, independently versioned region, and that is no longer an inference.
+
 **The power cycle did not fix hidraw.** Retested afterwards, writes to the Bragi interface
 still fail with `ETIMEDOUT` at every report length, exactly as before. So the hidraw result
 below is **not** a transient fault state: it is a persistent property of this keyboard,

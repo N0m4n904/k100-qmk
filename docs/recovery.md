@@ -14,7 +14,9 @@ The bootloader is a **separate, independently versioned flash region**, not part
 application image:
 
 - Bragi exposes `BOOTLOADER_VERSION` as a property distinct from `FIRMWARE_VERSION`, and
-  ckb-next recorded a real K100 reporting both (`fw 0.32.6, bld 0.10.45`).
+  ckb-next recorded a real K100 reporting both (`fw 0.32.6, bld 0.10.45`). **This project has
+  now read both off its own keyboard** and got the same pair of values, so the separate
+  bootloader region is observed rather than inferred.
 - The image-type enum lists `FIRMWARE = 1` and `BOOTLOADER = 2` as separate types.
 
 **The official updater is purpose-built to rescue a device sitting in bootloader mode.** On
@@ -141,11 +143,19 @@ ISP-only operation.
 Prove the round trip with **official images only**, while the keyboard is still healthy and
 before a single byte of custom firmware is written:
 
+0. **Replug the keyboard, and run nothing else against it first.** The vendor command endpoint
+   can be left unresponsive by a failed HID client -- Corsair's web updater is one, and it
+   wedged this keyboard reproducibly. A single power cycle clears it. This is a precondition,
+   not a troubleshooting step: see `docs/bragi-firmware-update.md`.
 1. Enter bootloader: `SET OPERATING_MODE 3`.
 2. Flash the *older* official image, 0.30.257.
 3. Confirm it boots and reports the older version.
 4. Flash 0.35.288 back and confirm again.
 5. Exit via the documented path, `BOOTLOADER → SELF_OPERATED → HOST_CONTROLLED`.
+
+Steps 0 and 1 are reachable today: `k100-bragi info` reads this keyboard's firmware, bootloader
+version, layout and operating mode over usbdevfs. Steps 2 and 4 are not, flashing being
+unimplemented on purpose.
 
 If that loop works, recovery is demonstrated empirically rather than argued from
 documentation, and both images are already verified authentic against Corsair's published
