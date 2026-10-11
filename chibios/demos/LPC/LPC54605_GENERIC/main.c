@@ -1,0 +1,80 @@
+/*
+    ChibiOS - Copyright (C) 2026 k100-qmk contributors
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+*/
+
+/*
+ * The smallest program that exercises every layer of the LPC546xx port.
+ *
+ * Its purpose is to be *built*, not to do anything useful: it is what turns
+ * "the register names are right" into "this links as a ChibiOS HAL". So it
+ * deliberately touches each driver at least once -- the clock tree through
+ * halInit(), the kernel and SysTick through chSysInit() and chThdSleep(), PAL
+ * through a pad it drives and a pad it reads, and the USB device driver through
+ * usbStart(), which is what pulls in the endpoint allocator, the interrupt
+ * handler and the family's clocking and power hooks.
+ *
+ * Nothing here has been run on hardware.
+ */
+
+#include "ch.h"
+#include "hal.h"
+
+/*
+ * An arbitrary pair of pads, chosen only because every LPC54605 package has
+ * them. There is no board, so there is nothing for them to be connected to.
+ */
+#define LINE_OUT        LPC_LINE(1U, 18U)
+#define LINE_IN         LPC_LINE(1U, 9U)
+
+/*
+ * The minimum USB configuration the HAL will accept. The callbacks do nothing
+ * and the descriptor hook returns nothing, so this device would never finish
+ * enumerating -- descriptors are a keyboard's business and belong with the
+ * keyboard. What matters here is that usbStart() reaches the driver.
+ */
+static const USBDescriptor *get_descriptor(USBDriver *usbp,
+                                           uint8_t dtype,
+                                           uint8_t dindex,
+                                           uint16_t lang) {
+  (void)usbp;
+  (void)dtype;
+  (void)dindex;
+  (void)lang;
+
+  return NULL;
+}
+
+static const USBConfig usbcfg = {
+  .event_cb     = NULL,
+  .get_descriptor_cb = get_descriptor,
+  .requests_hook_cb = NULL,
+  .sof_cb       = NULL
+};
+
+int main(void) {
+
+  halInit();
+  chSysInit();
+
+  palSetLineMode(LINE_OUT, PAL_MODE_OUTPUT_PUSHPULL);
+  palSetLineMode(LINE_IN, PAL_MODE_INPUT_PULLUP);
+
+  usbStart(&USBD1, &usbcfg);
+
+  while (true) {
+    palToggleLine(LINE_OUT);
+    chThdSleepMilliseconds(palReadLine(LINE_IN) == PAL_HIGH ? 500 : 100);
+  }
+}

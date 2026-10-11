@@ -8,9 +8,11 @@ contributed back to.
 A per-file SPDX header takes precedence over a repository-wide `LICENSE`, so the exceptions below
 are expressed as headers in the files themselves.
 
-| Path | License | Why not GPL-3 |
+| Path | License | Why |
 | --- | --- | --- |
-| `chibios/**` | Apache-2.0 | Destined for ChibiOS-Contrib, which licenses its LPC tree Apache-2.0 |
+| `chibios/os/hal/**`, `chibios/demos/**` | Apache-2.0 | Destined for ChibiOS-Contrib, whose LPC HAL tree is Apache-2.0 |
+| `chibios/os/common/startup/**` | GPL-3.0 and MIT, per file | Same destination, different neighbours — see below |
+| `chibios/patches/**` | — | Diffs against ChibiOS-Contrib; each hunk carries the licence of the file it changes |
 | `qmk/**` | GPL-2.0-or-later | Destined for QMK, which is GPL-2.0-or-later |
 | `tools/extract-ckb-keymap/` | GPL-2.0-or-later | Links against ckb-next, which is GPL-2 with no "or later" grant |
 | everything else | GPL-3.0 | original work with no upstream constraint |
@@ -39,12 +41,19 @@ This only constrains that one directory. `tools/generate-qmk-layout.py` reads ck
 derivative work.
 
 **ChibiOS-Contrib** has **no repository-level licence file at all** — licensing is entirely
-per-file, and its whole LPC tree, including every shared driver under `os/hal/ports/LPC/LLD/`
-that this port builds on, is Apache-2.0. Apache-2.0 flows one way into GPL-3; GPL-3 does not flow
-back. So a GPL-3 `LPC546xx` family directory could never be upstreamed, and upstreaming is not
-optional here: QMK requires new ARM families to land in ChibiOS or ChibiOS-Contrib rather than in
-QMK itself, which is the whole premise of `chibios/`. Those files therefore keep the Apache-2.0
-headers of the LPC11Uxx port they are modelled on.
+per-file, and it is genuinely mixed. Every shared driver under `os/hal/ports/LPC/LLD/` that this
+port builds on is Apache-2.0, as is the LPC11Uxx family directory it is modelled on. Apache-2.0
+flows one way into GPL-3; GPL-3 does not flow back. So a GPL-3 `LPC546xx` family directory could
+never be upstreamed, and upstreaming is not optional here: QMK requires new ARM families to land
+in ChibiOS or ChibiOS-Contrib rather than in QMK itself, which is the whole premise of `chibios/`.
+Those files therefore keep their neighbours' Apache-2.0 headers.
+
+The startup files are the exception that proves the rule about reading per-file headers rather
+than assuming a project has one licence. `os/common/startup/ARMCMx/devices/LPC11Uxx/cmparams.h`
+is **GPL-3-or-later**, by the same author who licensed the HAL drivers Apache-2.0, and the LPC
+linker scripts beside it are **MIT**. So `chibios/os/common/startup/**` follows its own
+neighbours: GPL-3 for `cmparams.h`, MIT for the linker script. Both are acceptable to
+ChibiOS-Contrib, since that is what is already there.
 
 ## Firmware images
 

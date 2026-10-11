@@ -32,6 +32,22 @@
 
 #include "lpc_registry.h"
 
+/*
+ * The shared USB driver's header defines macros that expand inside ChibiOS's
+ * own hal_usb.c -- usb_lld_wakeup_host() among them -- so the LPC11Uxx register
+ * names they use have to be mapped wherever hal.h is included, not just in the
+ * driver's own translation unit. This is the only place that is true of, since
+ * hal.h includes this file before any driver header.
+ *
+ * Guarded, because the compat header has to #undef NXP's function-like field
+ * setters to reuse their names as masks, and a build without USB has no reason
+ * to lose them.
+ */
+#if defined(HAL_USE_USB) && (HAL_USE_USB == TRUE)
+#include "lpc546xx_usb_compat.h"
+#include "lpc546xx_usb.h"
+#endif
+
 /*===========================================================================*/
 /* Driver constants.                                                         */
 /*===========================================================================*/
@@ -170,6 +186,16 @@
 #define LPC_SYSCLK                  (LPC_MAINCLK / (LPC_AHBCLKDIV + 1U))
 
 /**
+ * @brief   Core clock, under the name the shared LPC drivers expect.
+ * @details @p LLD/STM reloads SysTick from @p LPC_SYS_FREQUENCY and fails to
+ *          build without it. That name is the shared pool's contract, so it is
+ *          satisfied here rather than by patching the driver; @p LPC_SYSCLK is
+ *          kept as the primary spelling because it is what ChibiOS ports call
+ *          this clock elsewhere.
+ */
+#define LPC_SYS_FREQUENCY           LPC_SYSCLK
+
+/**
  * @brief   USB0 device clock frequency.
  */
 #if LPC_USB0CLKSEL == LPC_USB0CLKSEL_FROHF
@@ -216,6 +242,36 @@
 /*===========================================================================*/
 /* Driver macros.                                                            */
 /*===========================================================================*/
+
+/**
+ * @name    Clock points
+ * @details @p halclkpt_t is a plain unsigned whose meanings each port chooses.
+ *          The sibling family, and most ChibiOS ports without dynamic clock
+ *          management, answer every query with zero; these frequencies are all
+ *          known at compile time, so there is no reason to.
+ * @{
+ */
+#define LPC_CLKPT_MAINCLK           0U  /**< @brief Main clock, pre-divider. */
+#define LPC_CLKPT_SYSCLK            1U  /**< @brief Core and AHB clock.      */
+#define LPC_CLKPT_FROHF             2U  /**< @brief FRO high-frequency out.  */
+#define LPC_CLKPT_USB0              3U  /**< @brief USB0 device clock.       */
+/** @} */
+
+/**
+ * @brief   Returns the frequency of a clock point in Hz.
+ * @note    Static implementation: the clock tree is fixed at compile time, so
+ *          this folds to a constant.
+ *
+ * @param[in] clkpt     clock point to be returned
+ * @return              The clock point frequency in Hz, or zero if unknown.
+ *
+ * @notapi
+ */
+#define hal_lld_get_clock_point(clkpt)                                      \
+  (((clkpt) == LPC_CLKPT_MAINCLK) ? (halfreq_t)LPC_MAINCLK :                \
+   ((clkpt) == LPC_CLKPT_SYSCLK)  ? (halfreq_t)LPC_SYSCLK  :                \
+   ((clkpt) == LPC_CLKPT_FROHF)   ? (halfreq_t)LPC_FROHFCLK :               \
+   ((clkpt) == LPC_CLKPT_USB0)    ? (halfreq_t)LPC_USB0CLK : (halfreq_t)0)
 
 /*===========================================================================*/
 /* External declarations.                                                    */

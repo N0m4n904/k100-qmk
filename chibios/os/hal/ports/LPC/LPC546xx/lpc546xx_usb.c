@@ -43,11 +43,11 @@
  *            array guarantees it; this part's SRAM is nowhere near that large.
  *          - USB0 is an AHB master reaching memory through the bus matrix, and
  *            **not every RAM is reachable**. Ordinary static data lands in the
- *            SRAM at @p 0x20000000, which is; @p SRAMX at @p 0x00000000 is
- *            tightly coupled to the core and is not. Keeping this as plain
- *            static data rather than placing it with a linker section is what
- *            keeps it on the right side of that, so a board that moves @p .bss
- *            into @p SRAMX must move this back.
+ *            160 KB SRAM at @p 0x20000000, which is; the 32 KB @p SRAMX at
+ *            @p 0x04000000 is tightly coupled to the core and is not. Keeping
+ *            this as plain static data rather than placing it with a linker
+ *            section is what keeps it on the right side of that, so a board
+ *            that moves @p .bss into @p SRAMX must move this back.
  *
  *          LPC11Uxx needs none of this: its USB controller has a dedicated
  *          2 KB SRAM at a fixed address and can reach nothing else, which is

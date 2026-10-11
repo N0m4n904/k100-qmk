@@ -19,34 +19,47 @@ chibios/os/hal/ports/LPC/LPC546xx/
     lpc546xx_usb.h         what the shared USB driver asks of this family
     lpc546xx_usb_compat.h  LPC11Uxx USB register names, mapped to this part
     platform.mk            sources and the shared drivers pulled in
+chibios/os/common/startup/ARMCMx/
+    devices/LPC546xx/cmparams.h          core model, vector count, FPU and MPU
+    compilers/GCC/ld/LPC54605J512.ld     memory map and the boot ROM checksum
+    compilers/GCC/mk/startup_lpc546xx.mk Cortex-M4F startup and the NXP headers
+chibios/demos/LPC/LPC54605_GENERIC/
+                           a program whose only purpose is to be built
 chibios/patches/
     0001-usb-family-seam.patch   the change the shared USB driver needs
 chibios/test/
     register-check.c       every SYSCON, IOCON, GPIO and USB field the port uses
     pal-check.c            the exact IOCON word each pad mode produces
     check-registers.sh     compiles both against NXP's real header
+    build-demo.sh          fetches upstream, patches, builds, checks the image
 ```
 
-Because of that destination these files are **Apache-2.0**, matching the rest of
-ChibiOS-Contrib's LPC tree, and not the repository's GPL-3. See `LICENSING.md`.
+Because of that destination these files carry the licence their upstream neighbours do rather
+than the repository's GPL-3: **Apache-2.0** for the HAL port, and **GPL-3** for the startup files,
+whose siblings under `os/common/startup` are GPL-3 where the LPC HAL tree is Apache-2.0. See
+`LICENSING.md`.
 
 ## Status
 
-**Clocks and GPIO are written; nothing has run on hardware.** There is no devboard yet, so none
-of this has been executed — see the phase gates in `ARCHITECTURE.md`. What exists is the family
-skeleton, a clock tree, and a PAL driver, all of them checked against NXP's device header and
-none of them ever run.
+**It builds and links as a ChibiOS HAL. Nothing has run on hardware.** There is no devboard yet,
+so none of it has been executed — see the phase gates in `ARCHITECTURE.md`. Everything below is
+checked three ways: register names against NXP's device header, pad encodings against UM10912, and
+the whole port through a real `arm-none-eabi-gcc` build of a demo that touches every layer.
 
 | Piece | State |
 | --- | --- |
-| `hal_lld` clock tree | written, register names verified, **never executed** |
-| `lpc_registry.h` | written, interrupt vectors from NXP's `IRQn_Type` |
-| PAL / GPIO | written, pad encoding verified against UM10912, **never executed** |
+| `hal_lld` clock tree | builds, register names verified, **never executed** |
+| `lpc_registry.h` | interrupt vectors from NXP's `IRQn_Type` |
+| PAL / GPIO | builds, pad encoding verified against UM10912, **never executed** |
 | System timer (SysTick) | pulled in unchanged from the shared LLD |
-| USB device | wired in, needs an unbuilt patch to the shared driver — see below |
+| USB device | builds, needs the family-seam patch to the shared driver — see below |
+| Startup, vectors, linker script | builds, boot ROM checksum verified in the linked image |
 | PAL events / PINT | not started; `PAL_USE_WAIT` and `PAL_USE_CALLBACKS` must be `FALSE` |
 | SPI | not started; needs writing, this part uses Flexcomm |
 | PLL | not implemented, and not needed yet — see below |
+
+"Builds" is worth more than it sounds: four real defects came out of getting there that no amount
+of reading had found, and they are listed under **Building it** below.
 
 ## No PLL, deliberately
 
@@ -164,8 +177,9 @@ Three details worth knowing:
   away with a constant. USB0 here is a bus master with no RAM of its own, so the array must be
   256-byte aligned for `EPLISTSTART`, must sit with its buffers inside one 4 MB region because
   `DATABUFSTART` supplies only the high address bits, and must be in memory the controller can
-  actually reach — the SRAM at `0x20000000`, not the core-coupled `SRAMX` at `0`. Leaving it as
-  plain static data is what keeps it on the right side of that last point.
+  actually reach — the 160 KB SRAM at `0x20000000`, not the 32 KB core-coupled `SRAMX` at
+  `0x04000000`. Leaving it as plain static data is what keeps it on the right side of that last
+  point.
 
 - **`INTROUTING` does not exist on this part** and is absent from NXP's `USB_Type`, so a reference
   to it is a compile error rather than a silent misconfiguration. It is written once, as `0`, which
@@ -207,20 +221,67 @@ As a side effect the checks confirm the struct shapes this project derived from 
 stock firmware — `IOCON->PIO[port][pin]`, `GPIO->DIR[port]`, `GPIO->B[port][pin]` — against NXP's
 definitions. Those underpin the pin mapping in `docs/pin-mapping.md`.
 
-## Building for real
+## Building it
 
-Not yet possible here, and it needs four things this repository does not carry:
+**The port builds and links.** One command does it:
 
-1. a ChibiOS checkout and a ChibiOS-Contrib checkout, with these files placed in the latter;
-2. NXP's MCUXpresso SDK `devices/LPC54605` directory on the include path, for
-   `fsl_device_registers.h` and the startup and linker files;
-3. **two** part macros on the command line, which is easy to get half right. NXP's
-   `fsl_device_registers.h` selects its header from `CPU_LPC54605J512ET100`, while
-   `lpc_registry.h` detects the sub-family from a bare `LPC54605` that nothing in NXP's headers
-   defines. Passing only the first fails with `unknown/unsupported LPC546xx microcontroller`;
-4. a board definition, which for the first milestone should be an **LPCXpresso54628
-   (OM13098)** rather than the keyboard — it has working SWD and is effectively unbrickable.
+```sh
+nix develop .#firmware
+chibios/test/build-demo.sh            # or: build-demo.sh ~/somewhere to keep the tree
+```
 
-Its MCU is the LPC54628 at 220 MHz against the keyboard's LPC54605 at 180 MHz. Same family, so
-the port applies; keep clock configuration per-part rather than hardcoded, which is why the
-frequency is derived from `LPC_FROHF_SEL` and the dividers instead of being a constant.
+This repository carries only its own files. ChibiOS, ChibiOS-Contrib and NXP's device headers
+belong to other people, so vendoring them would mean redistributing them and pinning them to
+whatever they were on the day they were copied. The script fetches them instead, applies the USB
+patch, drops this port into place and builds — which is also why the build instructions cannot rot
+into something that no longer works, because **they are the thing that runs**. Downloads are
+cached, so a second run is quick.
+
+What it produces is `chibios/demos/LPC/LPC54605_GENERIC`, a program whose only purpose is to be
+built: it touches the clock tree through `halInit()`, the kernel and SysTick through `chSysInit()`
+and `chThdSleep()`, PAL through a pad it drives and a pad it reads, and the USB device driver
+through `usbStart()`, which pulls in the endpoint allocator, the interrupt handler and the
+family's clocking and power hooks. About 6 KB of flash. **It has never been run.**
+
+Three properties of the linked image are then checked, because each is decided by the linker
+rather than by any source file, and each fails *silently* on hardware:
+
+```
+vector checksum          ok   first 8 vectors sum to 0x00000000
+usb endpoint memory      ok   0x20000c00, 2048 bytes, 256-byte aligned, single 4MB window, in reachable SRAM
+```
+
+The first is the boot ROM's image checksum: it sums the first eight vectors and refuses to start
+an image unless the result is zero, with no output of any kind to say why. The second is the three
+constraints on endpoint memory described above. Unlike the register checks, this one is not
+self-verifying — but the checksum parse at least refuses to pass on an empty parse, since the sum
+of nothing is also zero.
+
+### What the build needed that was not obvious
+
+Every one of these was found by compiling, not by reading:
+
+- **The part macro has to be defined twice, on the command line.** NXP's
+  `fsl_device_registers.h` selects its header from `CPU_LPC54605J512ET100`; `lpc_registry.h`
+  detects the sub-family from a bare `LPC54605` that nothing in NXP's headers defines. Neither can
+  live in `board.h`, however natural that looks, because `cmparams.h` is reached from `crt1.c` and
+  from `vectors_lpc.S`, where no board header is in scope. `board.h` now `#error`s if they are
+  missing, so the failure is legible rather than `"No valid CPU defined!"`.
+- **The USB compat header has to be included from `hal_lld.h`.** The shared USB driver's header
+  defines macros that expand inside ChibiOS's own `hal_usb.c` — `usb_lld_wakeup_host()` among them
+  — so the mapped register names must be in scope wherever `hal.h` is, not just in the driver's
+  own translation unit. The register check could not have caught this: it includes the compat
+  header directly, which is exactly what the build did not do.
+- **`LLD/STM` requires `LPC_SYS_FREQUENCY`.** The shared SysTick driver reloads from that name and
+  will not build without it. It is the shared pool's contract, so `hal_lld.h` satisfies it rather
+  than the driver being patched.
+- **ChibiOS 21.11 requires `hal_lld_get_clock_point`.** Most ports answer `0U`; these frequencies
+  are all known at compile time, so this one returns them.
+
+### Running it, eventually
+
+The first milestone should be an **LPCXpresso54628 (OM13098)** rather than the keyboard — it has
+working SWD and is effectively unbrickable. Its MCU is the LPC54628 at 220 MHz against the
+keyboard's LPC54605 at 180 MHz. Same family, so the port applies; keep clock configuration
+per-part rather than hardcoded, which is why the frequency is derived from `LPC_FROHF_SEL` and the
+dividers instead of being a constant.
