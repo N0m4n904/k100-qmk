@@ -77,6 +77,13 @@
 #define LPC_HAS_GPIO4               TRUE
 #define LPC_HAS_GPIO5               TRUE
 
+/* Summed rather than stated, so the flags above stay the only place a port is
+   declared present. Valid because the ports are numbered contiguously from
+   zero on every part in the family. */
+#define LPC_GPIO_PORTS              (LPC_HAS_GPIO0 + LPC_HAS_GPIO1 +        \
+                                     LPC_HAS_GPIO2 + LPC_HAS_GPIO3 +        \
+                                     LPC_HAS_GPIO4 + LPC_HAS_GPIO5)
+
 #endif /* defined(LPC546xx) */
 
 /** @} */

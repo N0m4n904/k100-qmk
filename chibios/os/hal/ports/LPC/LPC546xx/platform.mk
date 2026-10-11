@@ -1,6 +1,7 @@
 # List of all the LPC546xx platform files.
 PLATFORMSRC := ${CHIBIOS}/os/hal/ports/common/ARMCMx/nvic.c \
-               ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/hal_lld.c
+               ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/hal_lld.c \
+               ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/hal_pal_lld.c
 
 # Required include directories
 PLATFORMINC := ${CHIBIOS}/os/hal/ports/common/ARMCMx \
@@ -20,7 +21,9 @@ PLATFORMINC := ${CHIBIOS}/os/hal/ports/common/ARMCMx \
 #          included yet only because the driver needs its one INTROUTING write
 #          guarded, that register being absent here. See the comment at the
 #          foot of lpc546xx_usb_compat.h.
-#   GPIO   close, as both parts use IOCON plus byte and word pin registers.
+#   GPIO   not used: the GPIO registers match, but an iomode_t is mostly an
+#          IOCON word and this part places every IOCON field at a different
+#          bit, so PAL is family local here. See hal_pal_lld.h.
 #   SPI    needs rewriting: this part uses Flexcomm, unrelated to the LPC11Uxx
 #          peripheral.
 #   UART   likewise Flexcomm, and not needed by QMK; use SWO for debug output.

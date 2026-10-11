@@ -111,9 +111,10 @@ void lpc_clock_init(void) {
   lpc_set_divider(&SYSCON->USB0CLKDIV, SYSCON_USB0CLKDIV_DIV(LPC_USB0CLKDIV));
 #endif
 
-  /* IOCON must be clocked before any pin can be configured, and it is easy to
-     forget because the registers read back plausibly without it. */
-  SYSCON->AHBCLKCTRLSET[0] = SYSCON_AHBCLKCTRL_IOCON_MASK;
+  /* The IOCON and GPIO clock gates belong to the PAL driver and are enabled in
+     _pal_lld_init(), which halInit() reaches immediately after this. Gating a
+     peripheral's clock is that peripheral's driver's business, and splitting it
+     that way keeps this function to the clock tree itself. */
 }
 
 /**

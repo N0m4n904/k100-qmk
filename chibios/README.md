@@ -12,12 +12,15 @@ ChibiOS-Contrib checkout and later submitted upstream:
 chibios/os/hal/ports/LPC/LPC546xx/
     hal_lld.c              clock tree
     hal_lld.h              clock configuration, derived frequencies, flash wait states
+    hal_pal_lld.c          pad and direction programming
+    hal_pal_lld.h          pad mode encoding, port and line identifiers, accessors
     lpc_registry.h         sub-family detection, capabilities, interrupt vectors
     lpc546xx_usb_compat.h  LPC11Uxx USB register names, mapped to this part
     platform.mk            sources and the shared drivers pulled in
 chibios/test/
-    register-check.c       every SYSCON and USB field the port uses
-    check-registers.sh     compiles it against NXP's real header
+    register-check.c       every SYSCON, IOCON, GPIO and USB field the port uses
+    pal-check.c            the exact IOCON word each pad mode produces
+    check-registers.sh     compiles both against NXP's real header
 ```
 
 Because of that destination these files are **Apache-2.0**, matching the rest of
@@ -25,17 +28,19 @@ ChibiOS-Contrib's LPC tree, and not the repository's GPL-3. See `LICENSING.md`.
 
 ## Status
 
-**Clocks are written; nothing has run on hardware.** There is no devboard yet, so none of this
-has been executed — see the phase gates in `ARCHITECTURE.md`. What exists is the family
-skeleton and a clock tree whose register names are verified against NXP's device header.
+**Clocks and GPIO are written; nothing has run on hardware.** There is no devboard yet, so none
+of this has been executed — see the phase gates in `ARCHITECTURE.md`. What exists is the family
+skeleton, a clock tree, and a PAL driver, all of them checked against NXP's device header and
+none of them ever run.
 
 | Piece | State |
 | --- | --- |
 | `hal_lld` clock tree | written, register names verified, **never executed** |
 | `lpc_registry.h` | written, interrupt vectors from NXP's `IRQn_Type` |
+| PAL / GPIO | written, pad encoding verified against UM10912, **never executed** |
 | System timer (SysTick) | pulled in unchanged from the shared LLD |
 | USB device | register names mapped, driver not yet wired in — see below |
-| PAL / GPIO | not started; adapt the shared LLD |
+| PAL events / PINT | not started; `PAL_USE_WAIT` and `PAL_USE_CALLBACKS` must be `FALSE` |
 | SPI | not started; needs writing, this part uses Flexcomm |
 | PLL | not implemented, and not needed yet — see below |
 
@@ -52,6 +57,58 @@ configuration options are already shaped for it: `LPC_MAINCLKSELB` accepts the P
 
 Flash wait states scale with the core clock and are set before it rises, since raising the
 clock past what the flash can serve fetches garbage.
+
+## PAL: family local, unlike USB
+
+USB reuses the shared `LLD/USB` driver through a name-mapping header. PAL does not reuse
+`LLD/GPIO`, and the reason is worth recording because the two cases look alike and are not.
+
+The GPIO block really is near enough identical — `PIN`, `SET`, `CLR`, `NOT` and `DIR` all exist
+here under the same names. But an `iomode_t` is mostly an IOCON pad configuration word, and
+**LPC546xx places every IOCON field at a different bit from LPC11Uxx.** `FUNC` widens from three
+bits to four and pushes everything above it up:
+
+| Field | LPC11Uxx | LPC546xx |
+| --- | --- | --- |
+| `FUNC` | bits 2:0 | bits **3:0** |
+| pull mode | bits 4:3 | bits **5:4** |
+| invert | bit 6 | bit **7** |
+| digital (`ADMODE` / `DIGIMODE`) | bit 7 | bit **8** |
+| open drain | bit 10 | bit **11** |
+
+That encoding is the substance of a PAL driver. Sharing the dozen register accessors around it
+would buy nothing and would mean reworking the only family currently using them, which cannot be
+tested here. Every ChibiOS family upstream has its own `hal_pal_lld.h` anyway; the LPC port's
+sharing of one is the outlier, and it holds only because LPC11Uxx is so far its only member.
+
+Going family local also made the driver **simpler** than the shared one rather than more complex,
+because this part's CMSIS header exposes things LPC11Uxx's does not:
+
+- IOCON is reached as `IOCON->PIO[port][pin]` instead of a hardcoded `0x40044000`, which also
+  lifts the shared driver's two-port limit to this part's six.
+- Direction uses the atomic `DIRSET` and `DIRCLR` registers, so configuring one pad cannot lose a
+  concurrent change to another pad of the same port. LPC11Uxx has to read, modify and write `DIR`.
+- A pad group now takes **one** direction write for the whole mask rather than one per pad.
+
+Three further notes:
+
+- **Mode names are deliberately the sibling family's** — `MODE_MODE_PULL_UP`, `MODE_AD_DIGITAL`,
+  `MODE_DIR_OUT` — so a board file reads the same across the LPC port even though the bit patterns
+  differ. Fields this part lacks, such as LPC11Uxx's separate hysteresis control, are simply
+  absent, so a board asking for one fails to build instead of writing a bit that means something
+  else here.
+- **`PAL_NOLINE` is `0xFFFFFFFF`, not `0`.** Ports here are small integers rather than peripheral
+  base addresses, so a zero line identifier is P0_0 — a real, usable pin. Most ChibiOS ports can
+  afford the conventional zero; this one cannot, and the shared LPC header does not notice.
+- **`DIGIMODE` must be set for any digital use.** A pad left analogue reads nothing at all, and
+  the symptom is a dead input rather than an error, so every mode the driver defines sets it and
+  `pal-check.c` asserts that it does.
+
+The IOCON and GPIO clock gates moved out of `hal_lld.c` into `_pal_lld_init()`, since gating a
+peripheral's clock belongs to that peripheral's driver and `halInit()` reaches PAL immediately
+after the clock tree. NXP's header is a trap here: it names the bits `SYSCON_AHBCLKCTRL_GPIOn_MASK`
+without saying which of the three `AHBCLKCTRL` registers each belongs to, and they are not all in
+the same one — IOCON and GPIO0 to GPIO3 are in `AHBCLKCTRL0`, GPIO4 and GPIO5 in `AHBCLKCTRL2`.
 
 ## USB: the shared driver nearly fits
 
@@ -92,34 +149,49 @@ Two caveats, both recorded in that header:
   suspend, so `DSUS` is the reading taken, but it wants confirming against UM10912's `DEVCMDSTAT`
   table before suspend and remote wakeup are trusted. Enumeration does not depend on it.
 
-## The register check
+## The checks
 
-Writing a clock tree from a user manual is where an invented register name slips in, and that
-mistake is invisible until the chip quietly fails to start. So every SYSCON expression in
-`hal_lld.c` is mirrored in `register-check.c` and compiled against NXP's header:
+Nothing here has run, so what stands in for running it has to be worth something:
 
 ```sh
 nix develop .#firmware
 chibios/test/check-registers.sh
 ```
 
-It also **verifies it can fail**, by compiling a deliberately wrong field name and requiring
-the compiler to reject it. A check that passes everything proves nothing.
+**`register-check.c`** mirrors every SYSCON, IOCON, GPIO and USB expression the port makes and
+compiles it against NXP's own device header. Writing a clock tree from a user manual is exactly
+where an invented or misremembered register name slips in, and that mistake is invisible until the
+chip quietly fails to start.
+
+**`pal-check.c`** goes further, because mirroring has a blind spot: it can only confirm that the
+names exist, so a mistake in the port's *own* macros survives it. That file includes the real
+`hal_pal_lld.h` and asserts the exact IOCON word every pad mode produces, against bit positions
+restated from UM10912 rather than taken from NXP's macros — deriving them from
+`IOCON_PIO_*_SHIFT` would only assert that the header agrees with itself.
+
+Both **verify they can fail.** One run compiles a nonexistent register field; the other moves a
+pad field back to its LPC11Uxx bit position, which is precisely the mistake a port adapted from
+the sibling family would make, and which compiles cleanly while configuring the wrong thing. Both
+must be rejected. A check that passes everything proves nothing.
 
 Headers are fetched, not vendored: NXP's and ARM's are theirs to distribute.
 
-As a side effect the check confirms the struct shapes this project derived from disassembling
-the stock firmware — `IOCON->PIO[port][pin]`, `GPIO->DIR[port]`, `GPIO->B[port][pin]` — against
-NXP's definitions. Those underpin the pin mapping in `docs/pin-mapping.md`.
+As a side effect the checks confirm the struct shapes this project derived from disassembling the
+stock firmware — `IOCON->PIO[port][pin]`, `GPIO->DIR[port]`, `GPIO->B[port][pin]` — against NXP's
+definitions. Those underpin the pin mapping in `docs/pin-mapping.md`.
 
 ## Building for real
 
-Not yet possible here, and it needs three things this repository does not carry:
+Not yet possible here, and it needs four things this repository does not carry:
 
 1. a ChibiOS checkout and a ChibiOS-Contrib checkout, with these files placed in the latter;
 2. NXP's MCUXpresso SDK `devices/LPC54605` directory on the include path, for
    `fsl_device_registers.h` and the startup and linker files;
-3. a board definition, which for the first milestone should be an **LPCXpresso54628
+3. **two** part macros on the command line, which is easy to get half right. NXP's
+   `fsl_device_registers.h` selects its header from `CPU_LPC54605J512ET100`, while
+   `lpc_registry.h` detects the sub-family from a bare `LPC54605` that nothing in NXP's headers
+   defines. Passing only the first fails with `unknown/unsupported LPC546xx microcontroller`;
+4. a board definition, which for the first milestone should be an **LPCXpresso54628
    (OM13098)** rather than the keyboard — it has working SWD and is effectively unbrickable.
 
 Its MCU is the LPC54628 at 220 MHz against the keyboard's LPC54605 at 180 MHz. Same family, so

@@ -43,17 +43,61 @@ void lpc546xx_register_check(void) {
   while ((SYSCON->USB0CLKDIV & SYSCON_USB0CLKDIV_REQFLAG_MASK) != 0U) {
   }
 
-  /* Peripheral clocks the port touches. */
+  /* USB0's own clock gate, which the USB driver enables. */
+  SYSCON->AHBCLKCTRLSET[1] = SYSCON_AHBCLKCTRL_USB0D_MASK;
+}
+
+/*
+ * Every IOCON and GPIO expression the PAL driver uses.
+ *
+ * The PAL header cannot be included here, needing the rest of the HAL, so its
+ * register use is mirrored instead -- the same arrangement as the SYSCON block
+ * above, and for the same reason: these are the names that a user manual read
+ * wrong would get wrong.
+ */
+void lpc546xx_pal_check(void);
+
+void lpc546xx_pal_check(void) {
+  unsigned port = 1U, pad = 18U;
+  uint32_t mask = 1U << pad;
+
+  /* Clock gates, in the two different AHBCLKCTRL registers they live in. NXP's
+     names do not carry the register index, so getting this wrong is easy and
+     silent; the indices follow NXP's own clock driver. */
   SYSCON->AHBCLKCTRLSET[0] = SYSCON_AHBCLKCTRL_IOCON_MASK |
                              SYSCON_AHBCLKCTRL_GPIO0_MASK |
-                             SYSCON_AHBCLKCTRL_GPIO1_MASK;
-  SYSCON->AHBCLKCTRLSET[1] = SYSCON_AHBCLKCTRL_USB0D_MASK;
+                             SYSCON_AHBCLKCTRL_GPIO1_MASK |
+                             SYSCON_AHBCLKCTRL_GPIO2_MASK |
+                             SYSCON_AHBCLKCTRL_GPIO3_MASK;
+  SYSCON->AHBCLKCTRLSET[2] = SYSCON_AHBCLKCTRL_GPIO4_MASK |
+                             SYSCON_AHBCLKCTRL_GPIO5_MASK;
 
-  /* Peripherals the keyboard uses, so their bases are checked too. */
-  (void)IOCON->PIO[1][18];
-  (void)GPIO->PIN[1];
-  (void)GPIO->DIR[1];
-  (void)GPIO->B[1][18];
+  /* The pad configuration word, built from NXP's field macros exactly as the
+     PAL modes build it. This is the part that differs from LPC11Uxx in every
+     field position, so it is the part most worth checking. */
+  IOCON->PIO[port][pad] = (IOCON_PIO_FUNC(0U) | IOCON_PIO_MODE(2U) |
+                           IOCON_PIO_DIGIMODE(1U) | IOCON_PIO_INVERT(0U) |
+                           IOCON_PIO_OD(1U) | IOCON_PIO_SLEW(1U) |
+                           IOCON_PIO_FILTEROFF(1U)) & 0x0000FFFFU;
+
+  /* Direction, through the set and clear registers rather than read-modify-
+     write of DIR. DIR itself is unused by the driver but checked, since the
+     pin mapping in docs/pin-mapping.md is written in terms of it. */
+  GPIO->DIRSET[port] = mask;
+  GPIO->DIRCLR[port] = mask;
+  (void)GPIO->DIR[port];
+
+  /* Whole-port access. SET is read as well as written, for the output latch. */
+  (void)GPIO->PIN[port];
+  (void)GPIO->SET[port];
+  GPIO->PIN[port] = mask;
+  GPIO->SET[port] = mask;
+  GPIO->CLR[port] = mask;
+  GPIO->NOT[port] = mask;
+
+  /* Single-pad access, through the byte pin registers. */
+  (void)GPIO->B[port][pad];
+  GPIO->B[port][pad] = 1U;
 }
 
 /*
