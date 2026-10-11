@@ -187,6 +187,37 @@ Why the popcount reasoning failed: a mask counts *matrix positions*, and 15 of t
 with no HID usage code at all (the macro keys, media keys and wheel). ckb-next's 123 counts
 scan keys from its own geometry, which is a different quantity. The two were never comparable.
 
+### What the layout variants actually cost
+
+The controller **was** designed for layout variants — five masks, matching ckb-next's five
+physical layouts — but the variation is only the familiar layout keys, with nothing
+speculative provisioned.
+
+| Mask | Positions |
+| --- | --- |
+| ANSI | 118 |
+| ISO | 119 |
+| JIS | 122 |
+| the two others (ABNT, Dubeolsik) | 120 and 123 |
+| **union of all five** | **124** |
+
+Beyond an ISO board the union adds exactly five positions: `KC_BSLS` (the ANSI backslash) and
+the four JIS keys `KC_INT1`, `KC_INT3`, `KC_INT4` and `KC_INT5`. ISO in turn has two that ANSI
+lacks, `KC_NUHS` and `KC_NUBS`, so **ANSI has one key fewer than ISO, not more** — and
+therefore one fewer key LED.
+
+Two checks worth recording because they came back clean:
+
+- **No position anywhere carries a HID code or Bragi id that no mask enables.** There is no
+  provisioned-but-unused key, so nothing was wired for a variant that never shipped.
+- **The numpad is identical on every layout.** All seventeen populated positions on strobe 6
+  are enabled by all five masks. Strobe 6 sense 17 is enabled by none of them and has no
+  keycode, so it is plain unused matrix space rather than a reserved variant. In particular
+  there is **no provision for a split zero key**.
+
+The 20 positions of the 144 that no layout uses are ordinary headroom in an 8x18 grid, not
+reserved for anything identifiable.
+
 ### `HidKeyCodes`: the position-to-key table
 
 Found at flash **`0x0002FEBD`**, **144 bytes = 8 strobes x 18 senses**, indexed by
