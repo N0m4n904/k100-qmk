@@ -215,7 +215,13 @@ pad field back to its LPC11Uxx bit position, which is precisely the mistake a po
 the sibling family would make, and which compiles cleanly while configuring the wrong thing. Both
 must be rejected. A check that passes everything proves nothing.
 
-Headers are fetched, not vendored: NXP's and ARM's are theirs to distribute.
+Headers are fetched rather than vendored, which keeps this repository small and unpinned.
+Vendoring is permitted, though: NXP's device headers carry
+`SPDX-License-Identifier: BSD-3-Clause` in the files themselves, whatever the MCUXpresso
+SDK's top-level click-through licence says. `startup_lpc546xx.mk` therefore looks for a
+vendored copy under `os/common/ext/CMSIS/LPC/`, beside the `LPC11Uxx.h` that
+ChibiOS-Contrib already keeps there, before falling back to an SDK path — which is what
+lets QMK build the port at all, since QMK vendors everything. See `qmk/README.md`.
 
 As a side effect the checks confirm the struct shapes this project derived from disassembling the
 stock firmware — `IOCON->PIO[port][pin]`, `GPIO->DIR[port]`, `GPIO->B[port][pin]` — against NXP's

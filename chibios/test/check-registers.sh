@@ -3,8 +3,10 @@
 # so that a register field the hal_lld invented fails here rather than silently
 # on hardware.
 #
-# Headers are fetched rather than vendored: NXP's and ARM's are theirs, and
-# pinning them here would mean redistributing them.
+# Headers are fetched rather than vendored, to keep this repository small and
+# unpinned. Vendoring them would be permitted -- NXP's device headers carry
+# SPDX-License-Identifier: BSD-3-Clause in the files themselves -- and is what
+# the port does for QMK, which builds only against what it vendors.
 #
 #   nix develop .#firmware    # for arm-none-eabi-gcc
 #   chibios/test/check-registers.sh

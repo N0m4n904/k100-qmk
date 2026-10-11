@@ -75,6 +75,13 @@ echo "applying the shared USB driver patch"
 git -C "$contrib" apply --whitespace=nowarn \
     "$repo/patches/0001-usb-family-seam.patch"
 
+# Beside LPC11Uxx.h, which is where ChibiOS-Contrib already keeps an NXP device
+# header. This is the path a build that cannot fetch anything has to take -- so
+# it is the one exercised here, in preference to NXP_SDK_DEVICE_DIR.
+echo "vendoring the NXP $part headers into the Contrib tree"
+mkdir -p "$contrib/os/common/ext/CMSIS/LPC/$part"
+cp "$work/cache/nxp/$part/"* "$contrib/os/common/ext/CMSIS/LPC/$part/"
+
 echo "placing the LPC546xx port"
 cp -r "$repo/os/hal/ports/LPC/LPC546xx" "$contrib/os/hal/ports/LPC/"
 cp -r "$repo/os/common/startup/ARMCMx/devices/LPC546xx" \
@@ -89,7 +96,6 @@ echo "building"
 make -C "$contrib/demos/LPC/LPC54605_GENERIC" \
     CHIBIOS="$chibios" \
     CHIBIOS_CONTRIB="$contrib" \
-    NXP_SDK_DEVICE_DIR="$work/cache/nxp/$part" \
     "${@:2}"
 
 elf="$contrib/demos/LPC/LPC54605_GENERIC/build/ch.elf"

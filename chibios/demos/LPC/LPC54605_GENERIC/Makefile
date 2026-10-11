@@ -94,8 +94,11 @@ MCU  = cortex-m4
 CHIBIOS ?= ../../../../ChibiOS
 CHIBIOS_CONTRIB ?= $(CHIBIOS)/../ChibiOS-Contrib
 
-# NXP's MCUXpresso SDK devices/<part> directory, for fsl_device_registers.h.
-# Not redistributable, so it is never vendored and always has to be pointed at.
+# Where to find NXP's device headers. The startup makefile prefers a copy
+# vendored in ChibiOS-Contrib under this part name, and falls back to an
+# MCUXpresso SDK devices/<part> directory. Both must be set before the include
+# below, whose wildcard test is evaluated there and then.
+LPC_PART ?= LPC54605
 NXP_SDK_DEVICE_DIR ?=
 CONFDIR  := ./cfg
 BUILDDIR := ./build
@@ -164,6 +167,7 @@ CPPWARN = -Wall -Wextra -Wundef
 # than in board.h, because cmparams.h is reached from crt1.c and from
 # vectors_lpc.S, where no board header has been included.
 PARTDEFS = -DCPU_LPC54605J512ET100 -DLPC54605
+
 
 UDEFS = $(PARTDEFS) -DPORT_IGNORE_GCC_VERSION_CHECK
 
