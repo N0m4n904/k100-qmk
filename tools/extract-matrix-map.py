@@ -24,6 +24,11 @@ from pathlib import Path
 
 # Flash 0x2FEBD, and the application is linked at flash 0x10000.
 HID_KEY_CODES = 0x2FEBD - 0x10000
+
+# A second 144-byte table of the same shape, which carries a Bragi key index for exactly the
+# positions HidKeyCodes leaves at zero: the macro keys, Fn, media keys and wheel button.
+# Byte-identical in 0.30.257 and 0.35.288, so it is stable across versions.
+BRAGI_KEY_IDS = 0x2FDA4 - 0x10000
 MASK_BASE = 0x2FD04 - 0x10000
 MASK_STRIDE = 0x20
 
@@ -77,10 +82,19 @@ QMK = {
 }
 
 
-def read_tables(image: bytes) -> tuple[bytes, dict[int, list[int]]]:
+# Bragi key index -> name, from ckb-next's `keymap_bragi`, for the positions with no HID code.
+BRAGI_NAMES = {
+    131: "G1", 132: "G2", 133: "G3", 134: "G4", 135: "G5", 136: "G6",
+    122: "Fn", 128: "Profile", 137: "WheelBtn", 114: "WinLock", 102: "Mute",
+    123: "Stop", 124: "Play", 125: "Next", 126: "Prev",
+}
+
+
+def read_tables(image: bytes) -> tuple[bytes, bytes, dict[int, list[int]]]:
     codes = image[HID_KEY_CODES:HID_KEY_CODES + STROBES * SENSES]
-    if len(codes) != STROBES * SENSES:
-        raise SystemExit("image too short to contain HidKeyCodes")
+    ids = image[BRAGI_KEY_IDS:BRAGI_KEY_IDS + STROBES * SENSES]
+    if len(codes) != STROBES * SENSES or len(ids) != STROBES * SENSES:
+        raise SystemExit("image too short to contain both key tables")
 
     masks = {}
     for index in range(5):
@@ -89,7 +103,7 @@ def read_tables(image: bytes) -> tuple[bytes, dict[int, list[int]]]:
         if any(word >> SENSES for word in words):
             raise SystemExit(f"mask group {index} uses bits above {SENSES}; wrong address?")
         masks[offset + 0x10000] = words
-    return codes, masks
+    return codes, ids, masks
 
 
 def identify(codes: bytes, mask: list[int]) -> set[str]:
@@ -122,7 +136,7 @@ def main() -> int:
     parser.add_argument("--layout", default="iso", choices=sorted(LAYOUT_SIGNATURES))
     args = parser.parse_args()
 
-    codes, masks = read_tables(args.image.read_bytes())
+    codes, ids, masks = read_tables(args.image.read_bytes())
 
     print("layout masks, identified by which marker keys they enable:")
     for address, mask in masks.items():
@@ -143,7 +157,9 @@ def main() -> int:
                 continue
             code = codes[strobe * SENSES + sense]
             if code == 0:
-                row.append("XXXXXXX")       # populated, but no HID code of its own
+                # No HID code: name it from the Bragi key-index table instead.
+                row.append(BRAGI_NAMES.get(ids[strobe * SENSES + sense],
+                                           f"id{ids[strobe * SENSES + sense]}"))
             elif code in QMK:
                 row.append(QMK[code])
             else:
@@ -153,13 +169,13 @@ def main() -> int:
 
     print(f"electrical matrix, strobe P1_{STROBE_PIN_BASE}..P1_{STROBE_PIN_BASE + STROBES - 1}"
           f" x sense P1_0..P1_{SENSES - 1}")
-    print("  XXXXXXX = key present but with no HID usage code (macro, media or wheel)\n")
+    print("  names without a KC_ prefix have no HID usage code; they are Bragi key ids\n")
     for strobe, row in enumerate(rows):
         cells = " ".join((cell or "-------").ljust(7) for cell in row)
         print(f"  P1_{STROBE_PIN_BASE + strobe:<2} {cells}")
 
     populated = sum(1 for row in rows for cell in row if cell)
-    hid = sum(1 for row in rows for cell in row if cell and cell != "XXXXXXX")
+    hid = sum(1 for row in rows for cell in row if cell and cell.startswith("KC_"))
     print(f"\n  {populated} positions populated: {hid} with a HID code, "
           f"{populated - hid} without")
     if unmapped:

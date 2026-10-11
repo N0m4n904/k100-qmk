@@ -207,6 +207,39 @@ Katakana and Yen substitutions, so internal layout 3 is JIS.
 A sibling table `ProtocolKeyToHidCode` sits at flash `0x0002FF4D` with 138 entries, bounds
 checked at 137, mapping Bragi protocol key indices to HID codes.
 
+### The second table names the rest
+
+A sibling 144-byte table at flash **`0x0002FDA4`**, same `strobe * 18 + sense` shape, carries
+a **Bragi key index** for exactly the positions `HidKeyCodes` leaves at zero. It is
+byte-identical in 0.30.257 and 0.35.288, so it is stable across firmware versions.
+
+Cross-referenced against ckb-next's `keymap_bragi`, that names all fifteen:
+
+| Positions | Bragi ids | Keys |
+| --- | --- | --- |
+| strobes 0-5, sense 0 | 131-136 | **G1-G6** |
+| strobe 5, sense 12 | 122 | **Fn** |
+| strobe 7, senses 0-3 | 128, 137, 114, 102 | Profile, wheel button, Win lock, Mute |
+| strobe 7, senses 13-16 | 123, 126, 124, 125 | Stop, Prev, Play, Next |
+
+Six consecutive ids on six consecutive strobes at sense 0 is what confirms G1-G6; previously
+that was only a reading of the shape.
+
+**The ISO matrix is now completely identified: all 119 positions.**
+
+### The four keys that are not matrix-scanned
+
+The generated logical layout has 123 keys and the matrix has 119 positions. Subtracting the
+named sets leaves exactly four: **`ctrlwheelccw`, `ctrlwheelcw`, `volup` and `voldn`**.
+
+Those are the two rotary controls — the iCUE dial and the volume roller. Neither rotation is
+a matrix key, which is consistent with the firmware having a `dialAssignmentMutex` and a
+`dialStopSemaphore` and treating the dial as its own subsystem. Note the wheel *button* **is**
+in the matrix, at strobe 7 sense 1; only the rotation is not.
+
+For the QMK port this means **two encoders** plus the 119 matrix positions, and `encoder_map`
+rather than matrix entries for the rotations.
+
 Reproduce the decoded matrix with `tools/extract-matrix-map.py`.
 
 ## What this means for the project
