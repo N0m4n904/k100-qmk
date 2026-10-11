@@ -43,8 +43,14 @@ void lpc546xx_register_check(void) {
   while ((SYSCON->USB0CLKDIV & SYSCON_USB0CLKDIV_REQFLAG_MASK) != 0U) {
   }
 
-  /* USB0's own clock gate, which the USB driver enables. */
+  /* USB0's clock gate and transceiver power, from lpc546xx_usb.c. USB0D is bit
+     25 of AHBCLKCTRL1, not AHBCLKCTRL0: the device and host gates for the same
+     controller live in different registers and NXP's macro names do not say
+     which. PDRUNCFG bits are power-down enables, so the clear register is what
+     powers the transceiver up. */
   SYSCON->AHBCLKCTRLSET[1] = SYSCON_AHBCLKCTRL_USB0D_MASK;
+  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_USB0_PHY_MASK;
+  SYSCON->PDRUNCFGSET[0] = SYSCON_PDRUNCFG_PDEN_USB0_PHY_MASK;
 }
 
 /*

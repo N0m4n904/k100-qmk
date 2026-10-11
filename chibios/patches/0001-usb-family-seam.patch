@@ -1,0 +1,329 @@
+From f4bddd7434814ffdd670c06de9b327b20a5c3938 Mon Sep 17 00:00:00 2001
+From: Noah Anleitner <noah.anleitner@nonetwor.cc>
+Date: Sun, 11 Oct 2026 18:40:23 +0200
+Subject: [PATCH] usb: ask the family for clocking, power and endpoint memory
+
+The USB device IP is shared across LPC families; its clocking, its transceiver
+power and the placement of its endpoint memory are not. The driver held all
+three inline for LPC11Uxx -- a fixed 0x20004000 endpoint RAM with that part's
+2 KB budget, SYSAHBCLKCTRL, a USB PLL brought up by copying the main PLL's
+configuration, PDRUNCFG, and USB_IRQn -- so a second family could only be
+supported by adding a branch beside them.
+
+Four of those sites already sat behind LPC_USB_USE_USB1, which invites exactly
+that branch. A driver that has to be edited for every new part is the wrong
+shape for a shared driver pool, and the hardware does not call for it: the
+register interface really is common. So the family supplies three functions and
+four values instead, and this driver now names no SYSCON register and no
+address. LPC11Uxx's code moves to lpc11uxx_usb.c unchanged, PLL hack included.
+
+Two consequences worth noting:
+
+INTROUTING is now guarded by a capability flag. It does not exist on every part
+carrying this IP -- it is absent from LPC546xx's USB_Type, so the driver does
+not compile there -- and it is written once as zero, which is the no-op case.
+
+USB_EPLIST becomes a macro rather than a statically initialised pointer. Once
+LPC_USB_SRAM_START can be an array address rather than a literal, the old form
+depends on an integer-to-pointer cast being a valid static initialiser, which
+standard C does not guarantee.
+
+The 48MHz #error moves with the PLL code: the constraint is real, but it belongs
+to a family that needs a PLL to satisfy it. A part clocking USB from an on-chip
+48MHz oscillator meets it with no PLL at all.
+---
+ os/hal/ports/LPC/LLD/USB/hal_usb_lld.c   | 46 +++++--------
+ os/hal/ports/LPC/LLD/USB/hal_usb_lld.h   | 45 +++++++++++++
+ os/hal/ports/LPC/LPC11Uxx/lpc11uxx_usb.c | 82 ++++++++++++++++++++++++
+ os/hal/ports/LPC/LPC11Uxx/lpc_registry.h |  7 ++
+ os/hal/ports/LPC/LPC11Uxx/platform.mk    |  3 +-
+ 5 files changed, 152 insertions(+), 31 deletions(-)
+ create mode 100644 os/hal/ports/LPC/LPC11Uxx/lpc11uxx_usb.c
+
+diff --git a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+index aeb38a4..b1f1bec 100644
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+@@ -33,7 +33,9 @@
+ 
+ #define roundup2(x, m) (((x) + (m) - 1) & ~((m) - 1))
+ 
+-#define LPC_USB_SRAM_START            0x20004000
++#if !defined(LPC_USB_SRAM_START) || !defined(LPC_USB_SRAM_END)
++#error "the family must define LPC_USB_SRAM_START and LPC_USB_SRAM_END"
++#endif
+ 
+ /*===========================================================================*/
+ /* Driver exported variables.                                                */
+@@ -82,9 +84,11 @@ static const USBEndpointConfig ep0config = {
+   NULL,
+ };
+ 
+-static struct {
++struct usb_eplist {
+   uint32_t entry[20];
+-} *USB_EPLIST = (void*)LPC_USB_SRAM_START;
++};
++
++#define USB_EPLIST ((struct usb_eplist *)LPC_USB_SRAM_START)
+ 
+ #define EPLIST_ENTRY_BUFFER_RSHIFT            6U
+ #define EPLIST_ENTRY_BUFFER_POS               0U
+@@ -112,7 +116,7 @@ static size_t usb_ep_malloc(USBDriver *usbp, size_t size, size_t alignment) {
+   }
+   const size_t epmo = current;
+   usbp->epmem_next = current + size;
+-  osalDbgAssert(usbp->epmem_next <= (LPC_USB_SRAM_START + 0x800), "UBSSRAM exhausted");
++  osalDbgAssert(usbp->epmem_next <= LPC_USB_SRAM_END, "USB SRAM exhausted");
+   return epmo;
+ }
+ 
+@@ -266,30 +270,10 @@ OSAL_IRQ_HANDLER(LPC_USB_IRQ_VECTOR) {
+ #if LPC_USB_USE_USB1 == TRUE
+   /* Driver initialization.*/
+   usbObjectInit(&USBD1);
+-  // Enable Clock
+-  LPC_SYSCON->SYSAHBCLKCTRL |=
+-  (
+-    SYSCON_SYSAHBCLKCTRL_USB | SYSCON_SYSAHBCLKCTRL_USBRAM |
+-    SYSCON_SYSAHBCLKCTRL_RAM0
+-    );
++  // Clocks, and whatever PLL the family needs to reach 48MHz
++  lpc_usb_clock_init();
+ 
+   USBD1.epmem_next = (0x50 + LPC_USB_SRAM_START);
+-
+-#if defined(LPC_MAINCLK_FREQUENCY) && LPC_MAINCLK_FREQUENCY == 48000000U
+-// TODO: Implement proper PLL support
+-  LPC_SYSCON->PDRUNCFG &= ~SYSCON_PDRUNCFG_USBPLL_PD;
+-  LPC_SYSCON->USBPLLCLKSEL = SYSCON_USBPLLCLKSEL_SYSOSC;
+-  LPC_SYSCON->USBPLLCLKUEN = 0;
+-  LPC_SYSCON->USBPLLCLKUEN = SYSCON_USBPLLCLKUEN_ENA;
+-  LPC_SYSCON->USBPLLCTRL = LPC_SYSCON->SYSPLLCTRL; // BIG HACK. Steal Main PLL CFG
+-  while(LPC_SYSCON->USBPLLSTAT == 0){}
+-  LPC_SYSCON->USBCLKSEL = SYSCON_USBCLKSEL_USBPLLOUT;
+-  LPC_SYSCON->USBCLKDIV = 1; // Divide By 1
+-#else // LPC_MAINCLK_FREQUENCY
+-#error "USB Currently requires LPC_MAINCLK_FREQUENCY = 48MHz"
+-#endif // LPC_MAINCLK_FREQUENCY
+-
+-
+ #endif // LPC_USB_USE_USB1 == TRUE
+ }
+ 
+@@ -307,13 +291,13 @@ void usb_lld_start(USBDriver *usbp) {
+ #if LPC_USB_USE_USB1 == TRUE
+     if (&USBD1 == usbp) {
+       // USB Transiver Powerup
+-      LPC_SYSCON->PDRUNCFG &= ~SYSCON_PDRUNCFG_USBPAD_PD;
++      lpc_usb_power_on();
+ 
+       // Enable Vector
+       #if !defined(LPC_USB_USB1_IRQ_PRIORITY)
+       #error "LPC_USB_USB1_IRQ_PRIORITY is not defined"
+       #endif
+-      nvicEnableVector(USB_IRQn, LPC_USB_USB1_IRQ_PRIORITY);
++      nvicEnableVector(LPC_USB_IRQ_NUMBER, LPC_USB_USB1_IRQ_PRIORITY);
+     }
+ #endif
+     usb_lld_reset(usbp);
+@@ -337,9 +321,9 @@ void usb_lld_stop(USBDriver *usbp) {
+     /* Disables the peripheral.*/
+ #if LPC_USB_USE_USB1 == TRUE
+     if (&USBD1 == usbp) {
+-      nvicDisableVector(USB_IRQn);
++      nvicDisableVector(LPC_USB_IRQ_NUMBER);
+       LPC_USB->INTEN = 0;
+-      LPC_SYSCON->PDRUNCFG |= SYSCON_PDRUNCFG_USBPAD_PD;
++      lpc_usb_power_off();
+       LPC_USB->DEVCMDSTAT &= ~USB_DEVCMDSTAT_DEV_EN;
+     }
+ #endif
+@@ -356,7 +340,9 @@ void usb_lld_stop(USBDriver *usbp) {
+ void usb_lld_reset(USBDriver *usbp) {
+   /* Post reset initialization.*/
+   // cfg Interrupt routing to IRQ
++#if LPC_USB_HAS_INTROUTING == TRUE
+   LPC_USB->INTROUTING = 0;
++#endif
+   LPC_USB->EPINUSE = 0;
+   LPC_USB->EPSKIP = 0;
+   LPC_USB->EPBUFCFG = 0;
+diff --git a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.h b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.h
+index 4cc3ee7..59bef17 100644
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.h
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.h
+@@ -376,6 +376,51 @@ struct USBDriver {
+ extern USBDriver USBD1;
+ #endif
+ 
++/*===========================================================================*/
++/* What a family must supply.                                                */
++/*===========================================================================*/
++
++/**
++ * @name    Family interface
++ * @details The USB device IP is shared across LPC families; its clocking, its
++ *          transceiver power and the placement of its endpoint memory are not.
++ *          Rather than carry a branch per family, this driver asks the family
++ *          for those three things.
++ *
++ *          A family directory must define:
++ *
++ *          - @p LPC_USB_IRQ_NUMBER -- the controller's @p IRQn_Type value.
++ *          - @p LPC_USB_HAS_INTROUTING -- @p TRUE if the part has the register.
++ *          - @p LPC_USB_SRAM_START and @p LPC_USB_SRAM_END -- the endpoint
++ *            command/status list and buffer area. It must be 256-byte aligned,
++ *            lie within a single 4 MB region, and be reachable by the USB
++ *            controller as a bus master.
++ *
++ *          and implement the three functions below.
++ * @{
++ */
++#ifdef __cplusplus
++extern "C" {
++#endif
++  /**
++   * @brief   Clocks the USB controller, including any PLL it needs.
++   */
++  void lpc_usb_clock_init(void);
++
++  /**
++   * @brief   Powers up the USB transceiver, when the driver is started.
++   */
++  void lpc_usb_power_on(void);
++
++  /**
++   * @brief   Powers down the USB transceiver, when the driver is stopped.
++   */
++  void lpc_usb_power_off(void);
++#ifdef __cplusplus
++}
++#endif
++/** @} */
++
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
+diff --git a/os/hal/ports/LPC/LPC11Uxx/lpc11uxx_usb.c b/os/hal/ports/LPC/LPC11Uxx/lpc11uxx_usb.c
+new file mode 100644
+index 0000000..1d913cf
+--- /dev/null
++++ b/os/hal/ports/LPC/LPC11Uxx/lpc11uxx_usb.c
+@@ -0,0 +1,82 @@
++/*
++    ChibiOS - Copyright (C) 2020 Yaotian Feng / Codetector
++
++    Licensed under the Apache License, Version 2.0 (the "License");
++    you may not use this file except in compliance with the License.
++    You may obtain a copy of the License at
++
++        http://www.apache.org/licenses/LICENSE-2.0
++
++    Unless required by applicable law or agreed to in writing, software
++    distributed under the License is distributed on an "AS IS" BASIS,
++    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++    See the License for the specific language governing permissions and
++    limitations under the License.
++*/
++
++/**
++ * @file    LPC11Uxx/lpc11uxx_usb.c
++ * @brief   LPC11Uxx USB clocking and transceiver power.
++ *
++ * @details Moved verbatim out of the shared LLD/USB driver, which used to hold
++ *          it inline and so could serve only this family.
++ *
++ * @addtogroup USB
++ * @{
++ */
++
++#include "hal.h"
++
++#if (HAL_USE_USB == TRUE) || defined(__DOXYGEN__)
++
++/**
++ * @brief   Clocks the USB controller.
++ *
++ * @notapi
++ */
++void lpc_usb_clock_init(void) {
++
++  LPC_SYSCON->SYSAHBCLKCTRL |=
++  (
++    SYSCON_SYSAHBCLKCTRL_USB | SYSCON_SYSAHBCLKCTRL_USBRAM |
++    SYSCON_SYSAHBCLKCTRL_RAM0
++    );
++
++#if defined(LPC_MAINCLK_FREQUENCY) && LPC_MAINCLK_FREQUENCY == 48000000U
++// TODO: Implement proper PLL support
++  LPC_SYSCON->PDRUNCFG &= ~SYSCON_PDRUNCFG_USBPLL_PD;
++  LPC_SYSCON->USBPLLCLKSEL = SYSCON_USBPLLCLKSEL_SYSOSC;
++  LPC_SYSCON->USBPLLCLKUEN = 0;
++  LPC_SYSCON->USBPLLCLKUEN = SYSCON_USBPLLCLKUEN_ENA;
++  LPC_SYSCON->USBPLLCTRL = LPC_SYSCON->SYSPLLCTRL; // BIG HACK. Steal Main PLL CFG
++  while(LPC_SYSCON->USBPLLSTAT == 0){}
++  LPC_SYSCON->USBCLKSEL = SYSCON_USBCLKSEL_USBPLLOUT;
++  LPC_SYSCON->USBCLKDIV = 1; // Divide By 1
++#else // LPC_MAINCLK_FREQUENCY
++#error "USB Currently requires LPC_MAINCLK_FREQUENCY = 48MHz"
++#endif // LPC_MAINCLK_FREQUENCY
++}
++
++/**
++ * @brief   Powers up the USB transceiver.
++ *
++ * @notapi
++ */
++void lpc_usb_power_on(void) {
++
++  LPC_SYSCON->PDRUNCFG &= ~SYSCON_PDRUNCFG_USBPAD_PD;
++}
++
++/**
++ * @brief   Powers down the USB transceiver.
++ *
++ * @notapi
++ */
++void lpc_usb_power_off(void) {
++
++  LPC_SYSCON->PDRUNCFG |= SYSCON_PDRUNCFG_USBPAD_PD;
++}
++
++#endif /* HAL_USE_USB == TRUE */
++
++/** @} */
+diff --git a/os/hal/ports/LPC/LPC11Uxx/lpc_registry.h b/os/hal/ports/LPC/LPC11Uxx/lpc_registry.h
+index 266f206..6fca9e4 100644
+--- a/os/hal/ports/LPC/LPC11Uxx/lpc_registry.h
++++ b/os/hal/ports/LPC/LPC11Uxx/lpc_registry.h
+@@ -40,6 +40,13 @@ defined(__DOXYGEN__)
+ /* USB attributes.*/
+ #define LPC_HAS_USB                 TRUE
+ #define LPC_USB_IRQ_VECTOR          Vector98
++#define LPC_USB_IRQ_NUMBER          USB_IRQn
++#define LPC_USB_HAS_INTROUTING      TRUE
++
++/* Dedicated USB SRAM, 2 KB at a fixed address. The controller can reach this
++   and nothing else, so there is nothing to allocate. */
++#define LPC_USB_SRAM_START          0x20004000U
++#define LPC_USB_SRAM_END            (LPC_USB_SRAM_START + 0x800U)
+ 
+ #define LPC_SSP0_IRQ_VECTOR         Vector90
+ #define LPC_SSP1_IRQ_VECTOR         Vector78
+diff --git a/os/hal/ports/LPC/LPC11Uxx/platform.mk b/os/hal/ports/LPC/LPC11Uxx/platform.mk
+index cb20aa4..9de0ab9 100644
+--- a/os/hal/ports/LPC/LPC11Uxx/platform.mk
++++ b/os/hal/ports/LPC/LPC11Uxx/platform.mk
+@@ -1,6 +1,7 @@
+ # List of all the LPC11Uxx platform files.
+ PLATFORMSRC := 	${CHIBIOS}/os/hal/ports/common/ARMCMx/nvic.c \
+-				${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC11Uxx/hal_lld.c
++				${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC11Uxx/hal_lld.c \
++				${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC11Uxx/lpc11uxx_usb.c
+ 
+ # Required include directories
+ PLATFORMINC =	${CHIBIOS}/os/hal/ports/common/ARMCMx \
+-- 
+2.55.0
+

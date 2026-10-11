@@ -15,8 +15,12 @@ chibios/os/hal/ports/LPC/LPC546xx/
     hal_pal_lld.c          pad and direction programming
     hal_pal_lld.h          pad mode encoding, port and line identifiers, accessors
     lpc_registry.h         sub-family detection, capabilities, interrupt vectors
+    lpc546xx_usb.c         USB clocking, transceiver power, endpoint memory
+    lpc546xx_usb.h         what the shared USB driver asks of this family
     lpc546xx_usb_compat.h  LPC11Uxx USB register names, mapped to this part
     platform.mk            sources and the shared drivers pulled in
+chibios/patches/
+    0001-usb-family-seam.patch   the change the shared USB driver needs
 chibios/test/
     register-check.c       every SYSCON, IOCON, GPIO and USB field the port uses
     pal-check.c            the exact IOCON word each pad mode produces
@@ -39,7 +43,7 @@ none of them ever run.
 | `lpc_registry.h` | written, interrupt vectors from NXP's `IRQn_Type` |
 | PAL / GPIO | written, pad encoding verified against UM10912, **never executed** |
 | System timer (SysTick) | pulled in unchanged from the shared LLD |
-| USB device | register names mapped, driver not yet wired in — see below |
+| USB device | wired in, needs an unbuilt patch to the shared driver — see below |
 | PAL events / PINT | not started; `PAL_USE_WAIT` and `PAL_USE_CALLBACKS` must be `FALSE` |
 | SPI | not started; needs writing, this part uses Flexcomm |
 | PLL | not implemented, and not needed yet — see below |
@@ -110,39 +114,62 @@ after the clock tree. NXP's header is a trap here: it names the bits `SYSCON_AHB
 without saying which of the three `AHBCLKCTRL` registers each belongs to, and they are not all in
 the same one — IOCON and GPIO0 to GPIO3 are in `AHBCLKCTRL0`, GPIO4 and GPIO5 in `AHBCLKCTRL2`.
 
-## USB: the shared driver nearly fits
+## USB: the registers fit, the plumbing does not
 
-USB is the layer that decides whether this whole approach works, so it was surveyed before
-anything was built on it. The verdict is good. This part's USB0 is the **same NXP device IP** the
+USB decides whether this whole approach works, so it was surveyed before anything was built on it.
+
+**The register interface is genuinely common.** This part's USB0 is the same NXP device IP the
 shared `LLD/USB` driver already targets — an endpoint command/status list in SRAM, `DEVCMDSTAT`,
 five logical endpoints — and the driver touches exactly ten registers:
 
 `EPSKIP` · `DEVCMDSTAT` · `INTEN` · `INTSTAT` · `INTROUTING` · `INFO` · `EPLISTSTART` ·
 `EPINUSE` · `EPBUFCFG` · `DATABUFSTART`
 
-**Nine of the ten exist here under the same names.** Only the bit macros differ, because NXP's
-newer headers suffix them `_MASK` and name one interrupt bit per endpoint direction instead of
-providing a single shifted macro. `lpc546xx_usb_compat.h` maps them, so the shared driver stays
-unmodified and upstreamable and the whole family difference sits in one file. Every mapping in it
-is compile-checked against NXP's header by the register check, written exactly as the driver
-writes it.
+Nine of the ten exist here under the same names. Only the bit macros differ, because NXP's newer
+headers suffix them `_MASK` and name one interrupt bit per endpoint direction instead of providing
+a single shifted macro. `lpc546xx_usb_compat.h` maps them, and every mapping is compile-checked
+against NXP's header, written exactly as the driver writes it.
 
-Two caveats, both recorded in that header:
+**The initialisation code is not common, and the register survey did not show that.** On the
+strength of the table above this port expected to need one guarded line in the shared driver.
+Reading `usb_lld_init()`, `usb_lld_start()` and `usb_lld_stop()` afterwards found LPC11Uxx
+hardcoded in five places — the endpoint RAM address and its 2 KB budget, `SYSAHBCLKCTRL`, a USB
+PLL brought up by copying the main PLL's configuration, `PDRUNCFG`, and `USB_IRQn`.
 
-- **`INTROUTING` does not exist on this part.** It is the one thing the shared driver cannot
-  survive unchanged. On LPC11Uxx it routes USB interrupts between two handlers; LPC546xx has no
-  such register, and it is absent from NXP's `USB_Type` — a compile error, not a silent
-  misconfiguration. The driver writes it once, as `0`, in `usb_lld_reset()`, which is the no-op
-  case, so the fix upstream is a one-line guard:
+Four of the five already sit behind `#if LPC_USB_USE_USB1`, so the shape of the code invites
+adding a parallel branch holding LPC546xx's SYSCON writes. **This port does not do that**, because
+a shared driver that must be edited for every new part is the wrong shape for a shared driver pool
+— and the register table is the evidence that the hardware does not ask for it. Instead the driver
+gains a seam and asks the family for the three things that are not register names:
 
-  ```c
-  #if LPC_USB_HAS_INTROUTING
-    LPC_USB->INTROUTING = 0;
-  #endif
-  ```
+```c
+void lpc_usb_clock_init(void);   /* clocks, and any PLL the family needs */
+void lpc_usb_power_on(void);     /* transceiver power, at driver start   */
+void lpc_usb_power_off(void);
+```
 
-  with the capability declared in each family's `lpc_registry.h`, which is where that port already
-  keeps its capability flags.
+plus `LPC_USB_IRQ_NUMBER`, `LPC_USB_HAS_INTROUTING`, `LPC_USB_SRAM_START` and `LPC_USB_SRAM_END`.
+After the patch the shared driver names no SYSCON register and no address, and LPC11Uxx's code
+lives in a family file of its own, unchanged. The patch is in `chibios/patches`, where its
+README explains it; **it applies cleanly to upstream but has never been compiled**, since building
+the shared driver needs a full ChibiOS checkout.
+
+`lpc546xx_usb.c` holds this part's answers, and they are short, because clocking USB from `fro_hf`
+means there is no PLL to configure at all.
+
+Three details worth knowing:
+
+- **The endpoint memory is an ordinary aligned array, not an address.** LPC11Uxx has a dedicated
+  2 KB USB SRAM and its controller can reach nothing else, which is why the shared driver could get
+  away with a constant. USB0 here is a bus master with no RAM of its own, so the array must be
+  256-byte aligned for `EPLISTSTART`, must sit with its buffers inside one 4 MB region because
+  `DATABUFSTART` supplies only the high address bits, and must be in memory the controller can
+  actually reach — the SRAM at `0x20000000`, not the core-coupled `SRAMX` at `0`. Leaving it as
+  plain static data is what keeps it on the right side of that last point.
+
+- **`INTROUTING` does not exist on this part** and is absent from NXP's `USB_Type`, so a reference
+  to it is a compile error rather than a silent misconfiguration. It is written once, as `0`, which
+  is the no-op case, so the capability flag costs nothing.
 
 - **`DSUP` is the one uncertain mapping.** The driver spells the suspend bit `DSUP`, which appears
   in neither family's NXP naming; this part calls it `DSUS`. Both of the driver's uses read as

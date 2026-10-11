@@ -140,10 +140,16 @@
 /*
  * INTROUTING has no counterpart. On LPC11Uxx it selects whether USB interrupts
  * reach the main handler or the frame-toggle one; this part's USB0 has no such
- * register, and its absence from NXP's USB_Type is why the shared driver cannot
- * be used completely unmodified. The driver writes it once, as zero, in
- * usb_lld_reset(), which is the no-op case — so the fix is a one-line guard in
- * the shared driver rather than anything here. See chibios/README.md.
+ * register, and its absence from NXP's USB_Type makes a reference to it a
+ * compile error. The driver writes it once, as zero, in usb_lld_reset(), which
+ * is the no-op case, so a capability flag is enough: LPC_USB_HAS_INTROUTING in
+ * lpc_registry.h, guarding that one write.
+ *
+ * This was the only change the shared driver appeared to need, on a survey of
+ * the registers it touches. Reading its initialisation code afterwards showed
+ * otherwise: it also hardcodes LPC11Uxx's clocking, transceiver power, endpoint
+ * RAM address and interrupt number. Those are answered by lpc546xx_usb.c
+ * through a seam added to the shared driver; see chibios/patches/README.md.
  */
 
 #endif /* LPC546XX_USB_COMPAT_H */

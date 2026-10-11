@@ -50,6 +50,18 @@
 #define LPC_HAS_USB                 TRUE
 #define LPC_USB_IRQ_VECTOR          VectorB0    /* USB0_IRQn = 28            */
 #define LPC_USB_NEEDCLK_IRQ_VECTOR  VectorAC    /* USB0_NEEDCLK_IRQn = 27    */
+#define LPC_USB_IRQ_NUMBER          USB0_IRQn
+
+/* INTROUTING selects, on LPC11Uxx, whether USB interrupts reach the main
+   handler or the frame-toggle one. This part has no such register and it is
+   absent from NXP's USB_Type, so a driver referring to it does not compile. */
+#define LPC_USB_HAS_INTROUTING      FALSE
+
+/* The endpoint command/status list and the endpoint buffers. Unlike LPC11Uxx,
+   which has a dedicated 2 KB USB SRAM at a fixed address, USB0 here is an AHB
+   master with no RAM of its own, so this memory is allocated like any other.
+   See lpc546xx_usb.c for the alignment and placement constraints. */
+#define LPC_USB_SRAM_SIZE           2048U
 
 /* Flexcomm. Each instance is one of USART, SPI, I2C or I2S, selected at
    runtime, so there is one vector per instance rather than per function.
