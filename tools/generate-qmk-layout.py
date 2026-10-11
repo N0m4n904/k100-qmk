@@ -85,11 +85,21 @@ class Key:
         return self.y + self.height / 2
 
 
+def one_line(label: str) -> str:
+    """Collapses a caption onto one line.
+
+    ckb-next spells two-legend keys across two lines, as "Print Screen\nSysRq".
+    QMK's keyboard.json schema requires labels to match ^[^\n]*$ and discards
+    the whole file otherwise, reporting it as a keyboard with no layouts at all.
+    """
+    return " ".join(label.split())
+
+
 def read_geometry(path: Path) -> dict[str, Key]:
     raw = json.loads(path.read_text())
     return {
-        k["name"]: Key(k["name"], k["label"], k["x"], k["y"], k["width"], k["height"],
-                       k["has_led"], k["has_scan"])
+        k["name"]: Key(k["name"], one_line(k["label"]), k["x"], k["y"],
+                       k["width"], k["height"], k["has_led"], k["has_scan"])
         for k in raw["keys"]
     }
 
@@ -193,14 +203,17 @@ def build_keyboard_json(placed: list[Key], all_keys: list[Key]) -> dict:
         "processor": "LPC54605",
         "bootloader": "custom",
         "matrix_size": {"rows": STROBES, "cols": SENSES},
-        "matrix_pins": {
-            "custom": True,
-            "_comment": (
-                f"Strobes are P1_{STROBE_PIN_BASE}..P1_{STROBE_PIN_BASE + STROBES - 1}, "
-                f"open-drain outputs; senses are P1_0..P1_{SENSES - 1}, inputs with "
-                "optional pull-ups. Driven by matrix_scan_custom(); see docs/pin-mapping.md."
-            ),
-        },
+        # custom_lite: matrix.c supplies matrix_init_custom() and
+        # matrix_scan_custom() and QMK keeps debounce and the rest. The schema
+        # sets additionalProperties false here, so the note goes at top level --
+        # a stray key in this object makes QMK discard the whole file.
+        "matrix_pins": {"custom_lite": True},
+        "_comment_matrix_pins": (
+            f"Strobes are P1_{STROBE_PIN_BASE}..P1_{STROBE_PIN_BASE + STROBES - 1}, "
+            f"push-pull outputs driven low to assert; senses are P1_0..P1_{SENSES - 1}, "
+            "inputs with pull-ups. Rows are strobes, columns are senses. Driven by "
+            "matrix_scan_custom() in matrix.c; see docs/pin-mapping.md."
+        ),
         "features": {
             "bootmagic": False, "command": False, "console": False,
             "extrakey": True, "mousekey": False, "nkro": True, "rgb_matrix": True,

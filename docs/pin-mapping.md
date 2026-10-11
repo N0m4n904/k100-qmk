@@ -66,7 +66,7 @@ orr.w r1, r1, #0x3fc0000    ; bits 18..25
 str   r1, [r2, r0]          ; P1_18..P1_25 = output
 ldr   r1, [r2, #0x2204]     ; GPIO->SET[1]
 orr.w r1, r1, #0x3fc0000
-str   r1, [r2, #0x2204]     ; drive them high (open-drain: released)
+str   r1, [r2, #0x2204]     ; drive them high -- the idle, unasserted state
 ...
 cmp   r2, #1                ; flag at 0x20000158
 moveq r0, #0x100            ; digital, no pull
@@ -84,9 +84,23 @@ IOCON values decode as:
 
 | Value | Meaning |
 | --- | --- |
-| `0x300` | FUNC0, digital, **open-drain**, no pull — the strobes |
+| `0x300` | FUNC0, digital, **input filter off**, no pull — the strobes |
 | `0x100` | FUNC0, digital, no pull — the senses |
 | `0x120` | FUNC0, digital, **pull-up** — the senses, alternate mode |
+
+Decoded against NXP's `IOCON_PIO_*` field masks, not by eye. On this part the fields sit at
+`FUNC` 3:0, `MODE` 5:4, `I2CSLEW` 6, `INVERT` 7, `DIGIMODE` 8, `FILTEROFF` 9, `SLEW` 10 and
+`OD` 11, so `0x300` is bits 8 and 9 — digital with the input glitch filter disabled.
+
+**An earlier version of this file read `0x300` as open-drain. It is not.** Open-drain is bit 11,
+`0x800`, and it is not set on any matrix pin: the strobes are ordinary push-pull outputs. The
+mistake came from reading the bit positions off the LPC11Uxx sibling, where the fields sit
+elsewhere — the same trap that made the PAL driver family-local, see `chibios/README.md`.
+
+Two cross-checks fall out of this. `0x120` is bit-for-bit what this project's independently
+written PAL driver produces for `PAL_MODE_INPUT_PULLUP`, derived from UM10912 rather than from
+this disassembly. And `0x300` is exactly `PAL_MODE_OUTPUT_PUSHPULL | MODE_FILTER_OFF`. Two
+unrelated derivations agreeing is the strongest evidence either of them is right.
 
 The pull-up choice is runtime-selectable via a byte at SRAM `0x20000158`.
 
@@ -108,7 +122,7 @@ bhi   ...
 adds  r4, #18               ; pin = strobe + 18
 add   r1, r4
 movs  r4, #1
-strb.w r4, [r1, #32]        ; GPIO->B[1][pin] = 1, release the open-drain strobe
+strb.w r4, [r1, #32]        ; GPIO->B[1][pin] = 1, deassert the strobe
 isb   sy
 ```
 
@@ -297,7 +311,7 @@ Reproduce the decoded matrix with `tools/extract-matrix-map.py`.
 ## What this means for the project
 
 **The OPX optical switches present as an ordinary contact matrix.** This is the big one. The
-firmware drives open-drain strobes and reads pulled-up senses — textbook switch matrix. The
+firmware drives push-pull strobes low and reads pulled-up senses — textbook switch matrix. The
 optical detection happens *inside* the switch, which outputs a plain digital signal. So no IR
 emitter/receiver front-end is needed in firmware, and QMK's conventional matrix model applies
 almost directly.
@@ -433,7 +447,7 @@ The method validated itself on the one function already analysed by hand: the ma
 | Pins | Value | Meaning | Role |
 | --- | --- | --- | --- |
 | `P1_0`-`P1_17` | `0x120` | digital, pull-up | **matrix senses** |
-| `P1_18`-`P1_25` | `0x100`, then `0x300` | digital; later open-drain | **matrix strobes** |
+| `P1_18`-`P1_25` | `0x100`, then `0x300` | digital; later filter off | **matrix strobes** |
 | `P0_23`-`P0_28` | `0x106` | **FUNC6**, digital | six consecutive — see below |
 | `P1_26`, `P1_27` | `0x110` | digital, **pull-down** | encoder candidates |
 | `P0_18` | `0x110` | digital, pull-down | encoder candidate |

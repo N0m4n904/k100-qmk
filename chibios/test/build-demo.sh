@@ -27,6 +27,7 @@ cpu=LPC54605J512ET100
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
+root="$(cd "$here/../.." && pwd)"
 work="${1:-$(mktemp -d)}"
 mkdir -p "$work"
 work="$(cd "$work" && pwd)"
@@ -103,59 +104,9 @@ echo
 echo "ok: the port builds and links"
 echo
 
-# Three properties of the linked image that nothing in the source can assert,
-# because each is decided by the linker. All three fail silently on hardware:
-# a bad checksum means the boot ROM never starts the image, and misplaced
-# endpoint memory means USB quietly does not work.
-python3 - "$elf" <<'PY'
-import re, subprocess, sys
-
-elf = sys.argv[1]
-
-def run(*args):
-    return subprocess.run(args, capture_output=True, text=True, check=True).stdout
-
-# The boot ROM sums the first eight vectors and refuses to start the image
-# unless the result is zero; the linker script puts the complement at 0x1C.
-dump = run("arm-none-eabi-objdump", "-s", "-j", ".vectors", elf)
-words = []
-for line in dump.splitlines():
-    m = re.match(r"\s*([0-9a-f]{4,8})\s((?:[0-9a-f]{8} ){1,4})", line)
-    if m:
-        words += [int(w, 16) for w in
-                  (bytes.fromhex(g)[::-1].hex() for g in m.group(2).split())]
-# Without this the check would be worthless: a parse that matched nothing
-# leaves an empty list, whose sum is zero, which is exactly the pass condition.
-if len(words) < 8:
-    print(f"vector checksum         FAIL   parsed {len(words)} vectors, "
-          "so this check proves nothing -- has objdump's output format changed?")
-    sys.exit(1)
-
-checksum = sum(words[:8]) & 0xFFFFFFFF
-print(f"vector checksum          {'ok' if checksum == 0 else 'FAIL'}"
-      f"   first 8 vectors sum to 0x{checksum:08x}")
-
-# The USB endpoint list and buffers: 256-byte aligned for EPLISTSTART, inside
-# one 4MB window because DATABUFSTART holds only the high address bits, and in
-# SRAM the USB controller can reach as a bus master rather than in SRAMX.
-syms = run("arm-none-eabi-nm", "-S", elf)
-m = re.search(r"^([0-9a-f]+) ([0-9a-f]+) . lpc_usb_sram$", syms, re.M)
-if m is None:
-    print("usb endpoint memory     FAIL   lpc_usb_sram not in the image")
-    sys.exit(1)
-addr, size = int(m.group(1), 16), int(m.group(2), 16)
-checks = {
-    "256-byte aligned": addr % 256 == 0,
-    "single 4MB window": (addr >> 22) == ((addr + size - 1) >> 22),
-    "in reachable SRAM": 0x20000000 <= addr < 0x20028000,
-}
-bad = [name for name, good in checks.items() if not good]
-print(f"usb endpoint memory      {'ok' if not bad else 'FAIL ' + ', '.join(bad)}"
-      f"   0x{addr:08x}, {size} bytes, " + ", ".join(checks))
-
-if checksum != 0 or bad:
-    sys.exit(1)
-PY
+# Two properties of the linked image that no source file can assert, because the
+# linker decides them. Shared with the QMK build, which needs the same ones.
+python3 "$root/tools/check-firmware-image.py" "$elf"
 
 echo
 arm-none-eabi-size "$elf"

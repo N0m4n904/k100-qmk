@@ -55,6 +55,22 @@
             dfu-util
           ];
         };
+
+        # For qmk/test/build-k100.sh. Separate from `firmware` because the QMK CLI
+        # drags in a large Python closure, and the ChibiOS checks do not need it.
+        # QMK's build shells out to `qmk` to turn keyboard.json into C, and to
+        # `git` for a version string.
+        qmk = pkgs.mkShell {
+          name = "k100-qmk-qmk";
+
+          packages = with pkgs; [
+            qmk
+            gcc-arm-embedded
+            gnumake
+            git
+            python3
+          ];
+        };
       });
     };
 }
