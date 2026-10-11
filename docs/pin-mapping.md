@@ -337,6 +337,19 @@ The six single-colour LEDs are chip 2 channels **174, 175, 176, 192, 193 and 194
 firmware has a status-LED concept — `lightingsManagerSetStatusLed`, `getStatusZoneLedList`
 and a `StatusLedCount` bound — which these plausibly are, though that is not confirmed.
 
+Model variation does **not** explain the gap. Corsair ships **one image for both the OPX and
+the Cherry MX variants** — the 0.30.257 file is byte-identical under product IDs `1b7c` and
+`1b7d` (sha256 `316319e65a42…`) — and all four published images across both IDs carry
+byte-identical key tables. Both variants also share the chassis, so they have the same LEDs
+anyway. A shared image is therefore not a superset covering hardware this board lacks.
+
+The likelier explanation is the mundane one: 174 comes from ckb-next's **GUI drawing data**,
+which is what a host application bothered to give coordinates to, not a hardware inventory.
+The six single-colour status LEDs alone account for six of the sixteen, since that GUI has no
+status-LED concept. Closing the remainder properly needs the mapping between the firmware's
+`LedId` and the Bragi LED index, which has not been found; they are different numbering
+schemes, so the three counts cannot be diffed directly yet.
+
 **For the driver, 190 and `LedInfoMap` are the numbers that matter**, since they are what the
 hardware addresses. ckb-next's 193 is host-side bookkeeping. Our generated `rgb_matrix.layout`
 carries 174 because that is all ckb-next's geometry positions, so **up to 16 addressable LEDs
