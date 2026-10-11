@@ -319,9 +319,32 @@ staging buffer lives in SRAM at `0x20001684`.
 Consecutive LEDs step 18 channels apart — LED 0 is channels 0, 1, 2 and LED 1 is 18, 19, 20 —
 which is the driver's 18-column geometry showing through.
 
-Note this is **190 LEDs**, where `led_bragi.c` reports 193 and our positioned map has 174.
-The three counts measure different things and have not been reconciled; see
-`qmk-layout.md` for the 174-versus-193 part.
+### The three LED counts
+
+| Count | Source | What it is |
+| --- | --- | --- |
+| **190** | this firmware's `LedInfoMap` / `LedIdCount` | **LEDs the hardware actually addresses** |
+| 193 | ckb-next's `led_bragi.c` | its own host-side count, 3 higher; unexplained |
+| 174 | our `rgb_matrix.layout` | only those ckb-next's GUI gives coordinates to |
+
+All 190 channel triples are **distinct**, so there are no aliases and 190 is a genuine
+physical count. An earlier guess here that the map contained duplicates was wrong: the twelve
+apparently repeated channel references on chip 2 come from the six single-colour LEDs, each
+repeating its one channel three times *inside its own entry*, which inflates the reference
+count without affecting the distinct count (177 - 18 + 6 = 165).
+
+The six single-colour LEDs are chip 2 channels **174, 175, 176, 192, 193 and 194**. The
+firmware has a status-LED concept — `lightingsManagerSetStatusLed`, `getStatusZoneLedList`
+and a `StatusLedCount` bound — which these plausibly are, though that is not confirmed.
+
+**For the driver, 190 and `LedInfoMap` are the numbers that matter**, since they are what the
+hardware addresses. ckb-next's 193 is host-side bookkeeping. Our generated `rgb_matrix.layout`
+carries 174 because that is all ckb-next's geometry positions, so **up to 16 addressable LEDs
+are currently missing from it** — worth closing before the RGB driver is written.
+
+Corsair's own product page is consistent on the key side, listing **110 keys** and **6 macro
+keys**: a full-size ISO board is 105, this one drops right-Win for Fn giving 104, plus the six
+macro keys. It gives no LED or LightEdge figures.
 
 Print the map with `tools/extract-matrix-map.py <image> --leds`.
 
