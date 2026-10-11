@@ -82,6 +82,11 @@ nix develop .#keymap # Qt, for the keymap extractor
 
 ## Licensing and attribution
 
+GPL-3, **except** for the files destined for ChibiOS-Contrib (Apache-2.0) and QMK
+(GPL-2.0-or-later) and the one tool that links against ckb-next (GPL-2.0-or-later). Each says so
+in its own header; **[`LICENSING.md`](LICENSING.md)** explains why each exception is necessary
+rather than merely tidy.
+
 Protocol and layout knowledge derives substantially from
 [ckb-next](https://github.com/ckb-next/ckb-next) and
 [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB), both GPL. Corsair firmware images are

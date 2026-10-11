@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Licensed GPL-2.0-or-later rather than under the repository's GPL-3, because this file is
+// compiled and linked together with ckb-next's own GPL-2 sources and ckb-next grants no
+// "or later" option. GPL-2-only and GPL-3 cannot be combined, so the binary this produces
+// would be undistributable if this file were GPL-3. See LICENSING.md.
+//
 // Dumps a ckb-next keymap as JSON.
 //
 // The K100 map is produced by a chain of C++ transformations off the K95 Platinum
