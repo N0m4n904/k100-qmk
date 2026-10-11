@@ -227,6 +227,27 @@ that was only a reading of the shape.
 
 **The ISO matrix is now completely identified: all 119 positions.**
 
+### Both tables are stable across firmware versions
+
+Located by signature in each image and compared:
+
+| Table | in 0.30.257 | in 0.35.288 | sha256 of 144 bytes |
+| --- | --- | --- | --- |
+| Bragi key ids | `0x2F264` | `0x2FDA4` | `9b54dc6d97ff…` |
+| `HidKeyCodes` | `0x2F37D` | `0x2FEBD` | `1347150ae6f9…` |
+
+Byte-identical in both, with only their addresses moving between builds. The two images are
+nearly three years apart (December 2020 and August 2023), so the matrix has not changed in
+that span — unsurprising, since it describes the hardware.
+
+That matters for this analysis: the tables were read from 0.35.288 while the unit on hand
+runs 0.32.6, a version that sits between the two compared here. The mapping can therefore be
+relied on for that unit without reading its flash.
+
+Note the signature run occurs in **both** tables, so a signature search alone picks the wrong
+one. `HidKeyCodes` is identified by the literal the disassembly of `keyToHidKeycode` loads,
+not by searching.
+
 ### The four keys that are not matrix-scanned
 
 The generated logical layout has 123 keys and the matrix has 119 positions. Subtracting the
