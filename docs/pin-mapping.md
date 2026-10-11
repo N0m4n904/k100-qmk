@@ -421,6 +421,57 @@ macro keys. It gives no LED or LightEdge figures.
 
 Print the map with `tools/extract-matrix-map.py <image> --leds`.
 
+## The complete pin configuration
+
+Enumerated rather than sampled: exactly **three** instructions in the whole image load the
+IOCON base (`0x40001000`), at flash `0x11a9c`, `0x121a0` and `0x17214`, and every pin write in
+each was collected by walking forward to the function's end.
+
+The method validated itself on the one function already analysed by hand: the matrix init at
+`0x17214` comes out as exactly `P1_18`-`P1_25`, and nothing else.
+
+| Pins | Value | Meaning | Role |
+| --- | --- | --- | --- |
+| `P1_0`-`P1_17` | `0x120` | digital, pull-up | **matrix senses** |
+| `P1_18`-`P1_25` | `0x100`, then `0x300` | digital; later open-drain | **matrix strobes** |
+| `P0_23`-`P0_28` | `0x106` | **FUNC6**, digital | six consecutive — see below |
+| `P1_26`, `P1_27` | `0x110` | digital, **pull-down** | encoder candidates |
+| `P0_18` | `0x110` | digital, pull-down | encoder candidate |
+| `P0_13` | `0x900` / `0xd00` | FUNC0 with the I2C-specific bits | the part's true I2C pin |
+| most others | `0x100` | digital GPIO | — |
+
+Two of the three functions (`0x11a9c` and `0x121a0`) are **whole-chip pin initialisers**
+covering nearly all of ports 0 and 1, differing in only a handful of pins — `P0_0`/`P0_1` are
+FUNC2 in one and GPIO in the other, and `P0_2` has a pull-down in one. They look like two
+configurations or board revisions rather than two subsystems. An earlier note in this document
+guessed one of them was "the SPI pin config" from its proximity in flash to the SPI HAL; that
+guess was unfounded and is withdrawn.
+
+### The SPI pins: strong but not confirmed
+
+`P0_23`-`P0_28` on FUNC6 is **six consecutive pins**, and the LED drivers need exactly six
+signals: SCK, MOSI, MISO and one chip select per IS31FL3743B, of which there are three.
+
+Supporting it, NXP's LPC546xx datasheet lists **`FC3_RXD_SDA_MOSI` as an alternate function of
+`PIO0_24`** — a Flexcomm 3 SPI signal in the middle of that group — and the firmware's SPI HAL
+uses FLEXCOMM3.
+
+**Not confirmed:** which FUNC value selects FC3, and which signal sits on which of the six
+pins. That needs the IOCON function table from UM10912; the datasheet's alternate-function
+list does not give FUNC numbers, and inferring them from list order would be a guess.
+
+### The encoder pins: a hypothesis, not a finding
+
+`P1_26` and `P1_27` are the **only pull-down-configured pins on port 1**, sitting immediately
+past the matrix strobes, and `P0_18` carries a pull-down in both initialisers. Pull-downs are
+what encoder contacts want, and two quadrature encoders need four inputs.
+
+**What argues against calling this settled:** the read path was not found. There is no `ubfx`
+at bits 26-27, no byte read of `B[1][26]` or `B[1][27]`, and no word-register access for those
+pins. The matrix by contrast reads `PIN[1]` with a literal `ubfx r4, r4, #0, #18`, which is how
+its senses were proved. Until the encoder read is located this stays a hypothesis resting on
+pull-up/pull-down configuration alone.
+
 ## Still unknown
 
 - ~~Which `(strobe, sense)` pair is which key.~~ **Answered** by `HidKeyCodes` above. The
