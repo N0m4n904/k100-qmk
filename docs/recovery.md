@@ -80,6 +80,26 @@ To check, cheapest first:
 This needs a multimeter, so it belongs with the acquisition step in `ARCHITECTURE.md` rather
 than the zero-cost work. Step 1 needs nothing but a phone camera.
 
+#### Holding Escape at plug-in is a reset, not bootloader entry
+
+Worth stating because it is easy to assume otherwise. Corsair's reset procedure — unplug,
+hold Escape, plug in, keep holding until the lighting flashes, then unplug and replug — is a
+**settings reset**, and it **clears onboard profiles**, so saved lighting and hardware macros
+are lost.
+
+It is *not* a documented route into the bootloader. No official Corsair page describes a true
+bootloader or recovery mode for the K100, and a community report describes a hardware-held
+entry that did not permit replacing firmware, the keyboard merely enumerating under a
+different device name.
+
+So it does not provide the firmware-independent bootloader entry that would most strengthen
+this document. The hardware route remains the LPC546xx ISP pins at reset, which needs the case
+open.
+
+One thing it is still worth doing once: hold Escape at plug-in and check `lsusb` for a changed
+product ID or a mass-storage volume. If anything different enumerates, that *would* be a
+recovery mode and would matter a great deal. Read-only, and the only cost is the profile wipe.
+
 ### Layer 3 — SWD
 
 Same idea, same ECRP caveat, needs pads located and a probe attached.
