@@ -370,6 +370,29 @@ Print the map with `tools/extract-matrix-map.py <image> --leds`.
 - ~~RGB driver bus and pins.~~ **The bus is answered** — see below. The SPI *pin*
   assignments are not yet read out of IOCON, though Flexcomm 3's options are fixed by the
   LPC546xx datasheet once the instance is known.
-- **Encoder pins.** The iCUE dial and volume roller are not matrix-scanned, so they are read
-  elsewhere. The firmware names an `encodersSemaphore`, a `dialTimer` and a
-  `dialAppSwitchTimer`, which is where to start.
+- **Encoder pins — attempted, not found.** Much harder than the matrix, because nothing
+  asserts on an encoder table, so there is no string naming one. What was established:
+
+  | Finding | Evidence |
+  | --- | --- |
+  | No pin-interrupt path | **No reference to PINT** (`0x40004000`) anywhere in the image |
+  | `INPUTMUX` *is* configured | reached by `sub.w r5, r5, #0x87000` from the GPIO base, giving `0x40005000` — consistent with timer-capture or pin-interrupt input selection |
+  | Not polled via a literal port-0 read | no access to `PIN[0]` (`0x2100`); the matrix reads `PIN[1]` (`0x2104`) with a literal, so the encoders use a different path |
+  | Pin configuration goes through helpers | functions at flash `0x1381c` and `0x13858` take port and pin arguments, so pin numbers are call arguments rather than greppable constants |
+  | Encoder objects and callbacks | `encodersSemaphore`, `dialTimer`, `dialAppSwitchTimer` created near flash `0x16250`, whose literal pool holds callback addresses around `0x155xx`-`0x157xx` |
+
+  Tracing init to callback to GPIO helper to pin constant is the remaining path. Not urgent:
+  the pins are only needed for encoder support, which is late in the port.
+
+- **The full pin map is not settled, and one attribution is doubtful.** Three functions write
+  IOCON. One is the matrix init at flash `0x17210` (words 32-57 = `P1_0`-`P1_25`), which is
+  solid. A second, near flash `0x11a9c`, configures `P0_2` as FUNC1, `P0_17` as plain GPIO,
+  `P0_18` as GPIO with a pull-down, and `P0_23`-`P0_26` as FUNC6. A third, ending at flash
+  `0x124a0`, writes words 36-41 — which is `P1_4`-`P1_9`, **overlapping the matrix sense
+  lines**. That overlap is unexplained, so do not treat the second and third as identified
+  subsystems; proximity to the SPI HAL in flash is not evidence of purpose. Resolving the
+  LPC546xx FUNC numbers needs the pin table from UM10912.
+
+- **CTIMER4 probably drives the scan.** Its base `0x40049000` is referenced five times inside
+  the matrix code between flash `0x171fc` and `0x17468`, which fits the 4000 Hz scan rate
+  needing a hardware timer. Suggestive from locality rather than decoded.
