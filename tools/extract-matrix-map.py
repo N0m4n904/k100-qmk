@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 from k100_firmware import (  # noqa: E402
-    BRAGI_NAMES, LAYOUT_SIGNATURES, QMK_KEYCODES, SENSES, STROBES, STROBE_PIN_BASE, Firmware,
+    BRAGI_NAMES, LAYOUT_SIGNATURES, PWM_PAGE_SIZE, QMK_KEYCODES, SENSES, STROBES,
+    STROBE_PIN_BASE, Firmware,
 )
 
 
@@ -25,6 +27,9 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("image", type=Path)
     parser.add_argument("--layout", default="iso", choices=sorted(LAYOUT_SIGNATURES))
+    parser.add_argument("--leds", action="store_true",
+                        help="also print the LED driver map: which chip and channel drives "
+                             "each colour of each LED")
     args = parser.parse_args()
 
     firmware = Firmware(args.image.read_bytes())
@@ -67,7 +72,33 @@ def main() -> int:
     if unmapped:
         print("  no QMK mapping for HID codes: "
               + ", ".join(f"{code:#04x}" for code in sorted(unmapped)))
+
+    if args.leds:
+        print_leds(firmware)
     return 0
+
+
+def print_leds(firmware: Firmware) -> None:
+    leds = firmware.leds()
+    per_chip: dict[int, set[int]] = defaultdict(set)
+    for led in leds:
+        for chip, channel in led.channels:
+            per_chip[chip].add(channel)
+
+    print(f"\nLED driver map: {len(leds)} LEDs across {len(per_chip)} "
+          f"IS31FL3743B chips on SPI3")
+    print(f"  {sum(1 for l in leds if l.is_rgb)} RGB, "
+          f"{sum(1 for l in leds if not l.is_rgb)} single colour")
+    for chip in sorted(per_chip):
+        used = per_chip[chip]
+        print(f"  chip {chip}: {len(used)} of {PWM_PAGE_SIZE} channels used, "
+              f"{min(used)}..{max(used)}")
+
+    print("\n  led  chip  R    G    B    rgb")
+    for led in leds[:4] + leds[-2:]:
+        (c, r), (_, g), (_, b) = led.channels
+        print(f"  {led.index:3}  {c:4}  {r:3}  {g:3}  {b:3}  {led.is_rgb}")
+    print("  (full table available programmatically via Firmware.leds())")
 
 
 if __name__ == "__main__":

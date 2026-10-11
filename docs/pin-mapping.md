@@ -275,6 +275,56 @@ That removes what `ARCHITECTURE.md` called "the unknown that matters most" and s
 stream C substantially. It also means a controller transplant is more viable than previously
 assessed, should that ever be revisited.
 
+## The RGB driver
+
+Settled from the firmware, not inferred.
+
+**Three ISSI IS31FL3743B drivers on SPI3.** The chip is named outright by the firmware's own
+symbol `is31fl3743bSetPwmChannelValue`, and the SPI HAL at flash `0x12510` loads
+**`0x40089000` = FLEXCOMM3**, so the bus is SPI3. A `cbz` before its `master < SPIMasterCount`
+assert shows `SPIMasterCount` is 1: there is a single SPI master.
+
+`PWM_PAGE_SIZE` is **198**, matching the IS31FL3743B's 18 x 11 channels exactly.
+
+### `LedInfoMap`
+
+At flash **`0x00030159`**, **190 entries of 7 bytes**. The address comes from the literal
+`ledDriverSetLedColorChannel` loads, and its `cmp r0, #189` fixes the count:
+
+```asm
+ldr  r4, [pc, #96]     ; r4 = 0x00030159 = LedInfoMap
+lsls r3, r0, #3        ; led * 8
+subs r5, r3, r0        ; led * 7
+add  r5, r4            ; &LedInfoMap[led]
+ldrb r5, [r5, #6]      ; isRgb
+...
+ldrb r1, [r3, #2]      ; chip
+ldrb r0, [r3, #3]      ; channel
+movs r4, #198          ; PWM_PAGE_SIZE
+mla  r3, r4, r1, r3    ; buffer + 198 * chip
+strb r2, [r3, r0]      ; buffer[198 * chip + channel] = value
+```
+
+Each entry is three `(chip, channel)` pairs — one per colour — plus an `isRgb` flag. The PWM
+staging buffer lives in SRAM at `0x20001684`.
+
+| | |
+| --- | --- |
+| LEDs | **190** — 184 RGB, 6 single colour |
+| Chips | 3, indices 0 to 2 |
+| chip 0 | 198 of 198 channels used |
+| chip 1 | 195 of 198 |
+| chip 2 | 165 of 198 |
+
+Consecutive LEDs step 18 channels apart — LED 0 is channels 0, 1, 2 and LED 1 is 18, 19, 20 —
+which is the driver's 18-column geometry showing through.
+
+Note this is **190 LEDs**, where `led_bragi.c` reports 193 and our positioned map has 174.
+The three counts measure different things and have not been reconciled; see
+`qmk-layout.md` for the 174-versus-193 part.
+
+Print the map with `tools/extract-matrix-map.py <image> --leds`.
+
 ## Still unknown
 
 - ~~Which `(strobe, sense)` pair is which key.~~ **Answered** by `HidKeyCodes` above. The
@@ -294,8 +344,9 @@ assessed, should that ever be revisited.
   *logical* 7x22 matrix, which was the right call while the electrical one was unknown. It can
   now be replaced by the real 8x18 mapping, which also removes the need for the custom matrix
   driver to translate between the two.
-- **RGB driver bus and pins.** Not yet analysed. Reference counts above the SDK
-  lookup-table baseline point at **FLEXCOMM3** (5 refs, versus 3 for every other Flexcomm),
-  plus **CTIMER4** (7), **GPIO** (6), **CRC** (5), **EEPROM** (4) and **MRT0** (4).
-  Counting alone proves nothing — the all-instances-equal pattern is just an SDK array — but
-  FLEXCOMM3 is the obvious place to start.
+- ~~RGB driver bus and pins.~~ **The bus is answered** — see below. The SPI *pin*
+  assignments are not yet read out of IOCON, though Flexcomm 3's options are fixed by the
+  LPC546xx datasheet once the instance is known.
+- **Encoder pins.** The iCUE dial and volume roller are not matrix-scanned, so they are read
+  elsewhere. The firmware names an `encodersSemaphore`, a `dialTimer` and a
+  `dialAppSwitchTimer`, which is where to start.

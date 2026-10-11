@@ -22,6 +22,16 @@ HID_KEY_CODES = 0x2FEBD - BASE
 # Same shape, carrying a Bragi key index for exactly the positions HidKeyCodes leaves at zero.
 BRAGI_KEY_IDS = 0x2FDA4 - BASE
 
+# LedInfoMap: 7-byte entries, one per LED, each holding three (chip, channel) pairs for the
+# colour channels plus an isRgb flag. Found from the literal that ledDriverSetLedColorChannel
+# loads; the same function's `cmp r0, #189` fixes the entry count.
+LED_INFO_MAP = 0x30159 - BASE
+LED_COUNT = 190
+LED_ENTRY = 7
+
+# Channels per IS31FL3743B, which the firmware calls PWM_PAGE_SIZE. 18 x 11 = 198.
+PWM_PAGE_SIZE = 198
+
 # Five per-layout masks of eight words; bit `i` of word `s` marks position (s, i) populated.
 MASK_BASE = 0x2FD04 - BASE
 MASK_STRIDE = 0x20
@@ -72,6 +82,20 @@ class Position:
         return f"P1_{self.sense}"
 
 
+@dataclass(frozen=True)
+class Led:
+    """One LED's position in the driver chain."""
+
+    index: int
+    channels: tuple[tuple[int, int], tuple[int, int], tuple[int, int]]
+    """Three (chip, channel) pairs. For a non-RGB LED only the first is meaningful."""
+    is_rgb: bool
+
+    @property
+    def chip(self) -> int:
+        return self.channels[0][0]
+
+
 class Firmware:
     """The matrix tables of one firmware image."""
 
@@ -82,6 +106,7 @@ class Firmware:
         if len(self.hid_codes) != span or len(self.bragi_ids) != span:
             raise ValueError("image too short to contain both key tables")
 
+        self.image = image
         self.masks: dict[int, list[int]] = {}
         for index in range(MASK_COUNT):
             offset = MASK_BASE + index * MASK_STRIDE
@@ -89,6 +114,21 @@ class Firmware:
             if any(word >> SENSES for word in words):
                 raise ValueError(f"mask {index} uses bits above {SENSES}; wrong address?")
             self.masks[offset + BASE] = words
+
+    def leds(self) -> list["Led"]:
+        """The LED driver map: which chip and channel drives each colour of each LED."""
+        found = []
+        for index in range(LED_COUNT):
+            offset = LED_INFO_MAP + index * LED_ENTRY
+            entry = self.image[offset:offset + LED_ENTRY]
+            if len(entry) != LED_ENTRY:
+                raise ValueError("image too short to contain LedInfoMap")
+            found.append(Led(
+                index=index,
+                channels=((entry[0], entry[1]), (entry[2], entry[3]), (entry[4], entry[5])),
+                is_rgb=bool(entry[6]),
+            ))
+        return found
 
     def markers(self, mask: list[int]) -> set[str]:
         """Which layout-exclusive keys a mask enables."""
