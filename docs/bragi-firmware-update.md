@@ -149,10 +149,27 @@ still fail with `ETIMEDOUT` at every report length, exactly as before. So the hi
 below is **not** a transient fault state: it is a persistent property of this keyboard,
 reproducible across a power cycle, and only the usbdevfs path works.
 
-That has a practical consequence. Chromium's WebHID uses hidraw `write()` for output reports
-on Linux, so **Corsair's browser-based firmware updater is very unlikely to work on Linux**
-regardless of what their documentation says about root permissions, and a Windows host or VM
-is the realistic route for an official firmware update.
+That has a practical consequence, and it was then confirmed directly. Chromium's WebHID uses
+hidraw `write()` for output reports on Linux, so **Corsair's browser-based firmware updater
+does not work on Linux** regardless of what their documentation says about root permissions.
+Running it against this keyboard produces:
+
+```
+[ERROR] Error with retrying command {id: 1, cmd: 2, propId: 3, payload: Uint8Array(4), …}
+        NotAllowedError: Failed to write the report.
+```
+
+The device opened successfully — the page got as far as issuing a command — and only the
+write failed, which is the same wall as hidraw. (`cmd: 2` and `propId: 3` are `GET` and
+`OPERATING_MODE`, incidentally corroborating those two values from an independent client. A
+separate `iCUE WebSocket connection failed` line in the same log is unrelated: the page probes
+for a local iCUE install as a fallback.)
+
+**So a Windows host or VM is the route for an official firmware update.**
+
+Three independent clients now fail to write over hidraw — this project's own probe, hidapi,
+and Chromium's WebHID — while usbdevfs works. That is about as well established as it can be
+without understanding the mechanism.
 
 Working configuration, confirmed against hardware:
 
