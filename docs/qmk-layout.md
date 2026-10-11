@@ -6,7 +6,9 @@ Generated, not hand-written. Regenerate with:
 nix develop .#keymap
 make -C tools/extract-ckb-keymap CKB=/path/to/ckb-next
 tools/extract-ckb-keymap/extract-ckb-keymap k100 de > tools/extract-ckb-keymap/k100-de.json
-python3 tools/generate-qmk-layout.py --ckb /path/to/ckb-next
+python3 tools/fetch-firmware.py --out /tmp/k100-fw
+python3 tools/generate-qmk-layout.py --ckb /path/to/ckb-next \
+    --firmware /tmp/k100-fw/Heracles_Application_Firmware_v0.35.288.bin
 ```
 
 Outputs:
@@ -19,7 +21,10 @@ Outputs:
 
 ## Where the data comes from
 
-Two sources, joined:
+Three sources, joined:
+
+- **The electrical matrix**, read from an official firmware image by `tools/k100_firmware.py`,
+  which both this generator and `extract-matrix-map.py` share.
 
 - **Geometry** from ckb-next, via `tools/extract-ckb-keymap`. The K100 map is produced by a
   chain of C++ transformations off the K95 Platinum (`KeyMap::getMap`), so rather than
@@ -32,36 +37,36 @@ Two sources, joined:
 The generator refuses to emit anything if a key lacks a QMK keycode or an LED index, so
 silent gaps are not possible.
 
-## The logical matrix — superseded, but it was the right call at the time
+## The electrical matrix
 
-> **Superseded.** The real electrical matrix has since been recovered from the firmware —
-> 8 strobes x 18 senses, 119 populated ISO positions, with each position's HID usage code.
-> See `docs/pin-mapping.md` and `tools/extract-matrix-map.py`. The generated definition
-> below still uses the logical matrix and should be regenerated on the real one, which also
-> removes the translation the custom matrix driver would otherwise have to do.
+QMK's layout needs `matrix: [row, col]` for every key, and these are the keyboard's **real**
+strobe and sense lines, read out of its own firmware:
 
-## The logical matrix — the decision that unblocked this work
+- **rows are strobes**, `P1_18` to `P1_25`, open-drain outputs
+- **columns are senses**, `P1_0` to `P1_17`, inputs with optional pull-ups
+- **119 populated positions** for ISO, of which 104 carry a HID usage code
 
-QMK's layout needs `matrix: [row, col]` for every key, and we do **not** know the K100's
-electrical matrix. That does not block anything, because we are writing the matrix driver
-ourselves: the positions here are a **logical** matrix of our own choosing, and mapping the
-optical scan onto it is the job of `matrix_scan_custom()`.
+So `matrix_scan_custom()` has nothing to translate: it reports positions in the same
+coordinates the layout declares. How the tables were found, and the full decoded matrix, are
+in `docs/pin-mapping.md`; `tools/extract-matrix-map.py` prints it.
 
-Rows are assigned by clustering keys on their **vertical centre**, not their top edge. That
-detail matters: it is what puts the tall ISO Enter in the home row and the numpad's `+` and
-Enter in their conventional rows, rather than a row above.
+An earlier version of this document described a **logical** 7x22 matrix invented here, which
+was the right call while the electrical one was unknown. It is gone.
 
-Result: **7 rows × 22 columns, 123 keys.**
+### Two encoders, not keys
 
-```
-row 0   profswitch wheel(ccw/btn/cw) lock mute volup voldn
-row 1   g1 esc f1..f12 prtscn scroll pause stop prev play next
-row 2   g2 grave 1..0 minus equal bspace ins home pgup numlock num/ num* num-
-row 3   g3 tab q..p lbrace rbrace del end pgdn num7 num8 num9
-row 4   g4 caps a..l colon quote hash enter num4 num5 num6 num+
-row 5   g5 lshift bslash_iso z..m comma dot slash rshift up num1 num2 num3
-row 6   g6 lctrl lwin lalt space ralt fn rmenu rctrl left down right num0 num. numenter
-```
+Four keys that ckb-next lists as scanning are absent from the matrix: `ctrlwheelccw`,
+`ctrlwheelcw`, `voldn` and `volup`. Those are the rotations of the **iCUE dial** and the
+**volume roller**, so both are encoders. The wheel's *button* is a matrix key, at strobe 7
+sense 1; only the rotations are not.
+
+The generator asserts this rather than trusting it: if the set of scanning keys missing from
+the matrix is ever anything other than exactly those four rotations, it refuses to emit. That
+is what catches a silently dropped key.
+
+**Their pins are not yet known**, so no `encoder` block is emitted. They are recorded as
+comments in the generated keymap, and QMK's `encoder_map` can be filled in once the pins are
+traced.
 
 ## ISO DE specifics
 
@@ -136,7 +141,15 @@ its own**, which is worth knowing when the LightEdge and wheel zones are wired u
 
 ## Validation
 
-The generated files were checked structurally: 123 layout entries with unique in-bounds
-matrix positions, 174 RGB entries with coordinates inside QMK's space and every `matrix`
-reference resolving to a real key, and the VIA definition carrying the identical position set
-and matrix dimensions as `keyboard.json`.
+The generated files are checked structurally, not eyeballed:
+
+- 119 layout entries with unique matrix positions, all inside 8 x 18
+- 174 RGB entries with coordinates inside QMK's 224 x 64 space, every `matrix` reference
+  resolving to a real key
+- the VIA definition carrying the identical position set and matrix dimensions as
+  `keyboard.json`
+
+The generator also refuses to emit at all if a key lacks a QMK keycode or an LED index, if a
+HID code matches more or fewer than one geometry key, if a key would land at two matrix
+positions, or if the scanning keys missing from the matrix are anything other than the two
+encoders' rotations.

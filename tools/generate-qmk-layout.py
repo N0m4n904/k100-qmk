@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Generates the QMK keyboard definition and VIA layout for the K100 from ckb-next's data.
+"""Generates the QMK keyboard definition and VIA layout for the K100.
 
-Two inputs are joined:
+Three sources are joined:
 
-  * the physical geometry, dumped by tools/extract-ckb-keymap (which links against
-    ckb-next's own keymap implementation rather than reimplementing its transform chain), and
-  * the LED ordering, read from ckb-next's `keymap_bragi` array, whose array index *is* the
-    Bragi LED index.
+  * the **electrical matrix**, read from an official firmware image by `k100_firmware.py`:
+    8 strobes x 18 senses, with each populated position's HID usage code or Bragi key index;
+  * the **physical geometry**, dumped by `tools/extract-ckb-keymap`, which links against
+    ckb-next's own keymap implementation rather than transcribing it; and
+  * the **LED ordering**, from ckb-next's `keymap_bragi` array, whose index *is* the LED index.
 
-Nothing here depends on the electrical matrix. QMK positions are a *logical* matrix of our
-own choosing; mapping the optical scan onto it is the job of matrix_scan_custom(). See
-docs/qmk-layout.md.
+Earlier versions of this generator invented a *logical* matrix, because the electrical one
+was unknown. It is known now, so the matrix positions emitted here are the real
+`(strobe, sense)` pairs and the custom matrix driver has nothing to translate.
+
+See docs/pin-mapping.md and docs/qmk-layout.md.
 """
 
 from __future__ import annotations
@@ -18,60 +21,41 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
-# ckb-next key name -> QMK keycode. Names are positional and follow the US layout, which is
-# QMK's own convention, so `z` is the key where US has Z even though DE labels it Y.
-KEYCODES = {
-    # Media and control strip
-    "profswitch": "KC_NO", "ctrlwheelccw": "KC_VOLD", "ctrlwheelb": "KC_MUTE",
-    "ctrlwheelcw": "KC_VOLU", "lock": "KC_NO", "mute": "KC_MUTE",
-    "volup": "KC_VOLU", "voldn": "KC_VOLD",
-    # Macro keys. No QMK standard exists; F13-F18 is the conventional stand-in.
+sys.path.insert(0, str(Path(__file__).parent))
+
+from k100_firmware import (  # noqa: E402
+    BRAGI_NAMES, QMK_KEYCODES, SENSES, STROBES, STROBE_PIN_BASE, Firmware,
+)
+
+# QMK keycodes for the keys that have no HID usage code of their own.
+#
+# G1-G6 use F13-F18, the conventional stand-in since QMK has no macro-key standard, and are
+# trivially remapped in VIA. `profswitch` and `lock` have no QMK equivalent at all and need
+# custom keycodes once their purpose is decided.
+NON_HID_KEYCODES = {
     "g1": "KC_F13", "g2": "KC_F14", "g3": "KC_F15",
     "g4": "KC_F16", "g5": "KC_F17", "g6": "KC_F18",
-    # Function row
-    "esc": "KC_ESC", **{f"f{n}": f"KC_F{n}" for n in range(1, 13)},
-    "prtscn": "KC_PSCR", "scroll": "KC_SCRL", "pause": "KC_PAUS",
+    "fn": "MO(1)",
+    "profswitch": "KC_NO", "lock": "KC_NO",
+    "mute": "KC_MUTE", "ctrlwheelb": "KC_MUTE",
     "stop": "KC_MSTP", "prev": "KC_MPRV", "play": "KC_MPLY", "next": "KC_MNXT",
-    # Number row
-    "grave": "KC_GRV", **{str(n): f"KC_{n}" for n in range(0, 10)},
-    "minus": "KC_MINS", "equal": "KC_EQL", "bspace": "KC_BSPC",
-    "ins": "KC_INS", "home": "KC_HOME", "pgup": "KC_PGUP",
-    "numlock": "KC_NUM", "numslash": "KC_PSLS", "numstar": "KC_PAST", "numminus": "KC_PMNS",
-    # Upper row
-    "tab": "KC_TAB", **{c: f"KC_{c.upper()}" for c in "qwertyuiop"},
-    "lbrace": "KC_LBRC", "rbrace": "KC_RBRC",
-    "del": "KC_DEL", "end": "KC_END", "pgdn": "KC_PGDN",
-    "num7": "KC_P7", "num8": "KC_P8", "num9": "KC_P9",
-    # Home row. `hash` is the ISO key beside Enter.
-    "caps": "KC_CAPS", **{c: f"KC_{c.upper()}" for c in "asdfghjkl"},
-    "colon": "KC_SCLN", "quote": "KC_QUOT", "hash": "KC_NUHS", "enter": "KC_ENT",
-    "num4": "KC_P4", "num5": "KC_P5", "num6": "KC_P6", "numplus": "KC_PPLS",
-    # Shift row. `bslash_iso` is the ISO key beside Left Shift.
-    "lshift": "KC_LSFT", "bslash_iso": "KC_NUBS", **{c: f"KC_{c.upper()}" for c in "zxcvbnm"},
-    "comma": "KC_COMM", "dot": "KC_DOT", "slash": "KC_SLSH", "rshift": "KC_RSFT",
-    "up": "KC_UP", "num1": "KC_P1", "num2": "KC_P2", "num3": "KC_P3",
-    # Bottom row
-    "lctrl": "KC_LCTL", "lwin": "KC_LGUI", "lalt": "KC_LALT", "space": "KC_SPC",
-    "ralt": "KC_RALT", "fn": "MO(1)", "rmenu": "KC_APP", "rctrl": "KC_RCTL",
-    "left": "KC_LEFT", "down": "KC_DOWN", "right": "KC_RGHT",
-    "num0": "KC_P0", "numdot": "KC_PDOT", "numenter": "KC_PENT",
-    # ANSI-only and other models' keys, present in the LED table but not on an ISO board.
-    "bslash": "KC_BSLS", "rwin": "KC_RGUI", "ro": "KC_INT1", "mr": "KC_NO",
-    "light": "KC_NO", "status": "KC_NO",
 }
 
-# QMK rgb_matrix flags.
+# The two rotary controls. Neither rotation is matrix-scanned, so they are encoders rather
+# than keys; the wheel's *button* is in the matrix. Their pins are not yet known.
+ENCODERS = [
+    ("iCUE dial", "ctrlwheelccw", "ctrlwheelcw", "KC_VOLD", "KC_VOLU"),
+    ("volume roller", "voldn", "volup", "KC_VOLD", "KC_VOLU"),
+]
+
 LED_FLAG_UNDERGLOW = 0x02
 LED_FLAG_KEYLIGHT = 0x04
 
-# QMK's rgb_matrix coordinate space.
 QMK_MAX_X, QMK_MAX_Y = 224, 64
-
-# Keys further apart than this vertically belong to different logical rows.
-ROW_GAP = 7
 
 # One key unit in ckb-next's 16ths-of-an-inch grid.
 UNIT = 12
@@ -79,6 +63,8 @@ UNIT = 12
 
 @dataclass
 class Key:
+    """A physical key, from ckb-next's geometry."""
+
     name: str
     label: str
     x: int
@@ -88,8 +74,7 @@ class Key:
     has_led: bool
     has_scan: bool
     led: int | None = None
-    row: int = -1
-    col: int = -1
+    matrix: tuple[int, int] | None = field(default=None)
 
     @property
     def cx(self) -> float:
@@ -99,16 +84,14 @@ class Key:
     def cy(self) -> float:
         return self.y + self.height / 2
 
-    @property
-    def keycode(self) -> str:
-        return KEYCODES[self.name]
 
-
-def read_geometry(path: Path) -> tuple[dict, list[Key]]:
+def read_geometry(path: Path) -> dict[str, Key]:
     raw = json.loads(path.read_text())
-    keys = [Key(k["name"], k["label"], k["x"], k["y"], k["width"], k["height"],
-                k["has_led"], k["has_scan"]) for k in raw["keys"]]
-    return raw, keys
+    return {
+        k["name"]: Key(k["name"], k["label"], k["x"], k["y"], k["width"], k["height"],
+                       k["has_led"], k["has_scan"])
+        for k in raw["keys"]
+    }
 
 
 def read_led_indices(keymap_c: Path) -> dict[str, int]:
@@ -121,25 +104,57 @@ def read_led_indices(keymap_c: Path) -> dict[str, int]:
     return {m.group(1): index for index, m in enumerate(entry.finditer(body)) if m.group(1)}
 
 
-def assign_logical_matrix(keys: list[Key]) -> list[list[Key]]:
-    """Groups keys into rows by vertical centre, then orders each row left to right.
+def join_matrix(keys: dict[str, Key], firmware: Firmware, layout: str) -> list[Key]:
+    """Attaches each firmware matrix position to the physical key that sits there.
 
-    Banding on the centre rather than the top edge is what places the tall ISO Enter and the
-    numpad's Plus and Enter in their conventional rows.
+    A position with a HID usage code is matched by inverting the geometry's keycode mapping;
+    one without is named directly by its Bragi key index.
     """
-    scan_keys = sorted((k for k in keys if k.has_scan), key=lambda k: k.cy)
+    by_keycode: dict[str, list[str]] = {}
+    for name in keys:
+        code = QMK_KEYCODES_BY_NAME.get(name)
+        if code:
+            by_keycode.setdefault(code, []).append(name)
 
-    rows: list[list[Key]] = [[scan_keys[0]]]
-    for key in scan_keys[1:]:
-        if key.cy - rows[-1][-1].cy > ROW_GAP:
-            rows.append([])
-        rows[-1].append(key)
+    placed = []
+    for position in firmware.positions(layout):
+        if position.hid:
+            keycode = QMK_KEYCODES.get(position.hid)
+            if keycode is None:
+                raise SystemExit(f"no QMK keycode for HID {position.hid:#04x} at "
+                                 f"{position.strobe_pin}/{position.sense_pin}")
+            candidates = by_keycode.get(keycode, [])
+            if len(candidates) != 1:
+                raise SystemExit(
+                    f"{keycode} at {position.strobe_pin}/{position.sense_pin} matches "
+                    f"{len(candidates)} geometry keys ({', '.join(candidates) or 'none'}); "
+                    "the join is ambiguous"
+                )
+            name = candidates[0]
+        else:
+            name = BRAGI_NAMES.get(position.bragi)
+            if name is None:
+                raise SystemExit(f"unknown Bragi key id {position.bragi} at "
+                                 f"{position.strobe_pin}/{position.sense_pin}")
 
-    for index, row in enumerate(rows):
-        row.sort(key=lambda k: k.cx)
-        for col, key in enumerate(row):
-            key.row, key.col = index, col
-    return rows
+        key = keys.get(name)
+        if key is None:
+            raise SystemExit(f"matrix names {name!r}, absent from the geometry")
+        if key.matrix is not None:
+            raise SystemExit(f"{name!r} appears at two matrix positions")
+
+        key.matrix = (position.strobe, position.sense)
+        placed.append(key)
+    return placed
+
+
+def keycode_for(key: Key) -> str:
+    if key.name in NON_HID_KEYCODES:
+        return NON_HID_KEYCODES[key.name]
+    code = QMK_KEYCODES_BY_NAME.get(key.name)
+    if code is None:
+        raise SystemExit(f"no QMK keycode for {key.name!r}")
+    return code
 
 
 def scale(keys: list[Key]):
@@ -149,28 +164,27 @@ def scale(keys: list[Key]):
     min_y, max_y = min(k.cy for k in lit), max(k.cy for k in lit)
 
     def to_qmk(key: Key) -> tuple[int, int]:
-        x = (key.cx - min_x) / (max_x - min_x) * QMK_MAX_X
-        y = (key.cy - min_y) / (max_y - min_y) * QMK_MAX_Y
-        return round(x), round(y)
+        return (round((key.cx - min_x) / (max_x - min_x) * QMK_MAX_X),
+                round((key.cy - min_y) / (max_y - min_y) * QMK_MAX_Y))
 
     return to_qmk
 
 
-def build_keyboard_json(meta: dict, rows: list[list[Key]], keys: list[Key]) -> dict:
-    to_qmk = scale(keys)
-    lit = sorted((k for k in keys if k.has_led), key=lambda k: k.led)
+def build_keyboard_json(placed: list[Key], all_keys: list[Key]) -> dict:
+    to_qmk = scale(all_keys)
+    lit = sorted((k for k in all_keys if k.has_led), key=lambda k: k.led)
 
-    layout = []
-    for row in rows:
-        for key in row:
-            layout.append({
-                "matrix": [key.row, key.col],
-                "x": round(key.x / UNIT, 2),
-                "y": round(key.y / UNIT, 2),
-                "w": round(key.width / UNIT, 2),
-                "h": round(key.height / UNIT, 2),
-                "label": key.label,
-            })
+    layout = [
+        {
+            "matrix": list(key.matrix),
+            "x": round(key.x / UNIT, 2),
+            "y": round(key.y / UNIT, 2),
+            "w": round(key.width / UNIT, 2),
+            "h": round(key.height / UNIT, 2),
+            "label": key.label,
+        }
+        for key in placed
+    ]
 
     return {
         "manufacturer": "Corsair",
@@ -178,25 +192,27 @@ def build_keyboard_json(meta: dict, rows: list[list[Key]], keys: list[Key]) -> d
         "maintainer": "k100-qmk",
         "processor": "LPC54605",
         "bootloader": "custom",
-        "diode_direction": "CUSTOM_MATRIX",
-        "matrix_size": {"rows": len(rows), "cols": max(len(r) for r in rows)},
+        "matrix_size": {"rows": STROBES, "cols": SENSES},
+        "matrix_pins": {
+            "custom": True,
+            "_comment": (
+                f"Strobes are P1_{STROBE_PIN_BASE}..P1_{STROBE_PIN_BASE + STROBES - 1}, "
+                f"open-drain outputs; senses are P1_0..P1_{SENSES - 1}, inputs with "
+                "optional pull-ups. Driven by matrix_scan_custom(); see docs/pin-mapping.md."
+            ),
+        },
         "features": {
-            "bootmagic": False,
-            "command": False,
-            "console": False,
-            "extrakey": True,
-            "mousekey": False,
-            "nkro": True,
-            "rgb_matrix": True,
+            "bootmagic": False, "command": False, "console": False,
+            "extrakey": True, "mousekey": False, "nkro": True, "rgb_matrix": True,
         },
         "usb": {"vid": "0x1B1C", "pid": "0x1B7C", "device_version": "0.0.1"},
         "rgb_matrix": {
             "driver": "custom",
             "layout": [
-                {"matrix": [k.row, k.col], "x": to_qmk(k)[0], "y": to_qmk(k)[1],
-                 "flags": LED_FLAG_KEYLIGHT}
-                if k.has_scan else
-                {"x": to_qmk(k)[0], "y": to_qmk(k)[1], "flags": LED_FLAG_UNDERGLOW}
+                ({"matrix": list(k.matrix), "x": to_qmk(k)[0], "y": to_qmk(k)[1],
+                  "flags": LED_FLAG_KEYLIGHT}
+                 if k.matrix else
+                 {"x": to_qmk(k)[0], "y": to_qmk(k)[1], "flags": LED_FLAG_UNDERGLOW})
                 for k in lit
             ],
         },
@@ -204,45 +220,65 @@ def build_keyboard_json(meta: dict, rows: list[list[Key]], keys: list[Key]) -> d
     }
 
 
-def build_keymap_c(rows: list[list[Key]]) -> str:
-    width = max(len(code) for row in rows for code in (k.keycode for k in row))
+def build_keymap_c(placed: list[Key]) -> str:
+    rows: dict[int, list[Key]] = {}
+    for key in placed:
+        rows.setdefault(key.matrix[0], []).append(key)
 
-    body = []
-    for row in rows:
-        body.append("        " + ", ".join(k.keycode.ljust(width) for k in row) + ",")
-    base = "\n".join(body).rstrip(",")
+    width = max(len(keycode_for(k)) for k in placed)
+
+    def layer(transparent: bool) -> str:
+        lines = []
+        for strobe in sorted(rows):
+            ordered = sorted(rows[strobe], key=lambda k: k.matrix[1])
+            codes = ("KC_TRNS" if transparent else keycode_for(k) for k in ordered)
+            lines.append(f"        /* P1_{STROBE_PIN_BASE + strobe} */ "
+                         + ", ".join(c.ljust(width) for c in codes) + ",")
+        return "\n".join(lines).rstrip(",")
+
+    encoders = "\n".join(
+        f"// {label}: {ccw} / {cw} -- rotation is not matrix-scanned; pins unknown"
+        for label, ccw, cw, *_ in ENCODERS
+    )
 
     return f"""// Generated by tools/generate-qmk-layout.py -- do not edit by hand.
+//
+// Rows are the keyboard's real strobe lines and columns its sense lines, so a position here
+// is the electrical one. See docs/pin-mapping.md.
+//
+// Not in the matrix, because neither rotation is scanned:
+{encoders}
 #include QMK_KEYBOARD_H
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {{
     [0] = LAYOUT_k100_iso_de(
-{base}
+{layer(False)}
     ),
 
     // Fn layer, intentionally left as pass-through until the hardware is understood.
     [1] = LAYOUT_k100_iso_de(
-{chr(10).join("        " + ", ".join("KC_TRNS".ljust(width) for _ in row) + "," for row in rows).rstrip(",")}
+{layer(True)}
     ),
 }};
 """
 
 
-def build_via_json(rows: list[list[Key]]) -> dict:
+def build_via_json(placed: list[Key]) -> dict:
     """VIA v3 definition. The keymap is KLE, emitted with explicit per-row offsets."""
+    rows: dict[float, list[Key]] = {}
+    for key in placed:
+        rows.setdefault(key.y / UNIT, []).append(key)
+
     kle: list = []
     previous_y = None
-
-    for row in rows:
-        cursor = 0.0
-        row_y = row[0].y / UNIT
+    for row_y in sorted(rows):
         segment: list = []
-
         if previous_y is not None and abs(row_y - previous_y) > 0.001:
             segment.append({"y": round(row_y - previous_y - 1, 3)})
         previous_y = row_y
 
-        for key in row:
+        cursor = 0.0
+        for key in sorted(rows[row_y], key=lambda k: k.x):
             props = {}
             gap = key.x / UNIT - cursor
             if abs(gap) > 0.001:
@@ -253,64 +289,98 @@ def build_via_json(rows: list[list[Key]]) -> dict:
                 props["h"] = round(key.height / UNIT, 3)
             if props:
                 segment.append(props)
-            segment.append(f"{key.row},{key.col}")
+            segment.append(f"{key.matrix[0]},{key.matrix[1]}")
             cursor = key.x / UNIT + key.width / UNIT
-
         kle.append(segment)
 
     return {
         "name": "Corsair K100 RGB (OPX, ISO DE)",
         "vendorId": "0x1B1C",
         "productId": "0x1B7C",
-        "matrix": {"rows": len(rows), "cols": max(len(r) for r in rows)},
+        "matrix": {"rows": STROBES, "cols": SENSES},
         "layouts": {"keymap": kle},
     }
+
+
+# ckb-next key name -> QMK keycode, for the keys that carry a HID usage code. Names are
+# positional and follow the US layout, which is QMK's own convention, so `z` is the key where
+# US has Z even though DE labels it Y.
+QMK_KEYCODES_BY_NAME = {
+    "esc": "KC_ESC", **{f"f{n}": f"KC_F{n}" for n in range(1, 13)},
+    "prtscn": "KC_PSCR", "scroll": "KC_SCRL", "pause": "KC_PAUS",
+    "grave": "KC_GRV", **{str(n): f"KC_{n}" for n in range(10)},
+    "minus": "KC_MINS", "equal": "KC_EQL", "bspace": "KC_BSPC",
+    "ins": "KC_INS", "home": "KC_HOME", "pgup": "KC_PGUP",
+    "numlock": "KC_NUM", "numslash": "KC_PSLS", "numstar": "KC_PAST", "numminus": "KC_PMNS",
+    "tab": "KC_TAB", **{c: f"KC_{c.upper()}" for c in "qwertyuiop"},
+    "lbrace": "KC_LBRC", "rbrace": "KC_RBRC",
+    "del": "KC_DEL", "end": "KC_END", "pgdn": "KC_PGDN",
+    "num7": "KC_P7", "num8": "KC_P8", "num9": "KC_P9",
+    "caps": "KC_CAPS", **{c: f"KC_{c.upper()}" for c in "asdfghjkl"},
+    "colon": "KC_SCLN", "quote": "KC_QUOT", "hash": "KC_NUHS", "enter": "KC_ENT",
+    "num4": "KC_P4", "num5": "KC_P5", "num6": "KC_P6", "numplus": "KC_PPLS",
+    "lshift": "KC_LSFT", "bslash_iso": "KC_NUBS", **{c: f"KC_{c.upper()}" for c in "zxcvbnm"},
+    "comma": "KC_COMM", "dot": "KC_DOT", "slash": "KC_SLSH", "rshift": "KC_RSFT",
+    "up": "KC_UP", "num1": "KC_P1", "num2": "KC_P2", "num3": "KC_P3",
+    "lctrl": "KC_LCTL", "lwin": "KC_LGUI", "lalt": "KC_LALT", "space": "KC_SPC",
+    "ralt": "KC_RALT", "rmenu": "KC_APP", "rctrl": "KC_RCTL",
+    "left": "KC_LEFT", "down": "KC_DOWN", "right": "KC_RGHT",
+    "num0": "KC_P0", "numdot": "KC_PDOT", "numenter": "KC_PENT",
+    "bslash": "KC_BSLS", "ro": "KC_INT1", "rwin": "KC_RGUI",
+}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--firmware", type=Path, required=True,
+                        help="an official firmware image, from tools/fetch-firmware.py")
     parser.add_argument("--geometry", type=Path,
                         default=Path("tools/extract-ckb-keymap/k100-de.json"))
-    parser.add_argument("--ckb", type=Path, required=True,
-                        help="path to a ckb-next checkout")
+    parser.add_argument("--ckb", type=Path, required=True, help="a ckb-next checkout")
+    parser.add_argument("--layout", default="iso")
     parser.add_argument("--out", type=Path, default=Path("qmk/keyboards/corsair/k100"))
     parser.add_argument("--via-out", type=Path, default=Path("via/k100-iso-de.json"))
     args = parser.parse_args()
 
-    meta, keys = read_geometry(args.geometry)
+    keys = read_geometry(args.geometry)
     led_indices = read_led_indices(args.ckb / "src/daemon/keymap.c")
+    for name, key in keys.items():
+        key.led = led_indices.get(name)
 
-    unmapped = sorted(k.name for k in keys if k.has_scan and k.name not in KEYCODES)
-    if unmapped:
-        raise SystemExit(f"no QMK keycode for: {', '.join(unmapped)}")
+    missing = sorted(n for n, k in keys.items() if k.has_led and k.led is None)
+    if missing:
+        raise SystemExit(f"no Bragi LED index for: {', '.join(missing)}")
 
-    without_led = sorted(k.name for k in keys if k.has_led and k.name not in led_indices)
-    if without_led:
-        raise SystemExit(f"no Bragi LED index for: {', '.join(without_led)}")
+    firmware = Firmware(args.firmware.read_bytes())
+    placed = join_matrix(keys, firmware, args.layout)
 
-    for key in keys:
-        key.led = led_indices.get(key.name)
-
-    rows = assign_logical_matrix(keys)
+    # Everything that scans but did not land in the matrix must be an encoder, or the join
+    # has silently dropped a key.
+    expected_absent = {name for _, ccw, cw, *_ in ENCODERS for name in (ccw, cw)}
+    absent = {n for n, k in keys.items() if k.has_scan and k.matrix is None}
+    if absent != expected_absent:
+        raise SystemExit(
+            f"keys that scan but are not in the matrix: {', '.join(sorted(absent))}; "
+            f"expected exactly the encoder rotations {', '.join(sorted(expected_absent))}"
+        )
 
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "keyboard.json").write_text(
-        json.dumps(build_keyboard_json(meta, rows, keys), indent=2) + "\n")
+        json.dumps(build_keyboard_json(placed, list(keys.values())), indent=2) + "\n")
 
     keymap_dir = args.out / "keymaps" / "default"
     keymap_dir.mkdir(parents=True, exist_ok=True)
-    (keymap_dir / "keymap.c").write_text(build_keymap_c(rows))
+    (keymap_dir / "keymap.c").write_text(build_keymap_c(placed))
 
     args.via_out.parent.mkdir(parents=True, exist_ok=True)
-    args.via_out.write_text(json.dumps(build_via_json(rows), indent=2) + "\n")
+    args.via_out.write_text(json.dumps(build_via_json(placed), indent=2) + "\n")
 
-    lit = [k for k in keys if k.has_led]
-    print(f"layout      {len(rows)} rows x {max(len(r) for r in rows)} cols, "
-          f"{sum(len(r) for r in rows)} keys")
+    lit = [k for k in keys.values() if k.has_led]
+    print(f"matrix      {STROBES} x {SENSES} electrical, {len(placed)} positions")
+    print(f"encoders    {len(ENCODERS)} (rotations are not matrix-scanned)")
     print(f"rgb matrix  {len(lit)} LEDs "
-          f"({sum(1 for k in lit if k.has_scan)} key, "
-          f"{sum(1 for k in lit if not k.has_scan)} underglow)")
+          f"({sum(1 for k in lit if k.matrix)} key, {sum(1 for k in lit if not k.matrix)} underglow)")
     print(f"written     {args.out / 'keyboard.json'}")
     print(f"            {keymap_dir / 'keymap.c'}")
     print(f"            {args.via_out}")

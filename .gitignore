@@ -16,3 +16,7 @@ hardware/captures/*.sr
 
 # Compiled keymap extractor (build it with tools/extract-ckb-keymap/Makefile)
 tools/extract-ckb-keymap/extract-ckb-keymap
+
+# Python bytecode cache
+__pycache__/
+*.pyc
