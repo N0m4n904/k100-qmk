@@ -158,36 +158,56 @@ Five is exactly the number of physical layouts ckb-next documents in
 Every word uses only bits 0–17, matching the 18 sense lines, and each group is 8 words,
 matching the 8 strobes. The popcount is therefore the key count for that layout.
 
-### Which group is ours
+### Which group is ours — settled, and my earlier guess was wrong
 
-Scan-key counts from ckb-next's own geometry, per layout family:
+I previously inferred `0x0002FD24` (popcount 123) was the ISO mask because 123 matched
+ckb-next's ISO scan-key count. **That was wrong.** It was flagged here as an inference rather
+than a proof, and it did not survive evidence.
 
-| Family | ckb-next scan keys |
-| --- | --- |
-| ANSI (`us`, `pl`) | 122 |
-| **ISO** (`de`, `gb`, `fr`, `it`, `es`, `se`, `dk`, `no`) | **123** |
-| JIS (`jp`) | 126 |
+The firmware also contains `HidKeyCodes` (below), which holds every physical layout's keys at
+once. Because a handful of HID usage codes exist only on one layout, intersecting each mask
+with that table identifies the masks unambiguously:
 
-**`0x0002FD24` has popcount 123, matching ISO exactly** — and the ISO count is identical
-across all eight ISO country layouts, so it is a property of the physical layout rather than a
-coincidence of German. That group is almost certainly the mask for this keyboard:
+| Mask | Positions | Marker keys it enables | Layout |
+| --- | --- | --- | --- |
+| `0x2FD84` | 118 | ANSI backslash only | **ANSI** |
+| **`0x2FD64`** | **119** | **ISO hash + ISO non-US backslash** | **ISO** |
+| `0x2FD44` | 122 | ISO hash + all four JIS keys | **JIS** |
+| `0x2FD24` | 123 | ANSI + ISO hash + all four JIS | a superset |
+| `0x2FD04` | 120 | ANSI + ISO hash + ISO backslash | a superset |
 
+The markers are `0x31` ANSI backslash, `0x32` ISO hash, `0x64` ISO non-US backslash, and
+`0x87`/`0x89`/`0x8A`/`0x8B` for JIS `ro`, `yen`, `henkan` and `muhenkan`. An ISO board must
+have the hash and non-US backslash and must *not* have the ANSI backslash or any JIS key, and
+exactly one mask satisfies that.
+
+**The ISO mask is `0x0002FD64`, with 119 positions — not the 123-position group.**
+
+Why the popcount reasoning failed: a mask counts *matrix positions*, and 15 of them are keys
+with no HID usage code at all (the macro keys, media keys and wheel). ckb-next's 123 counts
+scan keys from its own geometry, which is a different quantity. The two were never comparable.
+
+### `HidKeyCodes`: the position-to-key table
+
+Found at flash **`0x0002FEBD`**, **144 bytes = 8 strobes x 18 senses**, indexed by
+`strobe * 18 + sense` and holding each position's HID usage code. Zero means no HID code.
+
+It was located from the firmware's own assert strings. `keyToHidKeycode` in
+`keyToHidCodeMap.c` asserts `key < ELEMENTS(HidKeyCodes)`, and the function ends:
+
+```asm
+ldr  r3, [pc, #44]     ; r3 = 0x0002FEBD
+ldrb r0, [r3, r4]      ; return HidKeyCodes[key]
 ```
-strobe 0: 0x3ffff  111111111111111111  18
-strobe 1: 0x3ffff  111111111111111111  18
-strobe 2: 0x3ffff  111111111111111111  18
-strobe 3: 0x07fff  000111111111111111  15
-strobe 4: 0x17ffb  010111111111111011  15
-strobe 5: 0x3fc9f  111111110010011111  14
-strobe 6: 0x1ffff  011111111111111111  17
-strobe 7: 0x1e00f  011110000000001111   8
-```
 
-Caveat, stated plainly: the match is on popcount, and the selector's jump table does not map
-cleanly onto ckb-next's layout numbering (the firmware dispatches on a value of 0–3, with one
-of those splitting into two masks by a secondary check). So "123 means ISO" is a strong
-inference, not a proof. Confirming it means reading the actual pressed positions off a real
-keyboard.
+The same function reveals the firmware's internal layout numbering in passing: it remaps
+`0x65` to `0x88` and `0x32` to `0x89` when the layout getter returns **3**, which are
+Katakana and Yen substitutions, so internal layout 3 is JIS.
+
+A sibling table `ProtocolKeyToHidCode` sits at flash `0x0002FF4D` with 138 entries, bounds
+checked at 137, mapping Bragi protocol key indices to HID codes.
+
+Reproduce the decoded matrix with `tools/extract-matrix-map.py`.
 
 ## What this means for the project
 
@@ -203,18 +223,23 @@ assessed, should that ever be revisited.
 
 ## Still unknown
 
-- **Which `(strobe, sense)` pair is which key.** We now know *which* 123 of the 144 positions
-  are populated, from the ISO mask above, but not which key sits at each. The table mapping a
-  matrix position to a key index has not been found; it is presumably also copied into SRAM at
-  init, alongside the second 8-entry table at `0x20001328` whose purpose is still
-  unidentified. Finding it would let the generated logical matrix in `qmk-layout.md` be
-  replaced by the real electrical one.
+- ~~Which `(strobe, sense)` pair is which key.~~ **Answered** by `HidKeyCodes` above. The
+  full ISO matrix is 119 populated positions: 104 carrying a HID usage code and 15 without.
 
-  **Best lead:** the image has a full symbol-name string table, and it includes
-  `loadKeyAssignmentsSemaphore`. Chasing references to that string should reach the key
-  assignment loader. Other promising names seen in passing: `ActionProcessTimer`,
-  `processSemaphore`, `dialStopSemaphore` (the iCUE wheel is called the "dial", which may also
-  settle whether it is an encoder).
+  What the 15 are individually is still open. Their positions are known — sense 0 on strobes
+  0 to 5, one at strobe 5 sense 11, and eight on strobe 7 — and sense 0 across six
+  consecutive strobes is a clean fit for the six macro keys G1 to G6, but that is a reading of
+  the shape rather than evidence.
+
+  Related arithmetic worth resolving: the generated logical layout has 123 keys while the
+  matrix has 119 positions, so **four logical keys are not matrix-scanned**. The wheel
+  rotations are the strongest candidates for two of them, since the firmware has a
+  `dialAssignmentMutex` and `dialStopSemaphore` and treats the dial as its own subsystem. The
+  other two are unidentified.
+- **Regenerating the QMK definition on the real matrix.** `qmk-layout.md` still describes a
+  *logical* 7x22 matrix, which was the right call while the electrical one was unknown. It can
+  now be replaced by the real 8x18 mapping, which also removes the need for the custom matrix
+  driver to translate between the two.
 - **RGB driver bus and pins.** Not yet analysed. Reference counts above the SDK
   lookup-table baseline point at **FLEXCOMM3** (5 refs, versus 3 for every other Flexcomm),
   plus **CTIMER4** (7), **GPIO** (6), **CRC** (5), **EEPROM** (4) and **MRT0** (4).

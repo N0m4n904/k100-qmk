@@ -32,7 +32,15 @@ Two sources, joined:
 The generator refuses to emit anything if a key lacks a QMK keycode or an LED index, so
 silent gaps are not possible.
 
-## The logical matrix — the decision that unblocks this work
+## The logical matrix — superseded, but it was the right call at the time
+
+> **Superseded.** The real electrical matrix has since been recovered from the firmware —
+> 8 strobes x 18 senses, 119 populated ISO positions, with each position's HID usage code.
+> See `docs/pin-mapping.md` and `tools/extract-matrix-map.py`. The generated definition
+> below still uses the logical matrix and should be regenerated on the real one, which also
+> removes the translation the custom matrix driver would otherwise have to do.
+
+## The logical matrix — the decision that unblocked this work
 
 QMK's layout needs `matrix: [row, col]` for every key, and we do **not** know the K100's
 electrical matrix. That does not block anything, because we are writing the matrix driver
