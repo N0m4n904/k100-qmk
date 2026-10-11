@@ -1,0 +1,16 @@
+# Corsair K100 RGB — access for k100-bragi.
+#
+# The usb rule is the one that matters: k100-bragi drives the keyboard through
+# usbdevfs (/dev/bus/usb/...), because hidraw cannot write to its Bragi
+# interface at all. See udev/README.md.
+#
+# Matched on vendor only, deliberately. A keyboard in bootloader mode may report
+# a product id nothing here knows, and that is exactly when access has to work.
+SUBSYSTEM=="usb", ATTR{idVendor}=="1b1c", MODE="0660", GROUP="users", TAG+="uaccess", TAG+="udev-acl"
+
+# The hidraw nodes, for completeness. This does NOT make Corsair's web updater
+# work -- that has been tested twice, once with the nodes already world
+# writable and once with this rule in place. See udev/README.md.
+KERNEL=="hidraw*", ATTRS{idVendor}=="1b1c", ATTRS{idProduct}=="1b7c", MODE="0660", GROUP="users", TAG+="uaccess", TAG+="udev-acl"
+KERNEL=="hidraw*", ATTRS{idVendor}=="1b1c", ATTRS{idProduct}=="1b7d", MODE="0660", GROUP="users", TAG+="uaccess", TAG+="udev-acl"
+KERNEL=="hidraw*", ATTRS{idVendor}=="1b1c", ATTRS{idProduct}=="1bc5", MODE="0660", GROUP="users", TAG+="uaccess", TAG+="udev-acl"

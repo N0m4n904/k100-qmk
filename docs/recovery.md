@@ -37,6 +37,16 @@ and then, rather than treating it as an error:
 
 So a device stranded in bootloader is a supported, documented state with an official way out.
 
+**But not from Linux.** The updater is a web page driving the keyboard over WebHID, which on Linux
+means hidraw `write()`, and hidraw cannot write to this keyboard's Bragi interface at all. Tested
+twice, the second time with udev rules explicitly granting access: the page fails on its first
+command either way. See `docs/bragi-firmware-update.md` and `udev/README.md`.
+
+Layer 1 therefore costs a **Windows machine**, not just a cable. That does not weaken it as a
+recovery path — it is still the supported route, and `k100-bragi` drives the same transitions over
+usbdevfs from Linux — but it has to be available *before* the keyboard is put into bootloader
+mode, not arranged afterwards.
+
 ### Layer 2 — the LPC54605 ROM ISP (hardware backstop)
 
 The LPC546xx boot ROM is **mask ROM and cannot be erased by any software**. ISP entry is by

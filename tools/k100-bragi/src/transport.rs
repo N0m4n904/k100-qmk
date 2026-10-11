@@ -74,10 +74,57 @@ const USBDEVFS_CONNECT: c_int = ioc::encode(ioc::NONE, b'U', 23, 0) as c_int;
 pub struct Found {
     pub node: PathBuf,
     pub product: u16,
+    /// Interface numbers the device actually presents, read from sysfs rather than assumed.
+    ///
+    /// The application firmware shows three, but the bootloader is a different program and
+    /// need not show the same ones. Claiming an interface that does not exist fails, and
+    /// leaving one unclaimed was observed to stop the device responding, so the set has to
+    /// come from the device.
+    pub interfaces: Vec<u8>,
+}
+
+/// Interface numbers of a sysfs USB device.
+///
+/// Its interfaces appear as child directories named `<device>:<config>.<interface>`, each
+/// carrying a `bInterfaceNumber`. That number is authoritative; the directory suffix is not,
+/// since it is the descriptor index.
+fn interfaces_of(path: &Path) -> Vec<u8> {
+    let Some(prefix) = path.file_name().and_then(|n| n.to_str()) else {
+        return Vec::new();
+    };
+
+    let mut interfaces: Vec<u8> = std::fs::read_dir(path)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|child| {
+            child.file_name().to_str().is_some_and(|n| n.starts_with(&format!("{prefix}:")))
+        })
+        .filter_map(|child| {
+            let text = std::fs::read_to_string(child.path().join("bInterfaceNumber")).ok()?;
+            u8::from_str_radix(text.trim(), 16).ok()
+        })
+        .collect();
+
+    interfaces.sort_unstable();
+    interfaces.dedup();
+    interfaces
 }
 
 /// Scans sysfs for devices matching a vendor and any of several products.
 pub fn find(vendor: u16, products: &[u16]) -> Result<Vec<Found>> {
+    scan(vendor, |pid| products.contains(&pid))
+}
+
+/// Scans sysfs for every device of a vendor, whatever product it reports.
+///
+/// Needed because a device in bootloader mode may not report a product id this tool knows,
+/// and that is exactly when reaching it matters most.
+pub fn find_any(vendor: u16) -> Result<Vec<Found>> {
+    scan(vendor, |_| true)
+}
+
+fn scan(vendor: u16, accept: impl Fn(u16) -> bool) -> Result<Vec<Found>> {
     let mut found = Vec::new();
 
     for entry in std::fs::read_dir("/sys/bus/usb/devices")
@@ -94,7 +141,7 @@ pub fn find(vendor: u16, products: &[u16]) -> Result<Vec<Found>> {
         };
 
         let (Some(vid), Some(pid)) = (hex("idVendor"), hex("idProduct")) else { continue };
-        if vid != vendor || !products.contains(&pid) {
+        if vid != vendor || !accept(pid) {
             continue;
         }
         let (Some(bus), Some(device)) = (decimal("busnum"), decimal("devnum")) else { continue };
@@ -102,6 +149,7 @@ pub fn find(vendor: u16, products: &[u16]) -> Result<Vec<Found>> {
         found.push(Found {
             node: PathBuf::from(format!("/dev/bus/usb/{bus:03}/{device:03}")),
             product: pid,
+            interfaces: interfaces_of(&path),
         });
     }
     Ok(found)

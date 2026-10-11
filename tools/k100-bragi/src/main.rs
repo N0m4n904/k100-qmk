@@ -65,8 +65,8 @@ fn open() -> Result<Device> {
 fn info() -> Result<()> {
     let device = open()?;
 
-    println!("{}", device.model.description());
-    println!("  product id        {:#06x}", device.model.pid());
+    println!("{}", device.description());
+    println!("  product id        {:#06x}", device.product);
     println!("  header layout     {:?}", device.layout);
 
     match device.usb_pid() {
@@ -123,7 +123,7 @@ fn files() -> Result<()> {
     let device = open()?;
     const HANDLE: u8 = 1;
 
-    println!("{}", device.model.description());
+    println!("{}", device.description());
     println!("  probing {} file ids in host-controlled mode\n",
              protocol::FILE_IDS.len() - 1);
 

@@ -70,7 +70,8 @@ tools/
   generate-qmk-layout.py  generates the QMK and VIA definitions
 qmk/keyboards/corsair/k100/   generated QMK keyboard definition
 via/                          generated VIA definition
-flake.nix      dev shells: default, .#keymap, .#firmware
+udev/          rules so k100-bragi runs without root
+flake.nix      dev shells: default, .#keymap, .#firmware, .#qmk
 ```
 
 ## Building
@@ -78,7 +79,16 @@ flake.nix      dev shells: default, .#keymap, .#firmware
 ```sh
 nix develop          # Rust tooling
 nix develop .#keymap # Qt, for the keymap extractor
+nix develop .#firmware && chibios/test/check-registers.sh   # the ChibiOS port's checks
+nix develop .#firmware && chibios/test/build-demo.sh        # build the port
+nix develop .#qmk      && qmk/test/build-k100.sh            # build the keyboard firmware
 ```
+
+The two build scripts fetch ChibiOS, QMK and NXP's headers themselves rather than this
+repository vendoring them, so they are the build instructions as well as the build.
+
+To talk to the keyboard without root, install `udev/99-corsair-k100.rules`; see `udev/README.md`,
+which also records why Corsair's web updater cannot be used on Linux.
 
 ## Licensing and attribution
 

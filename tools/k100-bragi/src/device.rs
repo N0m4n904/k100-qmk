@@ -18,42 +18,76 @@ const BRAGI_EP_IN: u8 = 0x82;
 /// "Jumbo" report size, which every K100 uses.
 const REPORT_SIZE: usize = 1024;
 
-/// ckb-next claims all interfaces rather than only the vendor one, and anything less was
-/// observed not to work. This stops the keyboard typing until the handle is dropped.
-const INTERFACES: [u8; 3] = [0, 1, 2];
+/// Interfaces to claim when the device presents none that sysfs can see, which should not
+/// happen. ckb-next claims all of them rather than only the vendor one, and anything less was
+/// observed not to work; claiming any at all stops the keyboard typing until the handle is
+/// dropped.
+const FALLBACK_INTERFACES: [u8; 3] = [0, 1, 2];
 
 /// ckb-next's transfer timeout.
 const TIMEOUT_MS: u32 = 5000;
 
 pub struct Device {
     usb: UsbDevice,
-    pub model: Model,
+    /// `None` when the product id is not one this tool knows, which is the expected state in
+    /// bootloader mode -- the bootloader is a different program and need not keep the
+    /// application's identity.
+    pub model: Option<Model>,
+    /// The product id as reported, known even when the model is not.
+    pub product: u16,
     pub layout: HeaderLayout,
 }
 
 impl Device {
     /// Finds a K100 and takes its interfaces from the kernel.
+    ///
+    /// A known product id is preferred, but any Corsair device will do if none is present.
+    /// That fallback is the point: a keyboard in bootloader mode may report a product id this
+    /// tool has never seen, and refusing to open it then would strand it -- recovery is
+    /// exactly when being reachable matters. Which interfaces to claim comes from the device
+    /// too, for the same reason.
     pub fn open() -> Result<Self> {
         let pids: Vec<u16> = Model::ALL.iter().map(|m| m.pid()).collect();
-        let candidates = transport::find(CORSAIR_VID, &pids)?;
 
-        let found = candidates.first().ok_or_else(|| {
-            anyhow!(
-                "no K100 found. Expected Corsair VID {CORSAIR_VID:#06x} with one of {}; is the \
-                 keyboard connected, and does this user have access to its /dev/bus/usb node?",
-                pids.iter().map(|p| format!("{p:#06x}")).collect::<Vec<_>>().join(", ")
-            )
-        })?;
+        let known = transport::find(CORSAIR_VID, &pids)?;
+        let found = match known.into_iter().next() {
+            Some(found) => found,
+            None => transport::find_any(CORSAIR_VID)?.into_iter().next().ok_or_else(|| {
+                anyhow!(
+                    "no Corsair device found. Expected VID {CORSAIR_VID:#06x}, ideally with one \
+                     of {}; is the keyboard connected, and does this user have access to its \
+                     /dev/bus/usb node? See udev/README.md",
+                    pids.iter().map(|p| format!("{p:#06x}")).collect::<Vec<_>>().join(", ")
+                )
+            })?,
+        };
 
-        let model = Model::from_pid(found.product)
-            .ok_or_else(|| anyhow!("unexpected product {:#06x}", found.product))?;
+        let model = Model::from_pid(found.product);
+        let interfaces = if found.interfaces.is_empty() {
+            FALLBACK_INTERFACES.to_vec()
+        } else {
+            found.interfaces.clone()
+        };
 
-        let usb = UsbDevice::open(&found.node, &INTERFACES)
+        let usb = UsbDevice::open(&found.node, &interfaces)
             .with_context(|| format!("taking interfaces of {}", found.node.display()))?;
 
-        // Two-byte framing is settled for this device rather than probed: USB_VID and
-        // USB_PID read back correctly at that offset. See docs/bragi-firmware-update.md.
-        Ok(Self { usb, model, layout: HeaderLayout::TwoByte })
+        // Two-byte framing is settled for the application firmware rather than probed: USB_VID
+        // and USB_PID read back correctly at that offset. See docs/bragi-firmware-update.md.
+        // Whether the bootloader frames the same way is unverified, which is why `info`
+        // exists.
+        Ok(Self { usb, model, product: found.product, layout: HeaderLayout::TwoByte })
+    }
+
+    /// A human-readable name, which is not always a known model.
+    pub fn description(&self) -> String {
+        match self.model {
+            Some(model) => model.description().to_string(),
+            None => format!(
+                "unrecognised Corsair device {:#06x} -- possibly a K100 in bootloader mode",
+                self.product
+            ),
+        }
     }
 
     /// Sends a request and reads the reply.

@@ -168,6 +168,32 @@ attempt fails, across `PING`, `GET(OPERATING_MODE)` and the firmware-version rea
 {id: 3, cmd: 2,  propId: 3, …}  NotAllowedError  -> command GET(OPERATING_MODE) failed
 ```
 
+#### Retested with permissions explicitly granted
+
+The first test left one explanation open: the hidraw nodes happened to be world writable, which
+is not the same as a user deliberately being granted access, and `NotAllowedError` reads like a
+permission problem. So the test was repeated with `udev/99-corsair-k100.rules` installed, granting
+the invoking user the hidraw nodes through `uaccess` and `udev-acl`.
+
+**Identical failure.** The updater still cannot get past its first command:
+
+```
+[ERROR] Error with executing command. Retrying... NotAllowedError: Failed to write the report.
+[ERROR] Error with retrying command {id: 1, cmd: 2, propId: 3, …} NotAllowedError: Failed to write the report.
+```
+
+That settles it. `NotAllowedError` here is Chromium's generic wrapper around a write that failed,
+not a permission denial, and granting permission changes nothing — the write hits the same wall
+hidraw does. Corsair's web updater cannot drive this keyboard on Linux, and **recovery through
+their own tooling needs Windows.**
+
+Worth ruling out rather than assuming, because it was the one cheap explanation that would have
+made firmware recovery possible without a second machine.
+
+The same log also shows `iCUE WebSocket connection failed`, repeatedly. That is unrelated: the
+page probes for a locally installed iCUE to delegate to, and there is none on Linux. It is not the
+reason the writes fail — the WebHID path is already in use by then.
+
 Usefully, the page labels its own commands, which corroborates three values of the command
 and property tables above from a client independent of this project: **`PING` is 18, `GET` is
 2, and `OPERATING_MODE` is 3.**
