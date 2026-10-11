@@ -340,15 +340,44 @@ and a `StatusLedCount` bound — which these plausibly are, though that is not c
 Model variation does **not** explain the gap. Corsair ships **one image for both the OPX and
 the Cherry MX variants** — the 0.30.257 file is byte-identical under product IDs `1b7c` and
 `1b7d` (sha256 `316319e65a42…`) — and all four published images across both IDs carry
-byte-identical key tables. Both variants also share the chassis, so they have the same LEDs
-anyway. A shared image is therefore not a superset covering hardware this board lacks.
+byte-identical key tables. Both variants also share the chassis, so a shared image is not a
+superset covering hardware this board lacks.
 
-The likelier explanation is the mundane one: 174 comes from ckb-next's **GUI drawing data**,
-which is what a host application bothered to give coordinates to, not a hardware inventory.
-The six single-colour status LEDs alone account for six of the sixteen, since that GUI has no
-status-LED concept. Closing the remainder properly needs the mapping between the firmware's
-`LedId` and the Bragi LED index, which has not been found; they are different numbering
-schemes, so the three counts cannot be diffed directly yet.
+### `LedPresenceFlag` reconciles all three counts
+
+A third table settles it. `checkLedPresence` asserts `index < ELEMENTS(LedPresenceFlag)` with
+`cmp r0, #192`, so that space is **193 wide** — exactly ckb-next's count — and the function
+body gives its address:
+
+```asm
+ldr  r3, [pc, #24]   ; r3 = 0x0003214A = LedPresenceFlag
+ldrb r0, [r3, r0]
+clz  r0, r0
+lsrs r0, r0, #5      ; 1 if the byte is zero, else 0
+```
+
+The 193 bytes at flash **`0x0003214A`** hold **9 zeros and 184 non-zeros**, and 184 is
+precisely `LedInfoMap`'s RGB entry count. So:
+
+| Count | Is | Arithmetic |
+| --- | --- | --- |
+| **193** | the Bragi LED index space | ckb-next's figure |
+| **9** | indices absent on this hardware | zero bytes in `LedPresenceFlag` |
+| **184** | real Bragi LEDs | 193 - 9, and `LedInfoMap`'s RGB count |
+| **190** | `LedInfoMap` entries | 184 Bragi LEDs + 6 status LEDs |
+| **174** | our generated layout | the subset ckb-next's GUI positions |
+
+The gap is therefore **16 = 10 + 6**: ten present Bragi LEDs that ckb-next's geometry gives no
+coordinates to, plus the six single-colour status LEDs, which live outside the Bragi index
+space entirely.
+
+The absent indices are **3, 103, 104, 112, 113, 120, 121, 129 and 130**. Cross-referenced
+against `keymap_bragi` those are a reserved slot, `volup` and `voldn` (the volume roller has
+no LED of its own), `rwin` (not on this board), `light`, two unnamed, and `ctrlwheelccw`.
+
+One caveat: the table is **not boolean**. Its values are `0xff` (177 entries), `0x08` (5) and
+`0x0a` (2) besides the zeros, so it carries a per-LED attribute whose non-zero meanings are
+unknown. Only the zero-versus-non-zero split is relied on here.
 
 **For the driver, 190 and `LedInfoMap` are the numbers that matter**, since they are what the
 hardware addresses. ckb-next's 193 is host-side bookkeeping. Our generated `rgb_matrix.layout`
