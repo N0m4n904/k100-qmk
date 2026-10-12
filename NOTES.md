@@ -85,7 +85,11 @@ ckb-next supports the K100 and identifies it by these product IDs (`src/daemon/u
 | --- | --- |
 | `0x1b7c` | K100 optical (OPX) — **our target** |
 | `0x1b7d` | K100 mechanical (Cherry MX Speed) |
-| `0x1bc5` | K100 optical, later variant |
+| `0x1bc5` | K100 optical, "later variant" — **different silicon**, see below |
+
+ckb-next's "later variant" label turns out to understate it: `0x1bc5` runs an i.MX RT part, not
+the LPC54605 that `0x1b7c` and `0x1b7d` share. `docs/firmware-format.md` has the evidence. The
+naming is ckb-next's own, not Corsair's, and nothing in it implied a platform change.
 
 All three are listed under `USES_BRAGI` and `USES_BRAGI_JUMBO`. The **Bragi** protocol's magic
 byte is `0x08` (`src/daemon/bragi_proto.h`) — exactly the prefix `k100-color-oxide` already

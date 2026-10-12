@@ -50,6 +50,12 @@ HEADERS = {
 }
 
 
+# NXP's FlexSPI configuration block tag, 0x42464346 little-endian. An image
+# opening with this is an i.MX RT execute-in-place boot image rather than the
+# CRC32 container the LPC54605 variants use.
+FLEXSPI_CFG_BLK_TAG = b"FCFB"
+
+
 def fetch(path: str) -> bytes:
     with urlopen(Request(f"{API}/{path.lstrip('/')}", headers=HEADERS)) as response:
         return response.read()
@@ -134,11 +140,24 @@ def main() -> int:
                 continue
 
             for image in images_in(blob):
-                state = "valid" if image.valid else "INVALID"
                 print(f"    {image.name}")
-                print(f"      built           {image.build_stamp}")
-                print(f"      length          {len(image.data)} (header declares {image.declared_length})")
-                print(f"      crc32-mpeg2     0x{image.actual_crc:08x} (header declares 0x{image.declared_crc:08x}) {state}")
+
+                # Not every K100 product id uses this container. The 1bc5
+                # variant is an i.MX RT part whose image opens with a FlexSPI
+                # configuration block, so these fields are not where this parser
+                # looks and reporting a failed CRC would be misleading. See
+                # docs/firmware-format.md.
+                if image.data[:4] == FLEXSPI_CFG_BLK_TAG:
+                    print(f"      length          {len(image.data)}")
+                    print("      container       FlexSPI boot image, not the CRC32 container "
+                          "this tool checks")
+                    print("      note            this is a different platform; nothing in this "
+                          "repository applies to it")
+                else:
+                    state = "valid" if image.valid else "INVALID"
+                    print(f"      built           {image.build_stamp}")
+                    print(f"      length          {len(image.data)} (header declares {image.declared_length})")
+                    print(f"      crc32-mpeg2     0x{image.actual_crc:08x} (header declares 0x{image.declared_crc:08x}) {state}")
 
                 if args.out:
                     args.out.mkdir(parents=True, exist_ok=True)

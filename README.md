@@ -51,13 +51,18 @@ Start with [`NOTES.md`](NOTES.md) for the research and
 
 Corsair K100 RGB, wired, **NXP LPC54605J512** (ARM Cortex-M4, 180 MHz, 512 KB flash).
 
-| Variant | USB ID |
-| --- | --- |
-| OPX optical — the target | `1b1c:1b7c` |
-| Cherry MX Speed | `1b1c:1b7d` |
-| OPX optical, later revision | `1b1c:1bc5` |
+| Variant | USB ID | Platform |
+| --- | --- | --- |
+| OPX optical — the target | `1b1c:1b7c` | NXP LPC54605 |
+| Cherry MX Speed | `1b1c:1b7d` | NXP LPC54605, byte-identical firmware |
+| OPX optical, "later variant" | `1b1c:1bc5` | **NXP i.MX RT — a different platform** |
 
-The K100 Air is a different device entirely and none of this applies to it.
+**`1bc5` is not a revision of this board, it is different silicon**, so none of this work applies
+to it: not the ChibiOS port, not the pin mapping, not a single firmware address. Its firmware is
+`Splinter_App`, an i.MX RT image running from external QSPI flash, where `1b7c`'s is `Heracles`,
+an LPC54605 image running from internal flash. See `docs/firmware-format.md`.
+
+The K100 Air is a different device again and none of this applies to it either.
 
 ## Layout
 
