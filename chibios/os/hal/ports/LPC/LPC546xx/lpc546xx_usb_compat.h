@@ -75,16 +75,16 @@
 /**
  * @brief   Device suspend.
  *
- * @warning **This mapping is the one that is not certain.** The shared driver
- *          spells it @p DSUP, which does not appear in NXP's register naming
- *          for either family, while this part calls the suspend bit @p DSUS.
- *          The driver's two uses — testing it in the device-interrupt handler,
- *          and clearing it to wake the host — both read as suspend, so @p DSUS
- *          is the reading taken here.
+ * @details The two families name this bit differently and place it identically.
+ *          LPC11Uxx's CMSIS header calls bit 17 @p DSUP; NXP's header for this
+ *          part calls bit 17 @p DSUS. Every neighbouring bit agrees as well --
+ *          @p DCON at 16, @p LPM_SUS at 19, @p LPM_REWP at 20, @p DCON_C at 24,
+ *          @p DSUS_C at 25 and @p DRES_C at 26 -- so this is one register laid
+ *          out the same way under two spellings, not two different bits.
  *
- *          Confirm against UM10912's DEVCMDSTAT table before trusting suspend
- *          and remote-wakeup behaviour. Nothing else in the driver depends on
- *          it, so enumeration is unaffected either way.
+ *          Earlier versions of this file flagged the mapping as the one that
+ *          was not certain and wanted checking against UM10912. Comparing the
+ *          two headers settles it without one.
  */
 #define USB_DEVCMDSTAT_DSUP         USB_DEVCMDSTAT_DSUS_MASK
 /** @} */

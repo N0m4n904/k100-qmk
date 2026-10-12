@@ -181,6 +181,12 @@ void lpc546xx_usb_compat_check(void) {
   LPC_USB->EPINUSE = 0U;
   LPC_USB->EPBUFCFG = 0U;
 
+  /* The suspend bit, whose mapping rests on the two families placing it at the
+     same bit number under different names: LPC11Uxx's header calls bit 17 DSUP
+     and this one calls bit 17 DSUS. Pinned so a renumbering is caught. */
+  _Static_assert(USB_DEVCMDSTAT_DSUS_SHIFT == 17U,
+                 "DSUS has moved; the DSUP mapping rested on it being bit 17");
+
   /* Interrupt bits, including the shifted forms the driver builds. */
   LPC_USB->INTSTAT = USB_INT_DEV_INT | USB_INT_FRAME_INT | USB_INT_EP_ALL_INT;
   LPC_USB->INTEN = USB_INT_DEV_INT | USB_INT_FRAME_INT;

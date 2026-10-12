@@ -212,10 +212,11 @@ Three details worth knowing:
   to it is a compile error rather than a silent misconfiguration. It is written once, as `0`, which
   is the no-op case, so the capability flag costs nothing.
 
-- **`DSUP` is the one uncertain mapping.** The driver spells the suspend bit `DSUP`, which appears
-  in neither family's NXP naming; this part calls it `DSUS`. Both of the driver's uses read as
-  suspend, so `DSUS` is the reading taken, but it wants confirming against UM10912's `DEVCMDSTAT`
-  table before suspend and remote wakeup are trusted. Enumeration does not depend on it.
+- **`DSUP` was the one uncertain mapping, and is now settled.** The driver spells the suspend bit
+  `DSUP` and this part's header calls it `DSUS`. Both headers put it at **bit 17**, and every
+  neighbouring bit matches too — `DCON` at 16, `LPM_SUS` at 19, `DCON_C` at 24, `DSUS_C` at 25,
+  `DRES_C` at 26. One register under two spellings, so no user manual was needed after all. The
+  register check pins the bit number, so a renumbering would not pass quietly.
 
 ## The checks
 
