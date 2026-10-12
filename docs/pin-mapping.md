@@ -450,6 +450,44 @@ the Cherry MX variants** — the 0.30.257 file is byte-identical under product I
 byte-identical key tables. Both variants also share the chassis, so a shared image is not a
 superset covering hardware this board lacks.
 
+### The Bragi index to LedInfoMap index mapping is unsolved
+
+`LedInfoMap` says which driver and channels light LED *n*. ckb-next's `keymap_bragi` says which
+key Bragi index *b* is. **Nothing found relates the two**, and without that relation a channel
+table cannot be keyed to physical keys.
+
+There is no translation table in the firmware. The only two references to `LedPresenceFlag` are
+`checkLedPresence` itself and a per-index attribute lookup; neither compacts an index. So any
+mapping is a hypothesis, and a wrong one is silent: every key still lights, just the wrong one.
+
+The obvious candidate was tested and **rejected**. It was that the *n*th present Bragi LED is the
+*n*th RGB entry of `LedInfoMap` — the RGB entries being 0 to 172 and 179 to 189, with the six
+single-colour ones occupying 173 to 178 as a contiguous block.
+
+`tools/check-led-mapping.py` falsifies it on geometry. The three drivers sit on one PCB and a
+channel advances by 18 per switch row, so a correct mapping should put each driver's channels in a
+*region* of the board. Under this one:
+
+```
+  driver  LEDs   x span   as a fraction of the board
+       0    58      258   0.88
+       1    64      275   0.94
+       2    53      294   1.00
+
+  driver  corr(channel row, y)  corr(channel column, x)
+       0  +0.139                +0.742
+       1  -0.120                -0.168
+       2  +0.157                -0.018
+```
+
+Every driver spans essentially the whole keyboard and the correlations are noise. Three drivers
+with no reason to interleave that finely do not wire like that, so the mapping is wrong.
+
+The test is kept as a tool rather than as a note, so the next candidate costs one command. What
+would settle it instead of testing guesses: reading the mapping off the hardware, by lighting one
+channel at a time from custom firmware and seeing which key lights. That is a few lines once
+anything runs, and it is the same answer as for the SPI pins and the encoders.
+
 ### `LedPresenceFlag` reconciles all three counts
 
 A third table settles it. `checkLedPresence` asserts `index < ELEMENTS(LedPresenceFlag)` with

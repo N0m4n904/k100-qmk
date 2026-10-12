@@ -11,5 +11,13 @@
  * positions that have a key or a known place on the board, and reconciling the
  * two is its own piece of work -- see docs/pin-mapping.md on the LED counts.
  */
-#define IS31FL3743B_LED_COUNT 190
+/*
+ * With rgb_matrix driving them the count is RGB_MATRIX_LED_COUNT, which the
+ * driver header takes care of; this is for the build with rgb_matrix off, where
+ * the tables are still compiled.
+ */
+#ifndef RGB_MATRIX_IS31FL3743B
+#    define IS31FL3743B_LED_COUNT 190
+#endif
+
 #define IS31FL3743B_DRIVER_COUNT 3

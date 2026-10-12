@@ -1,20 +1,25 @@
-From 5ded20fd97e0e9f4bf5932cdf23355824f741c43 Mon Sep 17 00:00:00 2001
+From bbf68b90af912044a7bce3d93c5e25a6be45e89e Mon Sep 17 00:00:00 2001
 From: Noah Anleitner <noah.anleitner@nonetwor.cc>
-Date: Sun, 11 Oct 2026 19:53:16 +0200
-Subject: [PATCH] chibios: add the LPC546xx family, for the LPC54605
+Date: Mon, 12 Oct 2026 16:57:40 +0200
+Subject: [PATCH] chibios: add the LPC546xx family, and the IS31FL3743B LED
+ driver
 
-Four places have to learn the processor, and only the first is obvious. Each one
-was found by building, not by reading, and three of them fail in a way that
-points somewhere else entirely.
+Two additions that share a patch because one keyboard needs both: support for
+NXP's LPC546xx, and the SPI variant of an ISSI LED driver QMK already has the
+I2C variant of.
 
-mcu_selection.mk maps it onto the family, startup code, linker script and board.
-Nothing else in the build system changes: platform.mk already resolves all of
-that from variables and already searches ChibiOS-Contrib before ChibiOS, both
-for the startup makefile and for os/hal/ports/<family>/<series>/platform.mk.
+The LPC546xx side touches four places, and only the first is obvious. Each was
+found by building, and three of them fail in a way that points elsewhere.
 
-keyboard.jsonschema has to list it, or any keyboard.json naming it fails
-validation and is dropped whole -- which presents as a keyboard with no layouts,
-no bootloader and out-of-range bootmagic keys, none of which is the problem.
+mcu_selection.mk maps the processor onto the family, startup code, linker script
+and board. Nothing else in the build system changes: platform.mk already
+resolves all of that from variables and already searches ChibiOS-Contrib before
+ChibiOS, both for the startup makefile and for the platform makefile.
+
+keyboard.jsonschema has to list the processor, or any keyboard.json naming it
+fails validation and is dropped whole -- which presents as a keyboard with no
+layouts, no bootloader and out-of-range bootmagic keys, none of which is the
+problem.
 
 CHIBIOS_PROCESSORS is how QMK decides a target is ChibiOS rather than AVR. An
 unlisted ARM processor is treated as AVR and the build ends in
@@ -23,22 +28,57 @@ correctly all along.
 
 chibios_config.h needs a CPU_CLOCK for the family, as every other family has.
 Without it the first file to include it fails on an undeclared identifier, with
-nothing to connect that to a missing MCU entry.
+nothing connecting that to a missing MCU entry.
 
-The part has no self-hosted bootloader, entering Corsair's being a host-side
-operation over their Bragi protocol, so MCU2BOOTLOADER maps it to custom.
+The IS31FL3743B is the same 18 by 11 LED matrix as the IS31FL3743A behind SPI
+instead of I2C, so the register model is shared and the transport is not. It
+therefore takes no I2C_DRIVER_REQUIRED, and it does not take an SPI one either:
+how its drivers are reached is the keyboard's business, because they may sit on
+hardware chip selects of one bus rather than on GPIO. The driver asks the
+keyboard for that through is31fl3743b_transport.h.
 
-The HAL port itself lives in ChibiOS-Contrib, and also needs the family seam
+The HAL port itself lives in ChibiOS-Contrib and also needs the family seam
 patch to the shared LPC USB driver.
 ---
- data/schemas/keyboard.jsonschema   |  1 +
- lib/python/qmk/constants.py        |  3 ++-
- platforms/chibios/chibios_config.h |  4 +++
- platforms/chibios/mcu_selection.mk | 43 ++++++++++++++++++++++++++++++
- 4 files changed, 50 insertions(+), 1 deletion(-)
+ builddefs/common_features.mk            | 10 +++++-
+ data/schemas/keyboard.jsonschema        |  2 ++
+ lib/python/qmk/constants.py             |  3 +-
+ platforms/chibios/chibios_config.h      |  4 +++
+ platforms/chibios/mcu_selection.mk      | 43 +++++++++++++++++++++++++
+ quantum/rgb_matrix/rgb_matrix_drivers.c |  8 +++++
+ quantum/rgb_matrix/rgb_matrix_drivers.h |  2 ++
+ 7 files changed, 70 insertions(+), 2 deletions(-)
 
+diff --git a/builddefs/common_features.mk b/builddefs/common_features.mk
+index b15d956..f3775b1 100644
+--- a/builddefs/common_features.mk
++++ b/builddefs/common_features.mk
+@@ -466,7 +466,7 @@ endif
+ 
+ RGB_MATRIX_ENABLE ?= no
+ 
+-VALID_RGB_MATRIX_TYPES := aw20216s is31fl3218 is31fl3236 is31fl3729 is31fl3731 is31fl3733 is31fl3736 is31fl3737 is31fl3741 is31fl3742a is31fl3743a is31fl3745 is31fl3746a snled27351 ws2812 custom
++VALID_RGB_MATRIX_TYPES := aw20216s is31fl3218 is31fl3236 is31fl3729 is31fl3731 is31fl3733 is31fl3736 is31fl3737 is31fl3741 is31fl3742a is31fl3743a is31fl3743b is31fl3745 is31fl3746a snled27351 ws2812 custom
+ ifeq ($(strip $(RGB_MATRIX_ENABLE)), yes)
+     ifeq ($(filter $(RGB_MATRIX_DRIVER),$(VALID_RGB_MATRIX_TYPES)),)
+         $(call CATASTROPHIC_ERROR,Invalid RGB_MATRIX_DRIVER,RGB_MATRIX_DRIVER="$(RGB_MATRIX_DRIVER)" is not a valid matrix type)
+@@ -555,6 +555,14 @@ ifeq ($(strip $(RGB_MATRIX_ENABLE)), yes)
+         SRC += is31fl3743a.c
+     endif
+ 
++    ifeq ($(strip $(RGB_MATRIX_DRIVER)), is31fl3743b)
++        # No I2C_DRIVER_REQUIRED: this one is the SPI variant, and how its
++        # drivers are reached is the keyboard's business -- it supplies
++        # is31fl3743b_transport.c. See drivers/led/issi/is31fl3743b_transport.h.
++        COMMON_VPATH += $(DRIVER_PATH)/led/issi
++        SRC += is31fl3743b.c
++    endif
++
+     ifeq ($(strip $(RGB_MATRIX_DRIVER)), is31fl3745)
+         I2C_DRIVER_REQUIRED = yes
+         COMMON_VPATH += $(DRIVER_PATH)/led/issi
 diff --git a/data/schemas/keyboard.jsonschema b/data/schemas/keyboard.jsonschema
-index 1e28d17..1990e78 100644
+index 1e28d17..3ccda84 100644
 --- a/data/schemas/keyboard.jsonschema
 +++ b/data/schemas/keyboard.jsonschema
 @@ -70,6 +70,7 @@
@@ -49,6 +89,14 @@ index 1e28d17..1990e78 100644
                  "MKL26Z64",
                  "MK20DX128",
                  "MK20DX256",
+@@ -663,6 +664,7 @@
+                         "is31fl3741",
+                         "is31fl3742a",
+                         "is31fl3743a",
++                        "is31fl3743b",
+                         "is31fl3745",
+                         "is31fl3746a",
+                         "snled27351",
 diff --git a/lib/python/qmk/constants.py b/lib/python/qmk/constants.py
 index e3e47c2..57d0bca 100644
 --- a/lib/python/qmk/constants.py
@@ -137,6 +185,38 @@ index 199bdb2..3a77e58 100644
  ifneq ($(findstring STM32F042, $(MCU)),)
    # Cortex version
    MCU = cortex-m0
+diff --git a/quantum/rgb_matrix/rgb_matrix_drivers.c b/quantum/rgb_matrix/rgb_matrix_drivers.c
+index 3b45e82..467e57c 100644
+--- a/quantum/rgb_matrix/rgb_matrix_drivers.c
++++ b/quantum/rgb_matrix/rgb_matrix_drivers.c
+@@ -108,6 +108,14 @@ const rgb_matrix_driver_t rgb_matrix_driver = {
+     .set_color_all = is31fl3743a_set_color_all,
+ };
+ 
++#elif defined(RGB_MATRIX_IS31FL3743B)
++const rgb_matrix_driver_t rgb_matrix_driver = {
++    .init          = is31fl3743b_init_drivers,
++    .flush         = is31fl3743b_flush,
++    .set_color     = is31fl3743b_set_color,
++    .set_color_all = is31fl3743b_set_color_all,
++};
++
+ #elif defined(RGB_MATRIX_IS31FL3745)
+ const rgb_matrix_driver_t rgb_matrix_driver = {
+     .init          = is31fl3745_init_drivers,
+diff --git a/quantum/rgb_matrix/rgb_matrix_drivers.h b/quantum/rgb_matrix/rgb_matrix_drivers.h
+index 1ea5f08..896813a 100644
+--- a/quantum/rgb_matrix/rgb_matrix_drivers.h
++++ b/quantum/rgb_matrix/rgb_matrix_drivers.h
+@@ -27,6 +27,8 @@
+ #    include "is31fl3742a.h"
+ #elif defined(RGB_MATRIX_IS31FL3743A)
+ #    include "is31fl3743a.h"
++#elif defined(RGB_MATRIX_IS31FL3743B)
++#    include "is31fl3743b.h"
+ #elif defined(RGB_MATRIX_IS31FL3745)
+ #    include "is31fl3745.h"
+ #elif defined(RGB_MATRIX_IS31FL3746A)
 -- 
 2.55.0
 
