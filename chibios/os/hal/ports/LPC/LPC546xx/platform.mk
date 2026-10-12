@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 # List of all the LPC546xx platform files.
 PLATFORMSRC := ${CHIBIOS}/os/hal/ports/common/ARMCMx/nvic.c \
                ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/hal_lld.c \

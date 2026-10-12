@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Builds QMK firmware for the K100, assembling everything it needs first.
 #
 # Same reasoning as chibios/test/build-demo.sh: this repository carries only its

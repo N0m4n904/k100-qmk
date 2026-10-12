@@ -97,10 +97,13 @@ which also records why Corsair's web updater cannot be used on Linux.
 
 ## Licensing and attribution
 
-GPL-3, **except** for the files destined for ChibiOS-Contrib (Apache-2.0) and QMK
-(GPL-2.0-or-later) and the one tool that links against ckb-next (GPL-2.0-or-later). Each says so
-in its own header; **[`LICENSING.md`](LICENSING.md)** explains why each exception is necessary
-rather than merely tidy.
+GPL-3 by `LICENSE`, **except** for the files destined for ChibiOS-Contrib (Apache-2.0) and QMK
+(GPL-2.0-or-later), the one tool that links against ckb-next (GPL-2.0-or-later), and one file of
+NXP's (BSD-3-Clause). Each says so in its own SPDX header, which is the only thing that travels
+with a file into another project.
+
+**[`LICENSING.md`](LICENSING.md)** explains why each exception is necessary rather than merely
+tidy, and `tools/check-licensing.py` fails if the files and that document disagree.
 
 Protocol and layout knowledge derives substantially from
 [ckb-next](https://github.com/ckb-next/ckb-next) and

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
 # List of all the board related files.
 #
 # Unlike the STM32 boards, which point at a board ChibiOS already ships, this

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * Compile-time check that every SYSCON field the LPC546xx hal_lld uses really
  * exists in NXP's device header.

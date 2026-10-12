@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * Compiles the real LPC546xx PAL header and pins down the pad configuration
  * words it produces.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Checks every interrupt vector name in lpc_registry.h against its IRQ number.
 #
 # ChibiOS names a vector VectorXX, where XX is the hexadecimal byte offset into

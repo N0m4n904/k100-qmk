@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # List of the ChibiOS generic LPC546xx startup and CMSIS files.
 #
 # Differs from startup_lpc11uxx.mk in one way that matters: the core is a

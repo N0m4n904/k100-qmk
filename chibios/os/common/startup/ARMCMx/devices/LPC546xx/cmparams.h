@@ -1,5 +1,6 @@
 /*
     ChibiOS - Copyright (C) 2026 k100-qmk contributors
+    SPDX-License-Identifier: GPL-3.0-or-later
 
     This file is part of ChibiOS.
     ChibiOS is free software; you can redistribute it and/or modify

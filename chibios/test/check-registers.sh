@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Compiles register-check.c against NXP's real device header for the LPC54605,
 # so that a register field the hal_lld invented fails here rather than silently
 # on hardware.

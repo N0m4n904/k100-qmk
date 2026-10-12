@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 # List of all the LPCXpresso54628 board files.
 BOARDSRC = $(CHIBIOS_CONTRIB)/os/hal/boards/LPCXPRESSO54628/board.c
 

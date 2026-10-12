@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 # List of all the board related files.
 BOARDSRC = $(BOARDDIR)/board.c
 

@@ -1,22 +1,40 @@
 # Licensing
 
-`LICENSE` is **GPL-3.0**, and it governs every file that does not say otherwise. Three groups of
+**This file explains; `LICENSE` grants.** `LICENSE` is the GNU GPL version 3, unmodified, and it
+is the licence this repository is under. This file is not a licence and grants nothing — it records
+which files carry different terms and why, which is something a licence text cannot say about
+itself.
+
+Two files rather than one because they answer different questions. A tool or a licence scanner
+wants `LICENSE`. A person wondering why the ChibiOS port is Apache-2.0 wants this. Mixing them
+would mean editing the GPL text, which is both discouraged and would stop automated detection
+recognising it.
+
+`tools/check-licensing.py` keeps this file honest: it fails if a file destined for another project
+does not declare its own licence, if one declares a licence this table does not allow, or if a
+licence appears in the tree that this document does not mention.
+
+`LICENSE` governs every file that does not say otherwise. Three groups of
 files say otherwise, and each has a concrete reason: GPL-3 is incompatible with one of the
 upstream projects this work builds on, and unacceptable to another that this work is meant to be
 contributed back to.
 
 A per-file SPDX header takes precedence over a repository-wide `LICENSE`, so the exceptions below
-are expressed as headers in the files themselves.
+are expressed as headers in the files themselves. That is not a formality: **a header is the only
+thing that travels with a file** once it is detached from this repository and merged into another,
+which is the point of three of these four groups. Files that stay here may rely on `LICENSE`, and
+the check enforces exactly that asymmetry.
 
 | Path | License | Why |
 | --- | --- | --- |
 | `chibios/os/hal/**`, `chibios/demos/**` | Apache-2.0 | Destined for ChibiOS-Contrib, whose LPC HAL tree is Apache-2.0 |
 | `chibios/os/hal/ports/LPC/LPC546xx/lpc546xx_pll.c` | BSD-3-Clause | Its divider encoders are NXP's, from the MCUXpresso SDK |
-| `chibios/os/common/startup/**` | GPL-3.0 and MIT, per file | Same destination, different neighbours — see below |
+| `chibios/os/common/startup/**` | GPL-3.0-or-later and MIT, per file | Same destination, different neighbours — see below |
 | `chibios/patches/**` | — | Diffs against ChibiOS-Contrib; each hunk carries the licence of the file it changes |
 | `qmk/**` | GPL-2.0-or-later | Destined for QMK, which is GPL-2.0-or-later |
 | `tools/extract-ckb-keymap/` | GPL-2.0-or-later | Links against ckb-next, which is GPL-2 with no "or later" grant |
-| everything else | GPL-3.0 | original work with no upstream constraint |
+| `chibios/test/**` | GPL-3.0-or-later | this project's verification harness |
+| everything else | GPL-3.0 | original work, covered by `LICENSE` |
 
 ## The upstream licenses, as the projects themselves state them
 

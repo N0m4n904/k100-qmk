@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Builds the LPC546xx demo, assembling everything it needs from upstream first.
 #
 # This repository carries only its own files. ChibiOS, ChibiOS-Contrib and NXP's
