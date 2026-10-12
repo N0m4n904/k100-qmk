@@ -123,6 +123,22 @@ and the Splinter image contains no `fsl_` string at all. And `1bc5`'s manifest l
 Neither image is encrypted: both measure about 7 bits of entropy per byte, which is ordinary ARM
 code. Splinter simply carries no C string literals.
 
+Which i.MX RT is not pinned down, but the family is. Its vector table is about 158 entries, so
+roughly 142 device interrupts, which puts it with the RT105x/RT106x parts rather than the RT1010
+(~80) or RT1020 (~110). The initial stack pointer of `0x20010000` is 64 KB of DTCM.
+
+That matters for anyone weighing the two variants, because **ChibiOS-Contrib already has a
+`MIMXRT1062` HAL port and QMK already has an `IC_TEENSY_4_1` board using it** — Teensy 4.x is
+that part. On an i.MX RT target, everything `chibios/` exists to provide would come for free.
+
+The trade runs the other way for the reverse engineering, though, and that is the harder half. The
+Heracles image carries 561 strings, among them `is31fl3743bSetPwmChannelValue` and SDK paths like
+`..\lib\sdk\drivers\fsl_spi.c`, plus assert filenames and line numbers. **Every finding in
+`docs/pin-mapping.md` is anchored on one of those.** The Splinter image has none: no symbol names,
+no `fsl_` paths, nothing. The matrix pins, the LED driver part number, the channel map and the
+`LedInfoMap` equivalent would all have to be found with no symbol to start from, in a blob that
+also omits its own bootloader.
+
 **Nothing in this repository applies to `1bc5`** — not the ChibiOS LPC546xx port, not the pin
 mapping, not one firmware address. ckb-next's "later variant" label is its own, and nothing in it
 suggested the silicon had changed.
