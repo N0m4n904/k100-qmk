@@ -112,6 +112,7 @@ echo "placing the QMK platform support and the keyboard"
 cp -r "$repo/qmk/platforms/chibios/vendors/LPC" "$qmk/platforms/chibios/vendors/"
 cp -r "$repo/qmk/platforms/chibios/boards/GENERIC_LPC_LPC54605" \
       "$qmk/platforms/chibios/boards/"
+cp -r "$repo/qmk/drivers/led/issi/." "$qmk/drivers/led/issi/"
 mkdir -p "$qmk/keyboards/$keyboard"
 cp -r "$repo/qmk/keyboards/$keyboard/." "$qmk/keyboards/$keyboard/"
 
