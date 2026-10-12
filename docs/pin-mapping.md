@@ -613,9 +613,21 @@ only candidate is the **bootloader**, which is a separate flash region that Cors
 publish and which is absent from the `Heracles_Application_Firmware` images. It would have reason
 to: an updater that cannot light the keyboard cannot show progress.
 
-FC3 signals do exist elsewhere — `PIO2_18` to `PIO2_21` carry `FC3_RXD_SDA_MOSI`,
-`FC3_TXD_SCL_MISO`, `FC3_RTS_SCL_SSEL1` and `FC3_CTS_SDA_SSEL0` — but port 2 is never configured
-here, so that is where FC3 *can* go, not where it *is*.
+FC3 signals do exist elsewhere, and on more than one port:
+
+| Pin | Function | Found in |
+| --- | --- | --- |
+| `PIO2_18` | `FC3_RXD_SDA_MOSI` | NXP's LCD example |
+| `PIO2_19` | `FC3_TXD_SCL_MISO` | " |
+| `PIO2_20` | `FC3_RTS_SCL_SSEL1` | " |
+| `PIO2_21` | `FC3_CTS_SDA_SSEL0` | " |
+| `PIO0_6` | `FC3_SCK` | NXP's LPCXpresso54628 GPIO example |
+| `PIO2_2` | `FC3_SSEL3` | " |
+
+So FC3 is not confined to port 2, and `FC3_SCK` sits on `P0_6` — a pin the keyboard's firmware
+leaves as plain GPIO. None of this says where the keyboard's bus *is*, only where it could be:
+port 2 is never configured at all, and `P0_6` is configured as GPIO. The sample still covers well
+under half the part's pins.
 
 **This question is closed to static analysis of what is obtainable.** It is wide open to the
 obvious alternative: once custom firmware runs on the part, reading `IOCON->PIO[port][pin]` back

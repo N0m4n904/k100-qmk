@@ -125,7 +125,7 @@ include $(CHIBIOS)/tools/mk/autobuild.mk
 #include $(CHIBIOS)/test/oslib/oslib_test.mk
 
 # Define linker script file here
-LDSCRIPT= $(STARTUPLD_CONTRIB)/LPC54605J512.ld
+LDSCRIPT= $(STARTUPLD_CONTRIB)/LPC546xx_512k_160k.ld
 
 # C sources that can be compiled in ARM or THUMB mode depending on the global
 # setting.
@@ -162,6 +162,13 @@ CPPWARN = -Wall -Wextra -Wundef
 #
 
 # List all user C define here, like -D_DEBUG=1
+# Which board, and which part. The default is the bare LPC54605 this project
+# targets; the LPCXpresso54628 devboard is the recommended first target because
+# it has an onboard debug probe:
+#
+#   make BOARDDIR=$(CHIBIOS_CONTRIB)/os/hal/boards/LPCXPRESSO54628 \
+#        PARTDEFS="-DCPU_LPC54628J512ET180 -DLPC54628" LPC_PART=LPC54628
+#
 # The part, twice. NXP's fsl_device_registers.h selects its device header from
 # CPU_<part><package>, while lpc_registry.h detects the sub-family from a bare
 # LPC<part> that nothing in NXP's headers defines. Both have to be here rather

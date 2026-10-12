@@ -22,8 +22,18 @@ set -euo pipefail
 # branch is named for the ChibiOS release it tracks.
 chibios_ref=stable_21.11.x
 contrib_ref=chibios-21.11.x
-part=LPC54605
-cpu=LPC54605J512ET100
+# Which board to build for. The default is a bare LPC54605, the part in the
+# keyboard; LPCXPRESSO54628 is the devboard recommended as the first target,
+# and building both is what keeps the port from quietly depending on one.
+#
+#   BOARD=LPCXPRESSO54628 chibios/test/build-demo.sh
+board="${BOARD:-GENERIC}"
+case "$board" in
+  GENERIC)          part=LPC54605; cpu=CPU_LPC54605J512ET100; boarddir= ;;
+  LPCXPRESSO54628)  part=LPC54628; cpu=CPU_LPC54628J512ET180
+                    boarddir=os/hal/boards/LPCXPRESSO54628 ;;
+  *) echo "unknown BOARD: $board" >&2; exit 2 ;;
+esac
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
@@ -56,6 +66,7 @@ fetch "https://github.com/ChibiOS/ChibiOS-Contrib/archive/refs/heads/$contrib_re
 
 # NXP's device headers, startup and the per-part feature list. Fetched for the
 # same reason as above: they are NXP's to distribute, not this project's.
+echo "building for $board, part $part"
 echo "fetching the NXP $part device headers"
 nxp=https://raw.githubusercontent.com/nxp-mcuxpresso/mcux-sdk/main/devices/$part
 for f in fsl_device_registers.h $part.h ${part}_features.h \
@@ -92,11 +103,16 @@ cp "$repo/os/common/startup/ARMCMx/compilers/GCC/ld/"*.ld \
 cp "$repo/os/common/startup/ARMCMx/compilers/GCC/mk/"*.mk \
    "$contrib/os/common/startup/ARMCMx/compilers/GCC/mk/"
 cp -r "$repo/demos/LPC/LPC54605_GENERIC" "$contrib/demos/LPC/"
+mkdir -p "$contrib/os/hal/boards"
+cp -r "$repo/os/hal/boards/LPCXPRESSO54628" "$contrib/os/hal/boards/"
 
 echo "building"
 make -C "$contrib/demos/LPC/LPC54605_GENERIC" \
     CHIBIOS="$chibios" \
     CHIBIOS_CONTRIB="$contrib" \
+    ${boarddir:+BOARDDIR="$contrib/$boarddir"} \
+    PARTDEFS="-D$cpu -D$part" \
+    LPC_PART="$part" \
     "${@:2}"
 
 elf="$contrib/demos/LPC/LPC54605_GENERIC/build/ch.elf"

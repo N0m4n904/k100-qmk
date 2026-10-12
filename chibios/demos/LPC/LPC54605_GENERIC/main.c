@@ -34,11 +34,22 @@
 #include "selftest.h"
 
 /*
- * An arbitrary pair of pads, chosen only because every LPC54605 package has
- * them. There is no board, so there is nothing for them to be connected to.
+ * A board that has an LED says so; otherwise an arbitrary pad, chosen only
+ * because every LPC54605 package has it and there is no board for it to be
+ * connected to. On a board with an LED this is the whole point of the first
+ * power-up: something visible, without a debugger.
  */
+#if defined(LINE_LED)
+#define LINE_OUT        LINE_LED
+#else
 #define LINE_OUT        LPC_LINE(1U, 18U)
+#endif
+
+#if defined(LINE_BUTTON)
+#define LINE_IN         LINE_BUTTON
+#else
 #define LINE_IN         LPC_LINE(1U, 9U)
+#endif
 
 /*
  * The minimum USB configuration the HAL will accept. The callbacks do nothing
@@ -93,6 +104,9 @@ int main(void) {
 
   palSetLineMode(LINE_OUT, PAL_MODE_OUTPUT_PUSHPULL);
   palSetLineMode(LINE_IN, PAL_MODE_INPUT_PULLUP);
+
+  /* A blink rate that changes when the button is pressed, so one LED reports
+     both that the kernel is scheduling and that an input is being read. */
 
   usbStart(&USBD1, &usbcfg);
 

@@ -1,6 +1,6 @@
-From bbf68b90af912044a7bce3d93c5e25a6be45e89e Mon Sep 17 00:00:00 2001
+From d126b7755e6c71dc5f7bc2bcb5882f5b27f8aef9 Mon Sep 17 00:00:00 2001
 From: Noah Anleitner <noah.anleitner@nonetwor.cc>
-Date: Mon, 12 Oct 2026 16:57:40 +0200
+Date: Mon, 12 Oct 2026 17:29:18 +0200
 Subject: [PATCH] chibios: add the LPC546xx family, and the IS31FL3743B LED
  driver
 
@@ -14,7 +14,11 @@ found by building, and three of them fail in a way that points elsewhere.
 mcu_selection.mk maps the processor onto the family, startup code, linker script
 and board. Nothing else in the build system changes: platform.mk already
 resolves all of that from variables and already searches ChibiOS-Contrib before
-ChibiOS, both for the startup makefile and for the platform makefile.
+ChibiOS, both for the startup makefile and for the platform makefile. The linker
+script is named for the memory it describes rather than for a part, because
+every LPC546xx here has the same map and a file per part cannot include a shared
+one -- the linker is given exactly one script directory, ChibiOS's, so a script
+in Contrib cannot resolve a sibling.
 
 keyboard.jsonschema has to list the processor, or any keyboard.json naming it
 fails validation and is dropped whole -- which presents as a keyboard with no
@@ -44,10 +48,10 @@ patch to the shared LPC USB driver.
  data/schemas/keyboard.jsonschema        |  2 ++
  lib/python/qmk/constants.py             |  3 +-
  platforms/chibios/chibios_config.h      |  4 +++
- platforms/chibios/mcu_selection.mk      | 43 +++++++++++++++++++++++++
+ platforms/chibios/mcu_selection.mk      | 47 +++++++++++++++++++++++++
  quantum/rgb_matrix/rgb_matrix_drivers.c |  8 +++++
  quantum/rgb_matrix/rgb_matrix_drivers.h |  2 ++
- 7 files changed, 70 insertions(+), 2 deletions(-)
+ 7 files changed, 74 insertions(+), 2 deletions(-)
 
 diff --git a/builddefs/common_features.mk b/builddefs/common_features.mk
 index b15d956..f3775b1 100644
@@ -132,10 +136,10 @@ index 41546e3..1b795f0 100644
  #    include "clock_config.h"
  #    define CPU_CLOCK BOARD_BOOTCLOCKRUN_CORE_CLOCK
 diff --git a/platforms/chibios/mcu_selection.mk b/platforms/chibios/mcu_selection.mk
-index 199bdb2..3a77e58 100644
+index 199bdb2..2c2b9a9 100644
 --- a/platforms/chibios/mcu_selection.mk
 +++ b/platforms/chibios/mcu_selection.mk
-@@ -176,6 +176,49 @@ ifneq ($(findstring RP2040, $(MCU)),)
+@@ -176,6 +176,53 @@ ifneq ($(findstring RP2040, $(MCU)),)
    FIRMWARE_FORMAT ?= uf2
  endif
  
@@ -157,7 +161,11 @@ index 199bdb2..3a77e58 100644
 +  # Linker script to use
 +  # - it should exist either in <chibios>/os/common/startup/ARMCMx/compilers/GCC/ld/
 +  #   or <keyboard_dir>/ld/
-+  MCU_LDSCRIPT ?= LPC54605J512
++  # Named for the memory it describes rather than for a part: every LPC546xx
++  # this port supports has 512 KB of flash and 160 KB of main SRAM, and NXP's
++  # own scripts for them are byte-identical in their regions, so the keyboard
++  # and the LPCXpresso54628 devboard share one.
++  MCU_LDSCRIPT ?= LPC546xx_512k_160k
 +
 +  # Startup code to use
 +  #  - it should exist in <chibios>/os/common/startup/ARMCMx/compilers/GCC/mk/

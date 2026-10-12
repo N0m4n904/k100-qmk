@@ -21,7 +21,15 @@
  */
 
 /*
- * LPC54605J512 memory setup.
+ * Memory setup for every LPC546xx part with 512 KB of flash and 160 KB of main
+ * SRAM, which covers all of them this port supports -- NXP's own linker scripts
+ * for the LPC54605J512 and the LPC54628J512 are byte-identical in their memory
+ * regions, so the keyboard's part and the LPCXpresso54628 devboard's share this.
+ *
+ * Named for the memory rather than for a part on purpose. The alternative, a
+ * file per part including a shared one, does not work here: the linker is given
+ * exactly one script directory, ChibiOS's, so a script in ChibiOS-Contrib
+ * cannot resolve a sibling by name.
  *
  * ram0 is the main SRAM: three contiguous 32 KB banks plus one of 64 KB, which
  * the bus matrix presents as one 160 KB region.

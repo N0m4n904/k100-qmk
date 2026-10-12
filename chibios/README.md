@@ -291,8 +291,13 @@ is `volatile`, and `build-demo.sh` now fails if the symbol is missing.
 
 ```sh
 nix develop .#firmware
-chibios/test/build-demo.sh            # or: build-demo.sh ~/somewhere to keep the tree
+chibios/test/build-demo.sh                              # a bare LPC54605
+BOARD=LPCXPRESSO54628 chibios/test/build-demo.sh        # the devboard
 ```
+
+Both are built, because a port that only builds for one board is quietly depending on it. The
+second is an **LPC54628**, whose memory map NXP's own linker scripts show to be byte-identical to
+the LPC54605's — so one script serves both, named for the memory rather than for a part.
 
 This repository carries only its own files. ChibiOS, ChibiOS-Contrib and NXP's device headers
 belong to other people, so vendoring them would mean redistributing them and pinning them to
@@ -344,8 +349,23 @@ Every one of these was found by compiling, not by reading:
 
 ### Running it, eventually
 
-The first milestone should be an **LPCXpresso54628 (OM13098)** rather than the keyboard — it has
-working SWD and is effectively unbrickable. Its MCU is the LPC54628 at 220 MHz against the
-keyboard's LPC54605 at 180 MHz. Same family, so the port applies; keep clock configuration
-per-part rather than hardcoded, which is why the frequency is derived from `LPC_FROHF_SEL` and the
-dividers instead of being a constant.
+The first milestone should be the **LPCXpresso54628 (OM13098)** rather than the keyboard, for one
+reason: it carries an **onboard Link2 debug probe** speaking CMSIS-DAP and J-Link, confirmed on
+NXP's own feature list. So the core can be halted and the part reflashed over SWD with no probe to
+buy, and a first bring-up that does not boot costs seconds instead of a keyboard.
+
+That board is defined in `chibios/os/hal/boards/LPCXPRESSO54628`, with its LED on `P2_2` and a
+user button on `P0_6` — both taken from NXP's own SDK example for it rather than guessed. The demo
+blinks that LED at a rate the button changes, so a working first power-up is visible without a
+debugger at all.
+
+Its MCU is the LPC54628 at up to 220 MHz against the keyboard's LPC54605 at 180 MHz. Same family
+and the same memory map, so the port and the linker script apply unchanged; the clock
+configuration stays derived from `LPC_FROHF_SEL` and the dividers rather than hardcoded, which is
+what makes that true.
+
+Two things about that board are worth knowing before reading the self-test's IOCON dump on it. It
+has a Winbond W25Q128 quad-SPI flash on `P0_23`-`P0_28` at FUNC6 — **the same six pins at the same
+function that the keyboard's firmware configures**, so this board can confirm that reading of them
+directly. And its LED pin carries `FC3_SSEL3` while its button pin carries `FC3_SCK` as alternate
+functions, which is a coincidence to avoid tripping over when testing the LED driver's bus.
