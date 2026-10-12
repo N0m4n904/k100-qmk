@@ -34,6 +34,9 @@ chibios/test/
     pal-check.c            the exact IOCON word each pad mode produces
     check-registers.sh     compiles both against NXP's real header
     check-vectors.sh       every IRQ vector name against its IRQ number
+chibios/demos/LPC/LPC54605_GENERIC/
+    selftest.c             what the port reports about itself on first power-up
+    selftest.h             the structure a debugger reads it out of
     build-demo.sh          fetches upstream, patches, builds, checks the image
 ```
 
@@ -57,9 +60,9 @@ the whole port through a real `arm-none-eabi-gcc` build of a demo that touches e
 | System timer (SysTick) | pulled in unchanged from the shared LLD |
 | USB device | builds, needs the family-seam patch to the shared driver — see below |
 | Startup, vectors, linker script | builds, boot ROM checksum verified in the linked image |
-| PAL events / PINT | not started; `PAL_USE_WAIT` and `PAL_USE_CALLBACKS` must be `FALSE` |
+| PAL events / PINT | **not started**, pure code; `PAL_USE_WAIT` and `PAL_USE_CALLBACKS` must be `FALSE` |
 | SPI | builds, configured to match the stock firmware, **never executed** |
-| PLL | not implemented, and not needed yet — see below |
+| PLL | **not implemented**, pure code, and not needed yet — see below |
 
 "Builds" is worth more than it sounds: four real defects came out of getting there that no amount
 of reading had found, and they are listed under **Building it** below.
@@ -250,6 +253,37 @@ lets QMK build the port at all, since QMK vendors everything. See `qmk/README.md
 As a side effect the checks confirm the struct shapes this project derived from disassembling the
 stock firmware — `IOCON->PIO[port][pin]`, `GPIO->DIR[port]`, `GPIO->B[port][pin]` — against NXP's
 definitions. Those underpin the pin mapping in `docs/pin-mapping.md`.
+
+## What the first power-up will report
+
+Nothing in this port has executed, so the first run has to answer basic questions — did the clock
+tree start, does SPI move a byte, and on the keyboard, **which pins did the bootloader leave
+configured**. None of that needs a UART, a USB host or a working LED, and the last one cannot be
+answered any other way, since the application firmware configures no Flexcomm pins and the
+bootloader is not published.
+
+So `selftest.c` writes the answers into one 840-byte structure in RAM and a debugger reads them:
+
+```
+(gdb) print/x selftest
+```
+
+It captures all 192 IOCON pad configurations and the GPIO direction and pin registers **before
+anything reconfigures a pad**, which is the only moment the bootloader's choices are still
+visible. Alongside that it records the clock frequencies the port believes it set, a pad driven
+high and low and read back through its own input, and a SPI frame sent through the peripheral's
+**internal loopback**.
+
+That loopback is the useful part on a bare board. `SPI_CFG` has a `LOOP` bit that ties the
+transmitter to the receiver inside the peripheral, so a transfer exercises the clock gate, the
+Flexcomm function selection, the divider, the FIFO and the transfer interrupt **with nothing
+connected and without knowing which pins the signals are on**. What it cannot prove is anything
+outside the peripheral: pin configuration, wiring, or that a device answers.
+
+One trap, recorded because it nearly went unnoticed. Nothing in the program reads this structure,
+so link-time optimisation removed it entirely on the first attempt — the firmware still built and
+ran, and the answers simply were not in the image. The definition carries `used` and the structure
+is `volatile`, and `build-demo.sh` now fails if the symbol is missing.
 
 ## Building it
 

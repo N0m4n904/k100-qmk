@@ -131,6 +131,7 @@ LDSCRIPT= $(STARTUPLD_CONTRIB)/LPC54605J512.ld
 # setting.
 CSRC = $(ALLCSRC) \
        $(TESTSRC) \
+       selftest.c \
        main.c
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global

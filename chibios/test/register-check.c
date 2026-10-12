@@ -130,7 +130,7 @@ void lpc546xx_spi_check(void) {
 
   /* Master configuration, clock polarity and phase, and chip-select polarity. */
   spi->CFG = SPI_CFG_ENABLE_MASK | SPI_CFG_MASTER_MASK | SPI_CFG_CPHA_MASK |
-             SPI_CFG_CPOL_MASK | SPI_CFG_SPOL0_MASK;
+             SPI_CFG_CPOL_MASK | SPI_CFG_SPOL0_MASK | SPI_CFG_LOOP_MASK;
   spi->DIV = SPI_DIV_DIVVAL(11U);
 
   /* FIFO setup. The empty bits are commands rather than state. */

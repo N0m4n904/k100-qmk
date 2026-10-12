@@ -31,6 +31,8 @@
 #include "ch.h"
 #include "hal.h"
 
+#include "selftest.h"
+
 /*
  * An arbitrary pair of pads, chosen only because every LPC54605 package has
  * them. There is no board, so there is nothing for them to be connected to.
@@ -68,7 +70,8 @@ static const SPIConfig spicfg = {
   .mode             = 0U,
   .width            = 8U,
   .ssel             = LPC_SPI_SSEL0,
-  .ssel_active_high = false
+  .ssel_active_high = false,
+  .loopback         = false
 };
 
 static const USBConfig usbcfg = {
@@ -83,16 +86,22 @@ int main(void) {
   halInit();
   chSysInit();
 
+  /* Before any pad is reconfigured: on the keyboard this is the only chance to
+     see what the bootloader left, which is what identifies the LED driver's
+     SPI pins. See selftest.h. */
+  selftest_capture_pins();
+
   palSetLineMode(LINE_OUT, PAL_MODE_OUTPUT_PUSHPULL);
   palSetLineMode(LINE_IN, PAL_MODE_INPUT_PULLUP);
 
   usbStart(&USBD1, &usbcfg);
 
+  /* Everything the firmware can establish about itself unaided, left in RAM
+     for a debugger: the clock tree, a pad driven and read back, and a SPI frame
+     through the peripheral's own loopback. */
+  selftest_run();
+
   spiStart(&SPID3, &spicfg);
-  static const uint8_t pattern[4] = {0x00, 0x01, 0x02, 0x03};
-  spiSelect(&SPID3);
-  spiSend(&SPID3, sizeof pattern, pattern);
-  spiUnselect(&SPID3);
 
   while (true) {
     palToggleLine(LINE_OUT);

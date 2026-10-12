@@ -345,6 +345,9 @@ void spi_lld_start(SPIDriver *spip) {
   if (config->ssel_active_high && (config->ssel != LPC_SPI_SSEL_NONE)) {
     cfg |= SPI_CFG_SPOL0_MASK << config->ssel;
   }
+  if (config->loopback) {
+    cfg |= SPI_CFG_LOOP_MASK;
+  }
 
   /* Empty both FIFOs before enabling them: a stale frame would be shifted out
      as the first word of the next transfer. The empty bits are write-only

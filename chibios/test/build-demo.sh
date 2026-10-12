@@ -108,6 +108,18 @@ echo
 # linker decides them. Shared with the QMK build, which needs the same ones.
 python3 "$root/tools/check-firmware-image.py" "$elf"
 
+# The self-test structure exists only to be read by a debugger, so nothing in
+# the program references it -- which means link-time optimisation will remove it
+# unless it is marked used, and did exactly that once. Checked here because the
+# failure is silent: the firmware still builds and runs, and the answers it
+# exists to report are simply not in the image.
+if ! arm-none-eabi-nm "$elf" | grep -qE ' [BbDd] selftest$'; then
+    echo "selftest structure    FAIL   not in the image -- has it lost its used attribute?"
+    exit 1
+fi
+echo "selftest structure       ok   $(arm-none-eabi-nm -S "$elf" \
+    | awk '$4 == "selftest" { printf "at 0x%s, %d bytes", $1, strtonum("0x" $2) }')"
+
 echo
 arm-none-eabi-size "$elf"
 echo

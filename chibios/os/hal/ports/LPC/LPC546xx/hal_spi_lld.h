@@ -162,7 +162,12 @@
   /* Hardware chip select to assert, or LPC_SPI_SSEL_NONE.               */ \
   uint8_t                   ssel;                                           \
   /* TRUE for a chip select that idles low and asserts high.             */ \
-  bool                      ssel_active_high;
+  bool                      ssel_active_high;                              \
+  /* TRUE to loop the transmitter back to the receiver inside the        */ \
+  /* peripheral, so a transfer can be checked without any wiring. The    */ \
+  /* pins are left alone, which is what makes it useful on a board whose */ \
+  /* SPI pins are unknown or unconnected.                                */ \
+  bool                      loopback;
 
 /*===========================================================================*/
 /* External declarations.                                                    */
