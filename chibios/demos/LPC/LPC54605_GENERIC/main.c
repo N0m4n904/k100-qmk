@@ -56,6 +56,21 @@ static const USBDescriptor *get_descriptor(USBDriver *usbp,
   return NULL;
 }
 
+/*
+ * The LED drivers' bus, as the stock firmware uses it: 8-bit frames, mode 0,
+ * and one of the four hardware chip selects. The pins this lands on are not
+ * known -- see docs/pin-mapping.md -- so nothing here configures any, and on
+ * real hardware the board would.
+ */
+static const SPIConfig spicfg = {
+  .end_cb           = NULL,
+  .speed            = 1000000U,
+  .mode             = 0U,
+  .width            = 8U,
+  .ssel             = LPC_SPI_SSEL0,
+  .ssel_active_high = false
+};
+
 static const USBConfig usbcfg = {
   .event_cb     = NULL,
   .get_descriptor_cb = get_descriptor,
@@ -72,6 +87,12 @@ int main(void) {
   palSetLineMode(LINE_IN, PAL_MODE_INPUT_PULLUP);
 
   usbStart(&USBD1, &usbcfg);
+
+  spiStart(&SPID3, &spicfg);
+  static const uint8_t pattern[4] = {0x00, 0x01, 0x02, 0x03};
+  spiSelect(&SPID3);
+  spiSend(&SPID3, sizeof pattern, pattern);
+  spiUnselect(&SPID3);
 
   while (true) {
     palToggleLine(LINE_OUT);

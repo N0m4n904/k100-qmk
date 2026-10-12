@@ -68,9 +68,13 @@
    Flexcomm 3 is the one the stock keyboard firmware drives its LED drivers
    with; see docs/pin-mapping.md. */
 #define LPC_HAS_FLEXCOMM            TRUE
-#define LPC_FLEXCOMM0_IRQ_VECTOR    Vector74    /* FLEXCOMM0_IRQn = 14       */
-#define LPC_FLEXCOMM1_IRQ_VECTOR    Vector78    /* FLEXCOMM1_IRQn = 15       */
-#define LPC_FLEXCOMM2_IRQ_VECTOR    Vector7C    /* FLEXCOMM2_IRQn = 16       */
+#define LPC_HAS_FLEXCOMM0           TRUE
+#define LPC_HAS_FLEXCOMM1           TRUE
+#define LPC_HAS_FLEXCOMM2           TRUE
+#define LPC_HAS_FLEXCOMM3           TRUE
+#define LPC_FLEXCOMM0_IRQ_VECTOR    Vector78    /* FLEXCOMM0_IRQn = 14       */
+#define LPC_FLEXCOMM1_IRQ_VECTOR    Vector7C    /* FLEXCOMM1_IRQn = 15       */
+#define LPC_FLEXCOMM2_IRQ_VECTOR    Vector80    /* FLEXCOMM2_IRQn = 16       */
 #define LPC_FLEXCOMM3_IRQ_VECTOR    Vector84    /* FLEXCOMM3_IRQn = 17       */
 
 /* Standard timers. */

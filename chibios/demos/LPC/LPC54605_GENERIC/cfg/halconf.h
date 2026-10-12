@@ -162,8 +162,17 @@
 /**
  * @brief   Enables the SPI subsystem.
  */
+/*
+ * Chip select is carried in each data word by this part's SPI peripheral rather
+ * than being a pin the HAL toggles, so the low level driver owns selection. The
+ * default, SPI_SELECT_MODE_PAD, would have the HAL drive a GPIO instead.
+ */
+#if !defined(SPI_SELECT_MODE) || defined(__DOXYGEN__)
+#define SPI_SELECT_MODE                     SPI_SELECT_MODE_LLD
+#endif
+
 #if !defined(HAL_USE_SPI) || defined(__DOXYGEN__)
-#define HAL_USE_SPI                         FALSE
+#define HAL_USE_SPI                         TRUE
 #endif
 
 /**

@@ -331,6 +331,68 @@ assert shows `SPIMasterCount` is 1: there is a single SPI master.
 
 `PWM_PAGE_SIZE` is **198**, matching the IS31FL3743B's 18 x 11 channels exactly.
 
+### The LED driver protocol, read out of the firmware
+
+The IS31FL3743B datasheet was not obtainable, so the protocol was taken from the firmware
+instead. All of it, which turned out to be possible because the firmware uses NXP's MCUXpresso
+SDK: its SPI wrapper at `0x12510` builds an `fsl_spi` `spi_transfer_t` on the stack
+(`{txData, rxData, configFlags, dataSize}`) and sets `configFlags` to `0x100000`, which is
+`kSPI_FrameAssert` -- that is `SPI_FIFOWR_EOT_MASK`, so the chip select is released at the end of
+each transfer.
+
+Exactly one function in the whole image sends anything over SPI, which makes the trail short.
+
+**The bus**, from the `SPI_MasterInit` call at `0x124ac` and its literals:
+
+| Setting | Value | Where |
+| --- | --- | --- |
+| Peripheral | `0x40089000`, SPI3 / Flexcomm 3 | literal at `0x124fc` |
+| Bit rate | **12 MHz** | literal at `0x12500` |
+| Frame width | 8 bits | `dataWidth = 7` at config offset 12 |
+| Chip select | hardware `sselNum`, per driver | config offset 13 |
+| Chip select polarity | active low | config offset 14 is zero |
+| Clock polarity, phase | both zero, so **mode 0** | left at `GetDefaultConfig` values |
+
+**Which driver sits on which chip select** comes from a four-byte-per-driver table at flash
+`0x30052`, read in the construction loop at `0x177a2` which runs three times (`cmp r4, #12`,
+stride 4):
+
+| Driver | Chip select | SPI master |
+| --- | --- | --- |
+| 0 | SSEL0 | 0 |
+| 1 | SSEL1 | 0 |
+| 2 | SSEL2 | 0 |
+
+**The frame**, from the builder at `0x1523c`:
+
+```
+byte 0   0x50 | page          built as orr r1, r1, #0x50
+byte 1   register address     for PWM and scaling, the channel number plus one
+byte 2+  values               at most 198, the assert being cmp r4, #198
+```
+
+Registers are numbered from one, so channel 0 is register `0x01`. The two-byte header sits
+immediately before the page in a 204-byte per-driver allocation (`movs r0, #204` at `0x15368`),
+so a whole page is sent from where it was built with no copy -- a shape worth keeping.
+
+**The pages and the function registers**, from the five callers of the builder:
+
+| Page | Register | Value | What |
+| --- | --- | --- | --- |
+| 0 | channel + 1 | PWM | brightness, 198 channels |
+| 1 | channel + 1 | scaling | current limit; initialised to `0xFF` throughout |
+| 2 | `0x00` | `0x09` / `0x08` | configuration: running, or software shutdown |
+| 2 | `0x2F` | `0xAE` | reset |
+| 2 | `0x25` | `0xC0` / `0x80` | set from a flag; purpose not identified |
+
+The page numbers and the reset magic match the IS31FL3743A, the I2C sibling QMK already drives,
+which is corroboration from an independent source: the two parts share the register model and
+differ in the bus.
+
+`0x09` and `0x08` differ in one bit, which is the software shutdown bit on the sibling. The other
+bit set in both is reproduced rather than interpreted, there being no datasheet to interpret it
+against.
+
 ### `LedInfoMap`
 
 At flash **`0x00030159`**, **190 entries of 7 bytes**. The address comes from the literal

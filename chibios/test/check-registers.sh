@@ -48,7 +48,7 @@ cc=(arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -Wall -Wextra -Werror
 echo "compiling the register check"
 "${cc[@]}" -c "$here/register-check.c" -o "$work/register-check.o"
 
-echo "ok: every register field used by the hal_lld, the PAL driver and the USB compat header exists in $part.h"
+echo "ok: every register field used by the hal_lld, the PAL and SPI drivers and the USB compat header exists in $part.h"
 
 # register-check.c mirrors the port's expressions rather than including it, so
 # it cannot catch a mistake in the port's own macros. pal-check.c includes the

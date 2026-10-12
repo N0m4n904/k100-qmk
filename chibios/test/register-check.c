@@ -107,6 +107,57 @@ void lpc546xx_pal_check(void) {
 }
 
 /*
+ * Every Flexcomm and SPI field the SPI driver uses. The peripheral is reached
+ * two ways -- as SPI_Type from base+0x400 and as FLEXCOMM_Type for the function
+ * selector near the end of the same 4 KB window -- so both views are exercised.
+ */
+void lpc546xx_spi_check(void);
+
+void lpc546xx_spi_check(void) {
+  SPI_Type *spi = (SPI_Type *)SPI3_BASE;
+  FLEXCOMM_Type *fc = (FLEXCOMM_Type *)SPI3_BASE;
+
+  /* Function selection, and the two fields that say whether it is allowed. */
+  (void)(fc->PSELID & FLEXCOMM_PSELID_SPIPRESENT_MASK);
+  (void)(fc->PSELID & FLEXCOMM_PSELID_LOCK_MASK);
+  fc->PSELID = FLEXCOMM_PSELID_PERSEL(2U);
+
+  /* Bus clock gate and function clock. Flexcomm 0 to 7 are in AHBCLKCTRL1
+     from bit 11, which is why the driver computes the bit rather than naming
+     it; FCLKSEL is indexed by block. */
+  SYSCON->AHBCLKCTRLSET[1] = 1UL << (11U + 3U);
+  SYSCON->FCLKSEL[3] = SYSCON_FCLKSEL_SEL(0U);
+
+  /* Master configuration, clock polarity and phase, and chip-select polarity. */
+  spi->CFG = SPI_CFG_ENABLE_MASK | SPI_CFG_MASTER_MASK | SPI_CFG_CPHA_MASK |
+             SPI_CFG_CPOL_MASK | SPI_CFG_SPOL0_MASK;
+  spi->DIV = SPI_DIV_DIVVAL(11U);
+
+  /* FIFO setup. The empty bits are commands rather than state. */
+  spi->FIFOCFG = SPI_FIFOCFG_EMPTYTX_MASK | SPI_FIFOCFG_EMPTYRX_MASK;
+  spi->FIFOCFG = SPI_FIFOCFG_ENABLETX_MASK | SPI_FIFOCFG_ENABLERX_MASK;
+  spi->FIFOTRIG = 0U;
+
+  /* A data word carries the frame width, which of four chip selects to assert,
+     whether to drop the reply, and whether this ends the transfer. */
+  spi->FIFOWR = 0xA5U | SPI_FIFOWR_LEN(7U) | SPI_FIFOWR_EOT_MASK |
+                SPI_FIFOWR_RXIGNORE_MASK |
+                SPI_FIFOWR_TXSSEL0_N_MASK | SPI_FIFOWR_TXSSEL1_N_MASK |
+                SPI_FIFOWR_TXSSEL2_N_MASK | SPI_FIFOWR_TXSSEL3_N_MASK;
+  (void)(spi->FIFORD & SPI_FIFORD_RXDATA_MASK);
+
+  /* FIFO status, including the two error bits the driver clears. */
+  (void)(spi->FIFOSTAT & (SPI_FIFOSTAT_TXNOTFULL_MASK |
+                          SPI_FIFOSTAT_RXNOTEMPTY_MASK |
+                          SPI_FIFOSTAT_TXEMPTY_MASK));
+  spi->FIFOSTAT = SPI_FIFOSTAT_TXERR_MASK | SPI_FIFOSTAT_RXERR_MASK;
+
+  /* FIFO interrupt enables. */
+  spi->FIFOINTENSET = SPI_FIFOINTENSET_TXLVL_MASK | SPI_FIFOINTENSET_RXLVL_MASK;
+  spi->FIFOINTENCLR = SPI_FIFOINTENCLR_TXLVL_MASK | SPI_FIFOINTENCLR_RXLVL_MASK;
+}
+
+/*
  * Every USB macro the shared LLD/USB driver uses, written exactly as the driver
  * writes it. These names come from lpc546xx_usb_compat.h, so this fails if any
  * mapping is wrong or if NXP renames a field underneath it.

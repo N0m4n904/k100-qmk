@@ -43,4 +43,11 @@
 #define LPC_USB_USE_USB1                    TRUE
 #define LPC_USB_USB1_IRQ_PRIORITY           3
 
+/*
+ * SPI3, which is Flexcomm 3 -- the block the stock keyboard firmware drives its
+ * LED drivers with.
+ */
+#define LPC_SPI_USE_SPI3                    TRUE
+#define LPC_SPI_SPI3_IRQ_PRIORITY           5
+
 #endif /* MCUCONF_H */

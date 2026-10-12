@@ -14,6 +14,8 @@ chibios/os/hal/ports/LPC/LPC546xx/
     hal_lld.h              clock configuration, derived frequencies, flash wait states
     hal_pal_lld.c          pad and direction programming
     hal_pal_lld.h          pad mode encoding, port and line identifiers, accessors
+    hal_spi_lld.c          Flexcomm SPI: clocking, FIFO, transfers
+    hal_spi_lld.h          bit rate, mode, frame width and chip select
     lpc_registry.h         sub-family detection, capabilities, interrupt vectors
     lpc546xx_usb.c         USB clocking, transceiver power, endpoint memory
     lpc546xx_usb.h         what the shared USB driver asks of this family
@@ -31,6 +33,7 @@ chibios/test/
     register-check.c       every SYSCON, IOCON, GPIO and USB field the port uses
     pal-check.c            the exact IOCON word each pad mode produces
     check-registers.sh     compiles both against NXP's real header
+    check-vectors.sh       every IRQ vector name against its IRQ number
     build-demo.sh          fetches upstream, patches, builds, checks the image
 ```
 
@@ -55,7 +58,7 @@ the whole port through a real `arm-none-eabi-gcc` build of a demo that touches e
 | USB device | builds, needs the family-seam patch to the shared driver — see below |
 | Startup, vectors, linker script | builds, boot ROM checksum verified in the linked image |
 | PAL events / PINT | not started; `PAL_USE_WAIT` and `PAL_USE_CALLBACKS` must be `FALSE` |
-| SPI | not started; needs writing, this part uses Flexcomm |
+| SPI | builds, configured to match the stock firmware, **never executed** |
 | PLL | not implemented, and not needed yet — see below |
 
 "Builds" is worth more than it sounds: four real defects came out of getting there that no amount
@@ -126,6 +129,27 @@ peripheral's clock belongs to that peripheral's driver and `halInit()` reaches P
 after the clock tree. NXP's header is a trap here: it names the bits `SYSCON_AHBCLKCTRL_GPIOn_MASK`
 without saying which of the three `AHBCLKCTRL` registers each belongs to, and they are not all in
 the same one — IOCON and GPIO0 to GPIO3 are in `AHBCLKCTRL0`, GPIO4 and GPIO5 in `AHBCLKCTRL2`.
+
+## SPI: Flexcomm, so family local again
+
+The shared `LLD/SPI` driver targets the LPC11Uxx SSP peripheral, which this part does not have.
+Each of its ten Flexcomm blocks becomes a USART, SPI, I2C or I2S at runtime, and the SPI it
+becomes has its own register set, a FIFO, and — the part that shapes the driver — **chip select
+carried in the data word**. A frame written to `FIFOWR` says which of four chip selects to
+assert, how wide the frame is, whether to discard the reply, and whether this ends the transfer.
+
+So chip select is not a pin this driver toggles. `spi_lld_select()` does nothing; the selection
+was settled in `spi_lld_start()` and travels with every word pushed. A board wanting this needs
+`SPI_SELECT_MODE_LLD`, because the default has the HAL drive a GPIO instead.
+
+**Every setting matches the stock firmware**, which was read out of it rather than chosen — 12 MHz,
+8-bit, mode 0, hardware chip selects active low, end-of-transfer asserted per transfer. See
+`docs/pin-mapping.md`. The firmware uses NXP's own `fsl_spi`, so its configuration is legible
+rather than inferred.
+
+One limitation is worth knowing: this ChibiOS version's SPI API has **no way to report an error**.
+Its completion callback carries no status — the error callback is a v2 addition — so a FIFO
+overflow ends the transfer and the caller sees a short buffer rather than a failure.
 
 ## USB: the registers fit, the plumbing does not
 
