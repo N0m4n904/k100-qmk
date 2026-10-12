@@ -22,18 +22,32 @@
 /*
  * Clock tree. Every one of these is the port's own default and is spelled out
  * only to show what the configuration surface is; omitting the block entirely
- * would build the same image.
+ * would build the same image. Each is guarded so a build can select another
+ * configuration from the command line without editing this file, which is how
+ * the PLL path gets exercised -- see chibios/test/build-demo.sh.
  *
  * The FRO runs at 48 MHz and feeds both the core and USB0, so no PLL is set up
  * at all -- USB0CLKSEL can select fro_hf directly. hal_lld.h refuses to build a
  * configuration whose USB clock does not come out at 48 MHz.
  */
+#ifndef LPC_FROHF_SEL
 #define LPC_FROHF_SEL                       LPC_FROHF_48MHZ
+#endif
+#ifndef LPC_MAINCLKSELA
 #define LPC_MAINCLKSELA                     LPC_MAINCLKSELA_FROHF
+#endif
+#ifndef LPC_MAINCLKSELB
 #define LPC_MAINCLKSELB                     LPC_MAINCLKSELB_SELA
+#endif
+#ifndef LPC_AHBCLKDIV
 #define LPC_AHBCLKDIV                       0U
+#endif
+#ifndef LPC_USB0CLKSEL
 #define LPC_USB0CLKSEL                      LPC_USB0CLKSEL_FROHF
+#endif
+#ifndef LPC_USB0CLKDIV
 #define LPC_USB0CLKDIV                      0U
+#endif
 
 /*
  * USB. The shared driver calls its single instance USB1, which on this part is

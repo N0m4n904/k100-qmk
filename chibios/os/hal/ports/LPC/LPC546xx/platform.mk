@@ -3,7 +3,8 @@ PLATFORMSRC := ${CHIBIOS}/os/hal/ports/common/ARMCMx/nvic.c \
                ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/hal_lld.c \
                ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/hal_pal_lld.c \
                ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/lpc546xx_usb.c \
-               ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/hal_spi_lld.c
+               ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/hal_spi_lld.c \
+               ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/lpc546xx_pll.c
 
 # Required include directories
 PLATFORMINC := ${CHIBIOS}/os/hal/ports/common/ARMCMx \

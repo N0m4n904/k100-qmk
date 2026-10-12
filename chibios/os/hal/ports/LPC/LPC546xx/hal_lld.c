@@ -99,6 +99,12 @@ void lpc_clock_init(void) {
                     SYSCON_FROCTRL_SEL(LPC_FROHF_SEL) |
                     SYSCON_FROCTRL_HSPDCLK(1U);
 
+#if LPC_MAINCLKSELB == LPC_MAINCLKSELB_PLL
+  /* Locked before the core is switched onto it, because switching to an
+     unlocked PLL stops the core. */
+  lpc_syspll_init();
+#endif
+
   /* Main clock: pick the source, then the divider. */
   SYSCON->MAINCLKSELA = SYSCON_MAINCLKSELA_SEL(LPC_MAINCLKSELA);
   SYSCON->MAINCLKSELB = SYSCON_MAINCLKSELB_SEL(LPC_MAINCLKSELB);

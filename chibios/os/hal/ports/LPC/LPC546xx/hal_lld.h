@@ -87,6 +87,17 @@
 /** @} */
 
 /**
+ * @name    Clock sources for SYSPLLCLKSEL
+ * @{
+ */
+#define LPC_SYSPLLCLKSEL_FRO12M     0U  /**< @brief FRO at 12 MHz.          */
+#define LPC_SYSPLLCLKSEL_CLKIN      1U  /**< @brief External CLKIN.         */
+#define LPC_SYSPLLCLKSEL_WDTOSC     2U  /**< @brief Watchdog oscillator.    */
+#define LPC_SYSPLLCLKSEL_RTC32K     3U  /**< @brief RTC 32 kHz.             */
+#define LPC_SYSPLLCLKSEL_NONE       7U  /**< @brief Gated off.              */
+/** @} */
+
+/**
  * @name    FRO high-frequency output selection
  * @{
  */
@@ -148,6 +159,36 @@
 #define LPC_USB0CLKDIV              0U
 #endif
 
+/**
+ * @brief   System PLL input.
+ * @details The 12 MHz FRO by default, which needs no crystal and is always
+ *          running. A board with an external clock can select it instead.
+ */
+#if !defined(LPC_SYSPLLCLKSEL) || defined(__DOXYGEN__)
+#define LPC_SYSPLLCLKSEL            LPC_SYSPLLCLKSEL_FRO12M
+#endif
+
+/**
+ * @name    System PLL dividers
+ * @details The output is @p input * M / (N * 2P). Defaults give 180 MHz from
+ *          the 12 MHz FRO, which is what the stock keyboard firmware runs at:
+ *          12 MHz * 30 / (1 * 2) = 180 MHz.
+ *
+ *          These are the real divider values, not the sequence values the
+ *          registers hold; @p lpc546xx_pll.c encodes them.
+ * @{
+ */
+#if !defined(LPC_SYSPLL_N) || defined(__DOXYGEN__)
+#define LPC_SYSPLL_N                1U
+#endif
+#if !defined(LPC_SYSPLL_P) || defined(__DOXYGEN__)
+#define LPC_SYSPLL_P                1U
+#endif
+#if !defined(LPC_SYSPLL_M) || defined(__DOXYGEN__)
+#define LPC_SYSPLL_M                30U
+#endif
+/** @} */
+
 /** @} */
 
 /*===========================================================================*/
@@ -166,6 +207,27 @@
 #endif
 
 /**
+ * @brief   System PLL input frequency.
+ */
+#if LPC_SYSPLLCLKSEL == LPC_SYSPLLCLKSEL_FRO12M
+#define LPC_SYSPLLCLKIN             12000000U
+#elif LPC_SYSPLLCLKSEL == LPC_SYSPLLCLKSEL_CLKIN
+#if !defined(LPC_CLKIN_FREQUENCY)
+#error "LPC_CLKIN_FREQUENCY must be defined to clock the PLL from CLKIN"
+#endif
+#define LPC_SYSPLLCLKIN             LPC_CLKIN_FREQUENCY
+#else
+#error "LPC_SYSPLLCLKSEL setting is not supported as a PLL input"
+#endif
+
+/**
+ * @brief   System PLL output frequency.
+ * @details @p input * M / (N * 2P), the post-divider always doubling.
+ */
+#define LPC_PLLCLK                                                          \
+  ((LPC_SYSPLLCLKIN / (LPC_SYSPLL_N * 2U * LPC_SYSPLL_P)) * LPC_SYSPLL_M)
+
+/**
  * @brief   Selected main clock source frequency, before the AHB divider.
  */
 #if LPC_MAINCLKSELB == LPC_MAINCLKSELB_SELA
@@ -176,8 +238,10 @@
 #else
 #error "LPC_MAINCLKSELA setting is not supported yet"
 #endif
+#elif LPC_MAINCLKSELB == LPC_MAINCLKSELB_PLL
+#define LPC_MAINCLK                 LPC_PLLCLK
 #else
-#error "LPC_MAINCLKSELB setting is not supported yet; the PLL is not implemented"
+#error "LPC_MAINCLKSELB setting is not supported yet"
 #endif
 
 /**
@@ -284,6 +348,9 @@ extern "C" {
 #endif
   void hal_lld_init(void);
   void lpc_clock_init(void);
+#if LPC_MAINCLKSELB == LPC_MAINCLKSELB_PLL
+  void lpc_syspll_init(void);
+#endif
 #ifdef __cplusplus
 }
 #endif

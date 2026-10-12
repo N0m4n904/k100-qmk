@@ -62,21 +62,33 @@ the whole port through a real `arm-none-eabi-gcc` build of a demo that touches e
 | Startup, vectors, linker script | builds, boot ROM checksum verified in the linked image |
 | PAL events / PINT | **not started**, pure code; `PAL_USE_WAIT` and `PAL_USE_CALLBACKS` must be `FALSE` |
 | SPI | builds, configured to match the stock firmware, **never executed** |
-| PLL | **not implemented**, pure code, and not needed yet — see below |
+| PLL | builds at 180 MHz, **never executed** — see below |
 
 "Builds" is worth more than it sounds: four real defects came out of getting there that no amount
 of reading had found, and they are listed under **Building it** below.
 
-## No PLL, deliberately
+## Two clock configurations, and the PLL is the optional one
 
-The first bring-up runs from the FRO with the PLL untouched, because `USB0CLKSEL` can select
-`fro_hf` **directly**: a 48 MHz FRO clocks both the core and a full-speed USB device. That
-removes the LPC546xx PLL's `SELP`/`SELI`/`SELR` setup from the first milestone entirely, which
-is worth doing when the milestone is "does it boot and enumerate at all".
+A first bring-up should run from the FRO with the PLL untouched, because `USB0CLKSEL` can select
+`fro_hf` **directly**: a 48 MHz FRO clocks both the core and a full-speed USB device. That removes
+the PLL from the first milestone entirely, which is worth doing when the milestone is "does it
+boot and enumerate at all". It is the default.
 
-The stock keyboard firmware runs at 180 MHz, so the PLL will be wanted eventually. The
-configuration options are already shaped for it: `LPC_MAINCLKSELB` accepts the PLL output and
-`hal_lld.h` errors out rather than silently miscomputing a frequency.
+The PLL now exists for when 180 MHz is wanted, which is what the stock keyboard firmware runs at.
+`LPC_MAINCLKSELB = LPC_MAINCLKSELB_PLL` selects it and the dividers default to 12 MHz × 30 /
+(1 × 2) = **180 MHz** from the always-running 12 MHz FRO, so it needs no crystal. USB stays on
+`fro_hf` regardless, which is the only arrangement where both clocks are right at once — the
+48 MHz constant is still in the 180 MHz image for exactly that reason.
+
+Flash wait states follow `LPC_SYSCLK` through the existing table, so they rise with the clock
+rather than having to be remembered, and `hal_lld.h` still errors out rather than silently
+miscomputing a frequency.
+
+`lpc546xx_pll.c` is **BSD-3-Clause**, not Apache-2.0 like the rest of the port, because its
+divider encoders are NXP's from `fsl_clock.c`. That is not fastidiousness: `NDEC`, `PDEC` and
+`MDEC` do not hold divider values but a position in a linear feedback shift register sequence, so
+the encoding has to reproduce the hardware's sequence exactly. Writing it independently would mean
+arriving at NXP's constants anyway, so it is taken with its licence attached. See `LICENSING.md`.
 
 Flash wait states scale with the core clock and are set before it rises, since raising the
 clock past what the flash can serve fetches garbage.
@@ -292,8 +304,9 @@ is `volatile`, and `build-demo.sh` now fails if the symbol is missing.
 
 ```sh
 nix develop .#firmware
-chibios/test/build-demo.sh                              # a bare LPC54605
+chibios/test/build-demo.sh                              # a bare LPC54605, 48 MHz
 BOARD=LPCXPRESSO54628 chibios/test/build-demo.sh        # the devboard
+CLOCK=PLL chibios/test/build-demo.sh                    # 180 MHz, through the PLL
 ```
 
 Both are built, because a port that only builds for one board is quietly depending on it. The

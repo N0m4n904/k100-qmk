@@ -27,6 +27,17 @@ contrib_ref=chibios-21.11.x
 # and building both is what keeps the port from quietly depending on one.
 #
 #   BOARD=LPCXPRESSO54628 chibios/test/build-demo.sh
+# Which clock configuration. FRO is 48 MHz straight from the on-chip
+# oscillator with no PLL, which is what a first bring-up should use; PLL is
+# 180 MHz, which is what the stock keyboard firmware runs at. Both are built,
+# because the PLL path is otherwise never compiled.
+clock="${CLOCK:-FRO}"
+case "$clock" in
+  FRO) clockdefs= ;;
+  PLL) clockdefs="-DLPC_MAINCLKSELB=LPC_MAINCLKSELB_PLL" ;;
+  *) echo "unknown CLOCK: $clock" >&2; exit 2 ;;
+esac
+
 board="${BOARD:-GENERIC}"
 case "$board" in
   GENERIC)          part=LPC54605; cpu=CPU_LPC54605J512ET100; boarddir= ;;
@@ -66,7 +77,7 @@ fetch "https://github.com/ChibiOS/ChibiOS-Contrib/archive/refs/heads/$contrib_re
 
 # NXP's device headers, startup and the per-part feature list. Fetched for the
 # same reason as above: they are NXP's to distribute, not this project's.
-echo "building for $board, part $part"
+echo "building for $board, part $part, clock $clock"
 echo "fetching the NXP $part device headers"
 nxp=https://raw.githubusercontent.com/nxp-mcuxpresso/mcux-sdk/main/devices/$part
 for f in fsl_device_registers.h $part.h ${part}_features.h \
@@ -111,7 +122,7 @@ make -C "$contrib/demos/LPC/LPC54605_GENERIC" \
     CHIBIOS="$chibios" \
     CHIBIOS_CONTRIB="$contrib" \
     ${boarddir:+BOARDDIR="$contrib/$boarddir"} \
-    PARTDEFS="-D$cpu -D$part" \
+    PARTDEFS="-D$cpu -D$part $clockdefs" \
     LPC_PART="$part" \
     "${@:2}"
 

@@ -11,6 +11,7 @@ are expressed as headers in the files themselves.
 | Path | License | Why |
 | --- | --- | --- |
 | `chibios/os/hal/**`, `chibios/demos/**` | Apache-2.0 | Destined for ChibiOS-Contrib, whose LPC HAL tree is Apache-2.0 |
+| `chibios/os/hal/ports/LPC/LPC546xx/lpc546xx_pll.c` | BSD-3-Clause | Its divider encoders are NXP's, from the MCUXpresso SDK |
 | `chibios/os/common/startup/**` | GPL-3.0 and MIT, per file | Same destination, different neighbours — see below |
 | `chibios/patches/**` | — | Diffs against ChibiOS-Contrib; each hunk carries the licence of the file it changes |
 | `qmk/**` | GPL-2.0-or-later | Destined for QMK, which is GPL-2.0-or-later |
@@ -54,6 +55,19 @@ is **GPL-3-or-later**, by the same author who licensed the HAL drivers Apache-2.
 linker scripts beside it are **MIT**. So `chibios/os/common/startup/**` follows its own
 neighbours: GPL-3 for `cmparams.h`, MIT for the linker script. Both are acceptable to
 ChibiOS-Contrib, since that is what is already there.
+
+## The one NXP-derived source file
+
+`lpc546xx_pll.c` keeps NXP's BSD-3-Clause notice because its contents are NXP's: the system PLL's
+`NDEC`, `PDEC` and `MDEC` registers hold a position in a linear feedback shift register sequence
+rather than a divider value, and the three encoders that compute it come from `fsl_clock.c` in the
+MCUXpresso SDK, along with the loop filter coefficient selection.
+
+There was no independent route to it. The encoding has to match the hardware's sequence exactly,
+so writing it from a description would mean reproducing the same constants. BSD-3-Clause is
+compatible with both Apache-2.0 and GPL-3 and asks only that the notice be retained, which it is.
+
+Everything else under `chibios/` is this project's own.
 
 ## Firmware images
 

@@ -43,6 +43,23 @@ void lpc546xx_register_check(void) {
   while ((SYSCON->USB0CLKDIV & SYSCON_USB0CLKDIV_REQFLAG_MASK) != 0U) {
   }
 
+  /* System PLL, from lpc546xx_pll.c. The dividers hold a shift-register
+     sequence rather than the divider value, and the REQ bits are what latch
+     it -- a write without them is ignored. */
+  SYSCON->SYSPLLCLKSEL = SYSCON_SYSPLLCLKSEL_SEL(0U);
+  SYSCON->PDRUNCFGSET[0] = SYSCON_PDRUNCFG_PDEN_SYS_PLL_MASK;
+  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_SYS_PLL_MASK;
+  SYSCON->SYSPLLCTRL = SYSCON_SYSPLLCTRL_SELR(0U) | SYSCON_SYSPLLCTRL_SELI(8U) |
+                       SYSCON_SYSPLLCTRL_SELP(16U);
+  SYSCON->SYSPLLNDEC = SYSCON_SYSPLLNDEC_NDEC(0x302U) |
+                       SYSCON_SYSPLLNDEC_NREQ_MASK;
+  SYSCON->SYSPLLPDEC = SYSCON_SYSPLLPDEC_PDEC(0x62U) |
+                       SYSCON_SYSPLLPDEC_PREQ_MASK;
+  SYSCON->SYSPLLMDEC = SYSCON_SYSPLLMDEC_MDEC(0x1FFFFU) |
+                       SYSCON_SYSPLLMDEC_MREQ_MASK;
+  while ((SYSCON->SYSPLLSTAT & SYSCON_SYSPLLSTAT_LOCK_MASK) == 0U) {
+  }
+
   /* USB0's clock gate and transceiver power, from lpc546xx_usb.c. USB0D is bit
      25 of AHBCLKCTRL1, not AHBCLKCTRL0: the device and host gates for the same
      controller live in different registers and NXP's macro names do not say
