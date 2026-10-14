@@ -164,6 +164,16 @@ pub enum ImageType {
 }
 
 impl ImageType {
+    pub fn from_raw(value: u16) -> Option<Self> {
+        Some(match value {
+            1 => Self::Firmware,
+            2 => Self::Bootloader,
+            3 => Self::FirmwareWithBootloader,
+            4 => Self::SecondaryChipFirmware,
+            _ => return None,
+        })
+    }
+
     /// Rule 1 from `docs/recovery.md`, enforced in the type system rather than by comment.
     pub fn ensure_recoverable(self) -> Result<Self> {
         match self {
@@ -274,6 +284,34 @@ impl Request {
     }
 
     /// `08 0D <handle> <fileId>`
+    /// Begins a buffer write, declaring the total length up front.
+    ///
+    /// `[handle, total length as four little-endian bytes, first chunk]`, from
+    /// `writeBufferBegin` in the updater bundle.
+    pub fn write_buffer_begin(handle: u8, total: u32, chunk: &[u8]) -> Self {
+        let mut args = Vec::with_capacity(5 + chunk.len());
+        args.push(handle);
+        args.extend_from_slice(&total.to_le_bytes());
+        args.extend_from_slice(chunk);
+        Self::new(Command::WriteBufferBegin, args)
+    }
+
+    /// Continues a buffer write: `[handle, chunk]`.
+    pub fn write_buffer(handle: u8, chunk: &[u8]) -> Self {
+        let mut args = Vec::with_capacity(1 + chunk.len());
+        args.push(handle);
+        args.extend_from_slice(chunk);
+        Self::new(Command::WriteBuffer, args)
+    }
+
+    /// Commits a written firmware image.
+    ///
+    /// The *extended* form, 22, which the K100's manifest names as its
+    /// `apply-extended` command rather than the plain 16.
+    pub fn apply_firmware_extended() -> Self {
+        Self::new(Command::ApplyFirmwareExtended, Vec::new())
+    }
+
     pub fn open_file(handle: u8, file_id: u16) -> Self {
         let [lo, hi] = file_id.to_le_bytes();
         Self::new(Command::OpenFile, vec![handle, lo, hi])
@@ -364,42 +402,3 @@ pub fn crc32_mpeg2(data: &[u8]) -> u32 {
     })
 }
 
-/// The 512-byte-aligned container Corsair ships firmware in.
-pub struct Image<'a> {
-    pub bytes: &'a [u8],
-}
-
-impl<'a> Image<'a> {
-    pub fn parse(bytes: &'a [u8]) -> Result<Self> {
-        if bytes.len() < 0x2c {
-            bail!("firmware image is too short to contain a header");
-        }
-        let image = Self { bytes };
-
-        if image.declared_length() as usize != bytes.len() {
-            bail!(
-                "header declares {} bytes but the file is {}",
-                image.declared_length(),
-                bytes.len()
-            );
-        }
-        let actual = crc32_mpeg2(&bytes[4..]);
-        if actual != image.declared_crc() {
-            bail!("CRC mismatch: header says {:#010x}, computed {actual:#010x}", image.declared_crc());
-        }
-        Ok(image)
-    }
-
-    pub fn declared_crc(&self) -> u32 {
-        u32::from_le_bytes(self.bytes[0..4].try_into().expect("checked length"))
-    }
-
-    pub fn declared_length(&self) -> u32 {
-        u32::from_le_bytes(self.bytes[4..8].try_into().expect("checked length"))
-    }
-
-    /// ASCII build date and time the vendor stamps into the header.
-    pub fn build_stamp(&self) -> String {
-        String::from_utf8_lossy(&self.bytes[0x0e..0x23]).replace('\0', " ").trim().to_string()
-    }
-}

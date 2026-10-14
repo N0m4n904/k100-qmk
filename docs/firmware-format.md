@@ -161,11 +161,38 @@ Header layout:
 | `0x00` | u32 | **CRC32/MPEG-2 over bytes `[0x04 .. EOF]`** |
 | `0x04` | u32 | Total file length, including the header (150908) |
 | `0x08` | u32 | **Entry point, a Thumb address** — `0x00012569` |
-| `0x0c` | u16 | `0x0001` — format or version field |
-| `0x0e` | — | ASCII build date, `"Aug 22 2023\0"` |
-| `0x1a` | — | ASCII build time, `"14:39:00\0"` |
-| `0x25` | — | `7c 1b` — the PID, little-endian |
+| `0x0c` | u16 | Container format version, `0x0001` in both images |
+| `0x0e` | 12 | ASCII build date, `"Aug 22 2023\0"` |
+| `0x1a` | 9 | ASCII build time, `"14:39:00\0"` |
+| `0x23` | 2 | Zero in both images |
+| `0x25` | u16 | USB product id, `7c 1b` little-endian |
+| `0x27` | u16 | **Image type** — `1` firmware, `2` bootloader |
+| `0x29` | u8 | Firmware version, minor — `35` |
+| `0x2a` | u16 | Firmware version, patch — `288` |
 | `0x2c` | … | ARM Thumb payload |
+
+The fields from `0x25` on were read by diffing the two published images against each other
+and against what the device reports. `0x27` is `1` in both, and the manifest's own
+`imageType` enumeration puts firmware at 1 and the bootloader at 2 — which is why
+`tools/pack-firmware.py` refuses to emit anything else and `k100-bragi` refuses to write it.
+The version at `0x29`/`0x2a` reads `0.30.257` and `0.35.288`, matching the filenames and the
+`firmware 0.32.6` a real unit reported before it was updated.
+
+### The format is proven, not inferred
+
+A description of a format that has only ever been read is a guess about what a writer must
+produce. `tools/pack-firmware.py --verify` closes that gap: it parses each official image,
+rebuilds the whole container from that image's own payload and fields, and compares the
+result byte for byte.
+
+```
+ok   Heracles_Application_Firmware_v0.30.257.bin: rebuilt byte for byte
+ok   Heracles_Application_Firmware_v0.35.288.bin: rebuilt byte for byte
+```
+
+Both reproduce exactly. Every byte of the header is therefore accounted for — any field
+misunderstood, any padding in the wrong place, or any CRC detail wrong would show up as a
+difference.
 
 The CRC was confirmed by computation, not assumed:
 

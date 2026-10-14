@@ -153,9 +153,16 @@ before a single byte of custom firmware is written:
 4. Flash 0.35.288 back and confirm again.
 5. Exit via the documented path, `BOOTLOADER → SELF_OPERATED → HOST_CONTROLLED`.
 
-Steps 0 and 1 are reachable today: `k100-bragi info` reads this keyboard's firmware, bootloader
-version, layout and operating mode over usbdevfs. Steps 2 and 4 are not, flashing being
-unimplemented on purpose.
+All five steps are reachable:
+
+```sh
+k100-bragi info                                         # step 0, read-only
+k100-bragi enter-bootloader                             # step 1
+k100-bragi flash fw/Heracles_...v0.30.257.bin --commit  # step 2
+k100-bragi exit-bootloader && k100-bragi info           # step 3
+k100-bragi flash fw/Heracles_...v0.35.288.bin --commit  # step 4
+k100-bragi exit-bootloader && k100-bragi info           # step 5
+```
 
 If that loop works, recovery is demonstrated empirically rather than argued from
 documentation, and both images are already verified authentic against Corsair's published
@@ -164,6 +171,34 @@ and nothing lost.
 
 This is the real answer to "can I unbrick it": establish the unbrick path first, and only
 then risk something that needs it.
+
+## What the write path refuses
+
+`k100-bragi flash` is built to fail rather than to succeed. Each of these is a way the
+keyboard could be lost, removed before anything is sent:
+
+| Refused | Why it would matter |
+| --- | --- |
+| Any image type but `FIRMWARE = 1` | Rule 1. The one unrecoverable mistake |
+| A declared length that disagrees with the file | A truncated download would flash as a valid image |
+| A CRC that does not match the contents | The only integrity check the format has |
+| An image built for another product id | `1bc5` is a different chip entirely; its image is ruin here |
+| An even entry point | Not a Thumb address; the bootloader branches to it and faults |
+| An entry outside `0x1002c..0x80000` | Branches into the bootloader or into nothing |
+| A keyboard not in `Bootloader` mode | Writing from the application is not the vendor's path |
+| Any device other than the named product id | See below |
+| Anything at all, without `--commit` | The default is a dry run that sends nothing |
+
+**The device is named, not searched for.** Read-only commands fall back to opening any
+Corsair device, deliberately: a keyboard in bootloader mode may report a product id this tool
+has never seen, and refusing to open it then would strand the device this exists to recover.
+Writing cannot afford that generosity. `flash` and `enter-bootloader` open exactly one
+product id — `0x1b7c` unless `--device` says otherwise — and refuse an ambiguous bus rather
+than picking by scan order. `exit-bootloader` stays permissive, because it is the direction
+that rescues.
+
+`verify-image` runs the same container gate offline, with no device attached, so an image can
+be rejected before the keyboard is even plugged in.
 
 ## The unknown
 
@@ -192,3 +227,20 @@ would fall to layer 2 and therefore to ECRP.
 Mitigation: rule 2 establishes that the bootloader can be entered and exited reliably, and
 the first custom image should be one already proven to run on the LPCXpresso devboard rather
 than a first attempt written blind.
+
+**The devboard half of that mitigation is not in place.** No LPC546xx hardware other than the
+keyboard itself is available to this project, so the first custom image written to it will be
+one that has never executed anywhere. Nothing in this repository changes that, and no amount
+of static checking substitutes for it. It is recorded here rather than left implicit because
+it is the largest single risk the project carries, and it is a deliberate choice rather than
+an oversight.
+
+What is in place instead:
+
+- the container writer reproduces both official images byte for byte, so the image the
+  bootloader receives is well formed by demonstration rather than by argument;
+- the recovery loop in rule 2 is run with Corsair's own images *first*, which proves
+  enter → write → apply → exit end to end before a custom image is written, and leaves a
+  known-good image in the slot if the write path turns out to be broken;
+- the application is linked at `0x00010400`, past the bootloader, so a bad application cannot
+  overwrite the thing that recovers it.

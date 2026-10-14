@@ -36,13 +36,16 @@ and the two rules that keep a mistake survivable.
 
 | Area | State |
 | --- | --- |
-| Firmware distribution and image format | **Understood and verified.** Official images download and validate. |
-| Recovery path | **Largely established**, one step unconfirmed on real hardware. |
-| Bragi protocol | **Command set recovered.** Bootloader entry found, upload sequence partly traced. |
+| Firmware container format | **Proven.** The writer rebuilds both official images byte for byte. |
+| Firmware distribution | **Understood and verified.** Official images download and validate. |
+| Recovery path | **Established in code**, not yet exercised on hardware. |
+| Bragi protocol | **Command set recovered**, read-only commands confirmed against a real unit. |
 | QMK layout, keymap, LED map, VIA | **Done** for OPX ISO DE, generated from ckb-next's data. |
-| ChibiOS LPC546xx port | Not started. |
-| Optical scan and RGB wiring | Unknown. |
-| Working firmware | **No.** |
+| ChibiOS LPC546xx port | **Clocks, GPIO, SPI and USB written.** Builds and links; has never run. |
+| Key matrix pins | **Found** by disassembly. Sense polarity and settling time are untested guesses. |
+| RGB driver chips and protocol | **Derived from firmware**: IS31FL3743B on SPI3, framing and registers known. |
+| RGB bus pins | **Unknown** — configured by the bootloader, not the application. No lighting yet. |
+| Working firmware | **No.** Nothing in this repository has ever executed on the keyboard. |
 
 Start with [`NOTES.md`](NOTES.md) for the research and
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for the plan.
@@ -70,9 +73,12 @@ The K100 Air is a different device again and none of this applies to it either.
 docs/          research write-ups; recovery.md is the one to read first
 tools/
   fetch-firmware.py       downloads and verifies official firmware
-  k100-bragi/             Rust Bragi client (read-only ops and mode transitions)
+  k100_container.py       Corsair's firmware container, read and written
+  pack-firmware.py        wraps a build in that container; --verify proves it can
+  k100-bragi/             Rust Bragi client: identify, mode transitions, flash
   extract-ckb-keymap/     dumps ckb-next's authoritative layout
   generate-qmk-layout.py  generates the QMK and VIA definitions
+chibios/       the ChibiOS-Contrib LPC546xx port, and its checks under test/
 qmk/keyboards/corsair/k100/   generated QMK keyboard definition
 via/                          generated VIA definition
 udev/          rules so k100-bragi runs without root
@@ -91,6 +97,18 @@ nix develop .#qmk      && qmk/test/build-k100.sh            # build the keyboard
 
 The two build scripts fetch ChibiOS, QMK and NXP's headers themselves rather than this
 repository vendoring them, so they are the build instructions as well as the build.
+
+A QMK build is a bare `.bin`; the K100's bootloader starts an application from a header it
+expects to find in flash ahead of it, so the build has to be wrapped before it means anything
+to the keyboard:
+
+```sh
+tools/fetch-firmware.py --out fw/                      # Corsair's own images
+tools/pack-firmware.py --verify fw/*.bin                # prove the writer against them
+tools/pack-firmware.py .build/corsair_k100_default.bin \
+    --elf .build/corsair_k100_default.elf --out k100.bin
+tools/pack-firmware.py --check k100.bin                 # before going near the keyboard
+```
 
 To talk to the keyboard without root, install `udev/99-corsair-k100.rules`; see `udev/README.md`,
 which also records why Corsair's web updater cannot be used on Linux.

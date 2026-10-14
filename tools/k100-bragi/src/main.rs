@@ -4,6 +4,7 @@
 //! device actually uses; the bootloader transitions are reversible; flashing comes last and
 //! only once the framing is confirmed on real hardware. See `docs/recovery.md`.
 
+mod container;
 mod device;
 mod roundtrip;
 mod transport;
@@ -13,11 +14,11 @@ mod transport;
 #[allow(dead_code)]
 mod protocol;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 
 use device::Device;
-use protocol::{Image, OperatingMode};
+use protocol::OperatingMode;
 
 #[derive(Parser)]
 #[command(about, long_about = None)]
@@ -42,10 +43,44 @@ enum Action {
     Files,
 
     /// Put the keyboard into bootloader mode. Reversible with `exit-bootloader`.
-    EnterBootloader,
+    EnterBootloader {
+        /// The product id to act on, and the only device that will be opened.
+        #[arg(long, value_name = "PID", default_value = DEFAULT_TARGET,
+              value_parser = parse_pid)]
+        device: u16,
+    },
 
     /// Return to normal operation via the vendor's documented transition path.
     ExitBootloader,
+
+    /// Write a firmware image. Reports what it would do unless given --commit.
+    Flash {
+        /// A container built by tools/pack-firmware.py, or an official image.
+        path: std::path::PathBuf,
+
+        /// Actually write. Without this nothing is sent that changes the device.
+        #[arg(long)]
+        commit: bool,
+
+        /// The product id to write to, and the only device that will be opened.
+        /// Defaults to the OPX K100. In bootloader mode the keyboard may report
+        /// something else; `info` says what, and that id goes here.
+        #[arg(long, value_name = "PID", default_value = DEFAULT_TARGET,
+              value_parser = parse_pid)]
+        device: u16,
+    },
+}
+
+/// The product id both write-side commands target unless told otherwise. A string
+/// so `--help` prints it the way this project writes product ids everywhere else.
+const DEFAULT_TARGET: &str = "0x1b7c";
+
+/// Accepts `0x1b7c` and `1b7c` alike, since both forms appear in this project's notes.
+fn parse_pid(text: &str) -> Result<u16, std::num::ParseIntError> {
+    match text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        Some(hex) => u16::from_str_radix(hex, 16),
+        None => u16::from_str_radix(text, 16),
+    }
 }
 
 fn main() -> Result<()> {
@@ -53,9 +88,62 @@ fn main() -> Result<()> {
         Action::Info => info(),
         Action::VerifyImage { path } => verify_image(&path),
         Action::Files => files(),
-        Action::EnterBootloader => enter_bootloader(),
+        Action::EnterBootloader { device } => enter_bootloader(device),
         Action::ExitBootloader => exit_bootloader(),
+        Action::Flash { path, commit, device } => flash(&path, commit, device),
     }
+}
+
+/// Writes a firmware image, having refused every reason not to.
+///
+/// The checks come first and in this order on purpose: the image is validated
+/// before the keyboard is touched, the device is named rather than searched for,
+/// the image is matched against what that device reports, and the mode is
+/// confirmed before anything is written. Each one removes a way of writing the
+/// wrong thing to the wrong device.
+fn flash(path: &std::path::Path, commit: bool, product: u16) -> Result<()> {
+    let image = std::fs::read(path)
+        .with_context(|| format!("reading {}", path.display()))?;
+
+    let header = container::Container::parse(&image)?;
+    println!("image  {}", path.display());
+    println!("       {}", header.describe());
+
+    // Writing opens one named product id and nothing else, so no other device on
+    // the bus can be reached from here even if it is also Corsair's.
+    let device = Device::open_exact(product)?;
+    println!("device {}", device.description());
+    println!("       product id {:#06x}, the only id this command opened", device.product);
+
+    // An image for another model, of the wrong type, or with a broken CRC is
+    // refused here rather than by the keyboard.
+    header.validate(&image, device.product)?;
+    println!("       image matches this keyboard and its container is sound");
+
+    let mode = device.operating_mode()?;
+    println!("       operating mode {mode:?}");
+    if mode != OperatingMode::Bootloader {
+        bail!(
+            "the keyboard is in {mode:?}, not Bootloader. Writing firmware from \
+             here is not the documented path; run `enter-bootloader` first."
+        );
+    }
+
+    let plan = roundtrip::flash(&device, &image, commit)?;
+
+    if !commit {
+        println!();
+        println!("dry run: nothing was sent that changes the keyboard.");
+        println!("  would write {} bytes as {} chunks to file id {}, then apply",
+                 plan.total, plan.chunks, protocol::FILE_ID_FIRMWARE);
+        println!("  re-run with --commit to do it");
+        return Ok(());
+    }
+
+    println!();
+    println!("wrote {} bytes in {} chunks and applied", plan.total, plan.chunks);
+    println!("the keyboard should re-enumerate; `info` will say what it is running");
+    Ok(())
 }
 
 fn open() -> Result<Device> {
@@ -104,14 +192,25 @@ fn print_version(label: &str, version: Result<String>) {
     }
 }
 
+/// Runs the write path's own gate on a file, with no device involved.
+///
+/// Deliberately the same [`container::Container::check`] that `flash` calls, so
+/// an image that passes here fails later only on the one thing this cannot know:
+/// which keyboard is plugged in.
 fn verify_image(path: &std::path::Path) -> Result<()> {
     let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    let image = Image::parse(&bytes)?;
+    let header = container::Container::parse(&bytes)?;
 
     println!("{}", path.display());
-    println!("  length            {} bytes", bytes.len());
-    println!("  built             {}", image.build_stamp());
-    println!("  crc32-mpeg2       {:#010x} (verified)", image.declared_crc());
+    println!("  container         {}", header.describe());
+    println!("  format version    {}", header.format_version);
+    println!("  built             {}", container::Container::build_stamp(&bytes));
+
+    header.check(&bytes)?;
+    println!("  checks            pass: length, CRC, type and entry point are all sound");
+    println!();
+    println!("This says the container is well formed. It says nothing about whether the");
+    println!("code inside it runs.");
     Ok(())
 }
 
@@ -149,12 +248,45 @@ fn files() -> Result<()> {
     })
 }
 
-fn enter_bootloader() -> Result<()> {
-    let device = open()?;
+/// Entering the bootloader names its target, for the same reason flashing does:
+/// it is a deliberate change to a working keyboard, and it is only ever entered
+/// from a known application whose product id is therefore known.
+fn enter_bootloader(product: u16) -> Result<()> {
+    let device = Device::open_exact(product)?;
     roundtrip::enter_bootloader(&device)
 }
 
+/// Leaving it does not, and must not. This is the direction that rescues a
+/// keyboard, and a bootloader may report a product id this tool has never seen;
+/// refusing to open it then would strand the very device this exists to recover.
 fn exit_bootloader() -> Result<()> {
     let device = open()?;
     roundtrip::exit_bootloader(&device)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use protocol::Model;
+
+    /// `DEFAULT_TARGET` is a string so `--help` can print a hex product id, which
+    /// means nothing stops it drifting from the model it is meant to name. This is
+    /// what stops it: the default write target is the OPX K100 and nothing else.
+    #[test]
+    fn the_default_target_is_the_opx_k100() {
+        assert_eq!(parse_pid(DEFAULT_TARGET).unwrap(), Model::OpticalOpx.pid());
+    }
+
+    #[test]
+    fn product_ids_parse_with_or_without_the_prefix() {
+        assert_eq!(parse_pid("0x1b7c").unwrap(), 0x1b7c);
+        assert_eq!(parse_pid("1b7c").unwrap(), 0x1b7c);
+        assert!(parse_pid("nonsense").is_err());
+    }
+
+    #[test]
+    fn the_cli_is_well_formed() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
 }

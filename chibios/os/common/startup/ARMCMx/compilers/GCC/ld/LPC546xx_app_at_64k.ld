@@ -33,9 +33,16 @@
  * working firmware has already been overwritten by then. That is a brick with
  * no upside, which is why this file exists separately rather than as an option.
  *
+ * The 1 KB between 0x00010000 and 0x00010400 is left out of this region on
+ * purpose. Corsair's container header occupies the first 0x2c bytes of the
+ * application slot and is written to flash with the image, and a Cortex-M
+ * vector table of eighty entries has to be 1 KB aligned, so the first address
+ * the code can start at is 0x00010400. tools/pack-firmware.py pads the header
+ * out to meet it, taking the offset from the ELF rather than assuming it.
+ *
  * ChibiOS's crt0 sets VTOR from the vectors table's own address, so the vector
  * table is found correctly once the application runs; what has to be right for
- * it to run at all is the link address.
+ * it to run at all is the link address and the entry point in the header.
  *
  * ram0 is the main SRAM: three contiguous 32 KB banks plus one of 64 KB, which
  * the bus matrix presents as one 160 KB region.
@@ -51,7 +58,7 @@
  */
 
 MEMORY {
-    flash0  : org = 0x00010000, len = 448k
+    flash0  : org = 0x00010400, len = 447k
     flash1  : org = 0x00000000, len = 0
     flash2  : org = 0x00000000, len = 0
     flash3  : org = 0x00000000, len = 0

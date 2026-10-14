@@ -62,6 +62,44 @@ impl Device {
             })?,
         };
 
+        Self::claim(found)
+    }
+
+    /// Opens exactly one device of exactly this product id, or nothing.
+    ///
+    /// Everything [`open`](Self::open) does to stay reachable is a hazard once writing is
+    /// involved: the vendor-wide fallback would happily open some other Corsair device, and
+    /// taking the first of several matches would pick a keyboard by scan order. Writing names
+    /// its target instead, and refuses an ambiguous bus rather than guessing on it.
+    pub fn open_exact(product: u16) -> Result<Self> {
+        let mut found = transport::find(CORSAIR_VID, &[product])?;
+
+        if found.len() > 1 {
+            bail!(
+                "{} devices report {CORSAIR_VID:#06x}:{product:#06x} ({}). Refusing to pick \
+                 one; disconnect the others.",
+                found.len(),
+                found
+                    .iter()
+                    .map(|f| f.node.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+
+        let found = found.pop().ok_or_else(|| {
+            anyhow!(
+                "no {CORSAIR_VID:#06x}:{product:#06x} on this bus. Nothing else will be \
+                 written to. If the keyboard is in bootloader mode it may report a different \
+                 product id: run `info` to see what it reports, then pass that id."
+            )
+        })?;
+
+        Self::claim(found)
+    }
+
+    /// Takes a found device's interfaces from the kernel.
+    fn claim(found: transport::Found) -> Result<Self> {
         let model = Model::from_pid(found.product);
         let interfaces = if found.interfaces.is_empty() {
             FALLBACK_INTERFACES.to_vec()
