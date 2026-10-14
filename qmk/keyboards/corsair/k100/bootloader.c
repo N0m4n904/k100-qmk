@@ -64,8 +64,27 @@
 #    define K100_USB_WATCHDOG_MS 10000
 #endif
 
-void k100_enter_bootloader(void) {
-    lpcEepromWrite(EEPROM_WORD_OPERATING_MODE, OPERATING_MODE_BOOTLOADER);
+bool k100_enter_bootloader(void) {
+    if (!lpcEepromWrite(EEPROM_WORD_OPERATING_MODE, OPERATING_MODE_BOOTLOADER)) {
+        return false;
+    }
+
+    /*
+     * Read it back before resetting, because the alternative is a loop. The
+     * EEPROM array is ordinary readable memory, so this costs one load -- and
+     * all three routes into the bootloader funnel through this one function, so
+     * if the write silently does not take they all fail together. Resetting
+     * then would come straight back here: the mode word still says
+     * self-operated, so the bootloader would start this firmware again, and the
+     * watchdog would reset it again ten seconds later, forever.
+     *
+     * Reporting the failure instead leaves the keyboard in whatever working
+     * state it had, which is strictly better than a reboot loop and leaves the
+     * other routes something to act on.
+     */
+    if (lpcEepromRead(EEPROM_WORD_OPERATING_MODE) != OPERATING_MODE_BOOTLOADER) {
+        return false;
+    }
 
     // The stock firmware defers this by 10 ms through a timer, which it needs
     // because it is answering a USB request and wants the reply out first.
@@ -86,7 +105,7 @@ void k100_enter_bootloader(void) {
  * what a reset should do.
  */
 void bootloader_jump(void) {
-    k100_enter_bootloader();
+    (void)k100_enter_bootloader();
 }
 
 void mcu_reset(void) {
@@ -140,7 +159,7 @@ void keyboard_pre_init_kb(void) {
      * on hardware this project has not fully mapped.
      */
     if (escape_held()) {
-        k100_enter_bootloader();
+        (void)k100_enter_bootloader();
     }
 
     keyboard_pre_init_user();
@@ -178,8 +197,14 @@ void housekeeping_task_kb(void) {
          * The firmware runs but never became usable. Hand the keyboard back to
          * the bootloader rather than leaving it enumerating as nothing, which
          * is the state no tool in this project can recover from.
+         *
+         * If that fails the EEPROM write did not take, and trying again every
+         * loop would be a busy wait on something that is not going to change.
+         * Latch instead and let the keyboard run as it is.
          */
-        k100_enter_bootloader();
+        if (!k100_enter_bootloader()) {
+            usb_was_ready = true;
+        }
     }
 
     housekeeping_task_user();

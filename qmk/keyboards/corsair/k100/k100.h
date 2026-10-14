@@ -29,7 +29,9 @@ uint32_t k100_matrix_sample_row(uint8_t row);
 /**
  * Writes Corsair's operating mode and restarts into the bootloader.
  *
- * Never returns. Also reached through QMK's QK_BOOT keycode, which calls
- * bootloader_jump().
+ * Does not return on success. Returns false if the EEPROM word could not be
+ * programmed, in which case resetting would only loop back here -- see the
+ * read-back in bootloader.c. Also reached through QMK's QK_BOOT keycode, which
+ * calls bootloader_jump().
  */
-void k100_enter_bootloader(void);
+bool k100_enter_bootloader(void);
