@@ -7,9 +7,12 @@
  * PLL is configured at all -- USB0CLKSEL takes fro_hf directly. The port's
  * hal_lld.h refuses to build a configuration whose USB clock is not 48 MHz.
  *
- * The stock Corsair firmware runs the core at 180 MHz. Matching that needs the
- * PLL, which the port does not implement yet; a keyboard wanting it overrides
- * LPC_MAINCLKSELB here once it does.
+ * The stock Corsair firmware runs the core at 180 MHz and the port can do that
+ * -- lpc546xx_pll.c implements the system PLL -- but this configuration stays on
+ * the FRO on purpose. Clocking the core and USB from the same 48 MHz source is
+ * the arrangement with the fewest ways to be wrong, and nothing here needs the
+ * speed: a keyboard matrix and three SPI LED drivers are not 180 MHz problems.
+ * A keyboard that wants the PLL overrides LPC_MAINCLKSELB here.
  */
 #define LPC_FROHF_SEL     LPC_FROHF_48MHZ
 #define LPC_MAINCLKSELA   LPC_MAINCLKSELA_FROHF

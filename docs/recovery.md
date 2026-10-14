@@ -235,6 +235,76 @@ that rescues.
 `verify-image` runs the same container gate offline, with no device attached, so an image can
 be rejected before the keyboard is even plugged in.
 
+## How the bootloader is entered, and why our firmware must do it too
+
+**This is the finding that makes custom firmware survivable.** Recovered from the stock
+application image, not guessed, with every register offset cross-checked against NXP's
+`LPC54605.h`.
+
+`SET OPERATING_MODE` is handled at flash `0x12f8a`. It range-checks the value to 1–7 — the
+same check the updater's `setOperatingMode` makes — reads the current mode, returns success if
+it already matches, and otherwise calls the setter at `0x1593c`. That setter does only two
+things:
+
+1. writes the mode to **word index 2 of the EEPROM**, and
+2. arms a 10 ms timer whose callback is an inlined `NVIC_SystemReset` at `0x1556c`.
+
+That is the whole mechanism. **The mode lives in EEPROM, and the chip soft-resets into the
+bootloader, which reads it back.** Two consequences follow, and both matter:
+
+- The choice is **persistent across power loss**, so a keyboard put into bootloader mode stays
+  there until something writes a different mode. The bootloader is therefore reliably
+  reachable rather than reachable only within a session.
+- Any firmware that can write that EEPROM word can enter the bootloader. It does **not**
+  require Corsair's application, the Bragi protocol, or a working USB stack.
+
+The access path, from the driver at `0x233f8` which is NXP's EEPROM word write:
+
+| What | Where |
+| --- | --- |
+| EEPROM controller | `0x40014000`, `EEPROM_BASE` in NXP's header |
+| EEPROM memory window | `0x40108000`, 16 KB, word-addressable |
+| Operating mode | word index 2, so `0x40108008` |
+| Clock gate | `AHBCLKCTRL0` bit 9, `SYSCON_AHBCLKCTRL_EEPROM_MASK` |
+
+and the sequence, which the disassembly and the header agree on byte for byte:
+
+```c
+EEPROM->AUTOPROG   = 1;    /* program on a single word write; no page erase, so
+                              neighbouring settings words are never touched */
+EEPROM->INTSTATCLR = 4;    /* EEPROM_INTSTATCLR_PROG_CLR_ST_MASK */
+*(volatile uint32_t *)0x40108008 = 3;              /* BOOTLOADER */
+while (!(EEPROM->INTSTAT & 4)) { }                 /* END_OF_PROG */
+NVIC_SystemReset();
+```
+
+`AUTOPROG = 1` is the detail that makes this safe: the write programs one word, so there is no
+read-modify-write of a page and nothing else in the EEPROM is disturbed.
+
+### Why this is a requirement, not a nicety
+
+**QMK does not implement Bragi.** The moment custom firmware runs, `k100-bragi` cannot reach
+the keyboard at all — there is no vendor interface to talk to, and the stock write path is
+gone with the stock application. So without a route back, the *first* custom flash is
+permanent whether or not it works: a perfectly good QMK build that cannot be replaced is as
+much a dead end as one that does not boot.
+
+The firmware therefore needs its own way into the bootloader, and more than one, because each
+possible route depends on a different part of the firmware being correct:
+
+| Route | Depends on | Covers |
+| --- | --- | --- |
+| `QK_BOOT` keycode | USB and the matrix working | an ordinary reflash |
+| Escape held at power-on | the matrix read only | USB broken, keyboard otherwise alive |
+| USB enumeration watchdog | neither | the firmware failing before it is usable |
+
+The third is the one that matters for a first flash, because it is the only one that survives
+the firmware being wrong about the things this project is still guessing at — the matrix sense
+polarity, the strobe settling time, the SPI pins. It arms a timer early in boot and, if USB has
+not reached a configured state by the time it fires, writes the EEPROM word and resets. A
+firmware that never becomes usable then puts itself back in the bootloader without anyone
+touching the keyboard.
+
 ## The unknown
 
 **Whether ECRP is set on the shipped part.** NXP community threads describe LPC546xx devices

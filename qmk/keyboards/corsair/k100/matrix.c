@@ -19,6 +19,8 @@
 #include "matrix.h"
 #include "quantum.h"
 
+#include "k100.h"
+
 /*
  * Strobes occupy P1_18..P1_25 and senses P1_0..P1_17, which is what makes the
  * single-read trick possible: the senses are a contiguous block from bit 0.
@@ -83,7 +85,7 @@ static pin_t strobe_line(uint8_t row) {
     return LPC_LINE(1U, STROBE_FIRST_PAD + row);
 }
 
-void matrix_init_custom(void) {
+void k100_matrix_configure_pins(void) {
     for (uint8_t row = 0; row < MATRIX_ROWS; row++) {
         // Released before becoming an output, so that making it one cannot
         // assert a strobe for however long the two writes take.
@@ -97,17 +99,26 @@ void matrix_init_custom(void) {
     }
 }
 
+uint32_t k100_matrix_sample_row(uint8_t row) {
+    palClearLine(strobe_line(row));
+    wait_us(MATRIX_STROBE_SETTLE_US);
+
+    // One read for all eighteen senses. See the note at the top.
+    uint32_t sensed = palReadPort(IOPORT1) & SENSE_MASK;
+
+    palSetLine(strobe_line(row));
+    return sensed;
+}
+
+void matrix_init_custom(void) {
+    k100_matrix_configure_pins();
+}
+
 bool matrix_scan_custom(matrix_row_t current_matrix[]) {
     bool changed = false;
 
     for (uint8_t row = 0; row < MATRIX_ROWS; row++) {
-        palClearLine(strobe_line(row));
-        wait_us(MATRIX_STROBE_SETTLE_US);
-
-        // One read for all eighteen senses. See the note at the top.
-        uint32_t sensed = palReadPort(IOPORT1) & SENSE_MASK;
-
-        palSetLine(strobe_line(row));
+        uint32_t sensed = k100_matrix_sample_row(row);
 
 #if MATRIX_SENSE_ACTIVE_LOW == TRUE
         sensed = ~sensed & SENSE_MASK;

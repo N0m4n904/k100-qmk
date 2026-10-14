@@ -34,7 +34,12 @@ ifeq ($(NXP_DEVICE_DIR),)
           NXP_SDK_DEVICE_DIR to an MCUXpresso SDK devices/<part> directory)
 endif
 
-STARTUPSRC = $(CHIBIOS)/os/common/startup/ARMCMx/compilers/GCC/crt1.c
+# lpc546xx_cpu_init.c replaces crt1.c's weak __cpu_init to clock SRAM1, SRAM2
+# and SRAM3 before crt0 touches RAM. It belongs here rather than in a board file
+# because the banks are a property of the part, so no board can omit it; the file
+# itself explains why that matters.
+STARTUPSRC = $(CHIBIOS)/os/common/startup/ARMCMx/compilers/GCC/crt1.c \
+             $(CHIBIOS_CONTRIB)/os/common/startup/ARMCMx/devices/LPC546xx/lpc546xx_cpu_init.c
 
 STARTUPASM = $(CHIBIOS)/os/common/startup/ARMCMx/compilers/GCC/crt0_v7m.S \
              $(CHIBIOS_CONTRIB)/os/common/startup/ARMCMx/compilers/GCC/vectors_lpc.S

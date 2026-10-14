@@ -52,6 +52,16 @@ ENCODERS = [
     ("volume roller", "voldn", "volup", "KC_VOLD", "KC_VOLU"),
 ]
 
+# Keys the Fn layer does not pass through, by (row, column).
+#
+# Fn+Esc has to reach QK_BOOT. QMK does not speak Bragi, so once this firmware runs there is
+# no vendor interface left to flash the keyboard through -- the keymap is one of the three ways
+# back to Corsair's bootloader, and the only one a user can reach deliberately while the
+# keyboard is working. See qmk/keyboards/corsair/k100/bootloader.c.
+FN_OVERRIDES = {
+    (0, 1): "QK_BOOT",
+}
+
 LED_FLAG_UNDERGLOW = 0x02
 LED_FLAG_KEYLIGHT = 0x04
 
@@ -244,7 +254,8 @@ def build_keymap_c(placed: list[Key]) -> str:
         lines = []
         for strobe in sorted(rows):
             ordered = sorted(rows[strobe], key=lambda k: k.matrix[1])
-            codes = ("KC_TRNS" if transparent else keycode_for(k) for k in ordered)
+            codes = [FN_OVERRIDES.get(k.matrix, "KC_TRNS") if transparent
+                     else keycode_for(k) for k in ordered]
             lines.append(f"        /* P1_{STROBE_PIN_BASE + strobe} */ "
                          + ", ".join(c.ljust(width) for c in codes) + ",")
         return "\n".join(lines).rstrip(",")
@@ -271,7 +282,9 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {{
 {layer(False)}
     ),
 
-    // Fn layer, intentionally left as pass-through until the hardware is understood.
+    // Fn layer, pass-through except for the overrides below, until the hardware is
+    // understood. Fn+Esc is QK_BOOT: see bootloader.c for why a route back to Corsair's
+    // bootloader is a requirement rather than a convenience.
     [1] = LAYOUT_k100_iso_de(
 {layer(True)}
     ),

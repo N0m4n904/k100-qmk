@@ -11,6 +11,12 @@ SRC += matrix.c
 SRC += is31fl3743b_transport.c
 SRC += is31fl3743b_leds.c
 
+# The way back to Corsair's bootloader. Not optional: QMK does not speak Bragi,
+# so without this the first custom image written to the keyboard is the last
+# one. keyboard.json declares `bootloader: custom`, which gives QMK's weak
+# bootloader_jump() and mcu_reset() for this file to override.
+SRC += bootloader.c
+
 # The chip driver's headers. QMK adds this itself when RGB_MATRIX_DRIVER selects
 # is31fl3743b, but not when rgb_matrix is off -- and the two files above are
 # compiled either way, so that they cannot rot while the feature is disabled.
