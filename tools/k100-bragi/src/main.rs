@@ -42,6 +42,10 @@ enum Action {
     /// touches firmware.
     Files,
 
+    /// Re-enumerate the keyboard, to revive a wedged command endpoint without
+    /// reaching behind the desk. Changes no firmware and no setting.
+    Reset,
+
     /// Put the keyboard into bootloader mode. Reversible with `exit-bootloader`.
     EnterBootloader {
         /// The product id to act on, and the only device that will be opened.
@@ -88,6 +92,7 @@ fn main() -> Result<()> {
         Action::Info => info(),
         Action::VerifyImage { path } => verify_image(&path),
         Action::Files => files(),
+        Action::Reset => reset(),
         Action::EnterBootloader { device } => enter_bootloader(device),
         Action::ExitBootloader => exit_bootloader(),
         Action::Flash { path, commit, device } => flash(&path, commit, device),
@@ -134,8 +139,9 @@ fn flash(path: &std::path::Path, commit: bool, product: u16) -> Result<()> {
     if !commit {
         println!();
         println!("dry run: nothing was sent that changes the keyboard.");
-        println!("  would write {} bytes as {} chunks to file id {}, then apply",
-                 plan.total, plan.chunks, protocol::FILE_ID_FIRMWARE);
+        println!("  would write {} bytes to file id {}, as {} chunks of {} bytes in \
+                  {}-byte reports, then apply",
+                 plan.total, protocol::FILE_ID_FIRMWARE, plan.chunks, plan.chunk, plan.report);
         println!("  re-run with --commit to do it");
         return Ok(());
     }
@@ -156,6 +162,11 @@ fn info() -> Result<()> {
     println!("{}", device.description());
     println!("  product id        {:#06x}", device.product);
     println!("  header layout     {:?}", device.layout);
+
+    // The one number that distinguishes the two programs on this chip before any command is
+    // sent, and the one that silently breaks everything if it is assumed. 1024 is the
+    // application, 64 is the bootloader.
+    println!("  report size       {} bytes, from the endpoint descriptor", device.report_size);
 
     match device.usb_pid() {
         Ok(pid) => println!("  reported pid      {pid:#06x}"),
@@ -248,20 +259,51 @@ fn files() -> Result<()> {
     })
 }
 
+/// Re-enumerates the keyboard and reports whether that revived it.
+///
+/// Deliberately does its own read afterwards: a reset that returns success only
+/// means the ioctl was accepted, and the thing worth knowing is whether the
+/// command endpoint answers again, which only a command can establish.
+fn reset() -> Result<()> {
+    let device = open()?;
+    println!("{}", device.description());
+
+    device.reset()?;
+    println!("  port reset; waiting for the keyboard to come back");
+
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    let device = open().context("the keyboard did not reappear after the reset")?;
+    match device.operating_mode() {
+        Ok(mode) => {
+            println!("  back on the bus, operating mode {mode:?}");
+            println!();
+            println!("The command endpoint answers again.");
+            Ok(())
+        }
+        Err(error) => {
+            println!("  back on the bus, but the command endpoint still does not answer");
+            println!();
+            println!("A port reset does not drop VBUS. Unplug the keyboard, wait a few");
+            println!("seconds and plug it back in; that is what docs/recovery.md step 0 asks");
+            println!("for and it is known to work.");
+            Err(error)
+        }
+    }
+}
+
 /// Entering the bootloader names its target, for the same reason flashing does:
 /// it is a deliberate change to a working keyboard, and it is only ever entered
 /// from a known application whose product id is therefore known.
 fn enter_bootloader(product: u16) -> Result<()> {
-    let device = Device::open_exact(product)?;
-    roundtrip::enter_bootloader(&device)
+    roundtrip::enter_bootloader(Device::open_exact(product)?)
 }
 
 /// Leaving it does not, and must not. This is the direction that rescues a
 /// keyboard, and a bootloader may report a product id this tool has never seen;
 /// refusing to open it then would strand the very device this exists to recover.
 fn exit_bootloader() -> Result<()> {
-    let device = open()?;
-    roundtrip::exit_bootloader(&device)
+    roundtrip::exit_bootloader(open()?)
 }
 
 #[cfg(test)]

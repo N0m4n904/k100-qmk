@@ -15,8 +15,12 @@ use crate::transport::{self, UsbDevice};
 const BRAGI_EP_OUT: u8 = 0x01;
 const BRAGI_EP_IN: u8 = 0x82;
 
-/// "Jumbo" report size, which every K100 uses.
-const REPORT_SIZE: usize = 1024;
+/// Report size when the device does not say.
+///
+/// The application's "jumbo" report, which ckb-next names and which every K100 application
+/// firmware uses. Only a fallback: the real figure comes from the OUT endpoint's descriptor,
+/// because the bootloader's is 64 and nothing but the device knows which program is running.
+const FALLBACK_REPORT_SIZE: usize = 1024;
 
 /// Interfaces to claim when the device presents none that sysfs can see, which should not
 /// happen. ckb-next claims all of them rather than only the vendor one, and anything less was
@@ -36,6 +40,12 @@ pub struct Device {
     /// The product id as reported, known even when the model is not.
     pub product: u16,
     pub layout: HeaderLayout,
+    /// One report, as this program on the device declares its endpoint. 1024 for the
+    /// application, 64 for the bootloader.
+    pub report_size: usize,
+    /// The same for the reply endpoint. Read separately rather than assumed equal, since
+    /// nothing requires a device to size its two directions alike.
+    reply_size: usize,
 }
 
 impl Device {
@@ -107,6 +117,13 @@ impl Device {
             found.interfaces.clone()
         };
 
+        // One report is one packet. Taking this from the descriptor rather than assuming it is
+        // what makes the same code work against the application and the bootloader: they
+        // declare 1024 and 64 respectively, and a request longer than a packet is split, so
+        // the device never sees a whole report and answers nothing.
+        let report_size = found.report_size(BRAGI_EP_OUT).unwrap_or(FALLBACK_REPORT_SIZE);
+        let reply_size = found.report_size(BRAGI_EP_IN).unwrap_or(FALLBACK_REPORT_SIZE);
+
         let usb = UsbDevice::open(&found.node, &interfaces)
             .with_context(|| format!("taking interfaces of {}", found.node.display()))?;
 
@@ -114,7 +131,22 @@ impl Device {
         // and USB_PID read back correctly at that offset. See docs/bragi-firmware-update.md.
         // Whether the bootloader frames the same way is unverified, which is why `info`
         // exists.
-        Ok(Self { usb, model, product: found.product, layout: HeaderLayout::TwoByte })
+        Ok(Self {
+            usb,
+            model,
+            product: found.product,
+            layout: HeaderLayout::TwoByte,
+            report_size,
+            reply_size,
+        })
+    }
+
+    /// Re-enumerates the keyboard, the software stand-in for step 0's replug.
+    ///
+    /// See [`crate::transport::UsbDevice::reset`] for what this does and does not do. The
+    /// handle is consumed because the device comes back at a different bus address.
+    pub fn reset(self) -> Result<()> {
+        self.usb.reset()
     }
 
     /// A human-readable name, which is not always a known model.
@@ -130,14 +162,14 @@ impl Device {
 
     /// Sends a request and reads the reply.
     pub fn exchange(&self, request: &Request) -> Result<Response> {
-        let body = request.encode(REPORT_SIZE, false)?;
+        let body = request.encode(self.report_size, false)?;
         self.usb
-            .transfer(BRAGI_EP_OUT, Some(&body), REPORT_SIZE, TIMEOUT_MS)
+            .transfer(BRAGI_EP_OUT, Some(&body), self.report_size, TIMEOUT_MS)
             .with_context(|| format!("sending {:?}", request.command))?;
 
         let reply = self
             .usb
-            .transfer(BRAGI_EP_IN, None, REPORT_SIZE, TIMEOUT_MS)
+            .transfer(BRAGI_EP_IN, None, self.reply_size, TIMEOUT_MS)
             .with_context(|| format!("reading the reply to {:?}", request.command))?;
 
         Ok(Response::new(reply, self.layout))
@@ -199,25 +231,33 @@ impl Device {
 
     /// Changes operating mode and confirms it took effect.
     ///
-    /// File and buffer commands are refused with `InvalidState` while the keyboard is
-    /// `SelfOperated`, its power-on state, so host control is a prerequisite for most work.
-    /// `Bootloader` is fire-and-forget because the device re-enumerates instead of replying.
+    /// For transitions *within* one program. File and buffer commands are refused with
+    /// `InvalidState` while the keyboard is `SelfOperated`, its power-on state, so host
+    /// control is a prerequisite for most work.
+    ///
+    /// A transition that restarts the chip into the other program needs
+    /// [`request_operating_mode`](Self::request_operating_mode) instead.
     pub fn set_operating_mode(&self, mode: OperatingMode) -> Result<()> {
-        let request = Request::set_operating_mode(mode);
-
-        if mode == OperatingMode::Bootloader {
-            let body = request.encode(REPORT_SIZE, false)?;
-            self.usb
-                .transfer(BRAGI_EP_OUT, Some(&body), REPORT_SIZE, TIMEOUT_MS)
-                .context("requesting bootloader mode")?;
-            return Ok(());
-        }
-
-        self.expect_ok(&request)?;
+        self.expect_ok(&Request::set_operating_mode(mode))?;
         let landed = self.operating_mode()?;
         if landed != mode {
             bail!("asked for {mode:?} but the keyboard reports {landed:?}");
         }
+        Ok(())
+    }
+
+    /// Asks for a mode and does not wait for an answer.
+    ///
+    /// Crossing between the bootloader and the application restarts the chip, so the device
+    /// re-enumerates instead of replying: there is no reply to read, and the handle that sent
+    /// the request describes a device that no longer exists. Both directions behave this way,
+    /// and both are confirmed by reconnecting and asking again rather than by a status byte.
+    pub fn request_operating_mode(&self, mode: OperatingMode) -> Result<()> {
+        let request = Request::set_operating_mode(mode);
+        let body = request.encode(self.report_size, false)?;
+        self.usb
+            .transfer(BRAGI_EP_OUT, Some(&body), self.report_size, TIMEOUT_MS)
+            .with_context(|| format!("requesting {mode:?}"))?;
         Ok(())
     }
 

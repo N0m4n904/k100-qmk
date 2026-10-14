@@ -20,7 +20,7 @@ const SETTLE: Duration = Duration::from_secs(1);
 
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 
-pub fn enter_bootloader(device: &Device) -> Result<()> {
+pub fn enter_bootloader(device: Device) -> Result<()> {
     let mode = device.operating_mode()?;
     if mode == OperatingMode::Bootloader {
         println!("Already in bootloader mode.");
@@ -29,7 +29,8 @@ pub fn enter_bootloader(device: &Device) -> Result<()> {
 
     println!("Current mode: {mode:?}");
     println!("Requesting bootloader mode (SET OPERATING_MODE 3)...");
-    device.set_operating_mode(OperatingMode::Bootloader)?;
+    device.request_operating_mode(OperatingMode::Bootloader)?;
+    drop(device);
 
     let device = reconnect().context("keyboard did not come back after the bootloader request")?;
     let landed = device.operating_mode()?;
@@ -38,37 +39,55 @@ pub fn enter_bootloader(device: &Device) -> Result<()> {
         bail!("keyboard came back in {landed:?} rather than Bootloader");
     }
 
-    println!("In bootloader mode. Return with `exit-bootloader`.");
+    println!("In bootloader mode, {}-byte reports. Return with `exit-bootloader`.",
+             device.report_size);
     Ok(())
 }
 
-/// The vendor path out is `Bootloader -> SelfOperated -> HostControlled`, not a direct jump;
-/// the updater logs "Transitioning from bootloader to host controlled via self-operated mode".
-pub fn exit_bootloader(device: &Device) -> Result<()> {
+/// Leaves the bootloader by asking for self-operated mode.
+///
+/// The vendor path is `Bootloader -> SelfOperated -> HostControlled`, not a direct jump; the
+/// updater logs "Transitioning from bootloader to host controlled via self-operated mode".
+/// Only the first leg belongs here. Host control is what the updater wants next for its own
+/// sake, and leaving a keyboard host-controlled with nothing driving it is worse than leaving
+/// it in the state it powers on into.
+pub fn exit_bootloader(device: Device) -> Result<()> {
     let mode = device.operating_mode()?;
     if mode != OperatingMode::Bootloader {
         println!("Not in bootloader mode (currently {mode:?}); nothing to do.");
         return Ok(());
     }
 
-    println!("Leaving bootloader via self-operated mode...");
-    device.set_operating_mode(OperatingMode::SelfOperated)?;
+    println!("Leaving bootloader for self-operated mode...");
+    device.request_operating_mode(OperatingMode::SelfOperated)?;
+    drop(device);
     sleep(SETTLE);
 
     let device = reconnect().context("keyboard did not come back after leaving bootloader")?;
-    device.set_operating_mode(OperatingMode::HostControlled)?;
-    sleep(SETTLE);
-
     let landed = device.operating_mode()?;
-    println!("Operating mode is now {landed:?}.");
 
     if landed == OperatingMode::Bootloader {
         bail!("keyboard is still in bootloader mode");
     }
+
+    println!("Operating mode is now {landed:?}, {}-byte reports.", device.report_size);
+    match device.firmware_version() {
+        Ok(version) => println!("Running firmware {version}."),
+        Err(error) => println!("Could not read the firmware version: {error:#}"),
+    }
     Ok(())
 }
 
-/// Polls for the keyboard to reappear on the bus after a mode change.
+/// Waits for the keyboard to come back and answer after a mode change.
+///
+/// Appearing in sysfs is not the same as being ready: the device is listed before its
+/// endpoints will carry a transfer, and opening it at that moment gets a handle that times
+/// out on the first request. So the condition polled here is a successful command, not a
+/// successful open, which is the thing the caller actually needs.
+///
+/// Opening from scratch each time is deliberate too. The bus address changes across
+/// re-enumeration, and so can the report size -- the bootloader's endpoints are a sixteenth
+/// of the application's -- so a handle from before the transition describes the wrong device.
 fn reconnect() -> Result<Device> {
     let deadline = Instant::now() + RECONNECT_TIMEOUT;
     let mut last_error = None;
@@ -76,15 +95,14 @@ fn reconnect() -> Result<Device> {
     while Instant::now() < deadline {
         sleep(POLL_INTERVAL);
 
-        // Re-opens from scratch: the bus address changes across re-enumeration.
-        match Device::open() {
+        match Device::open().and_then(|device| device.operating_mode().map(|_| device)) {
             Ok(device) => return Ok(device),
             Err(error) => last_error = Some(error),
         }
     }
 
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("keyboard did not reappear")))
-        .context(format!("waited {RECONNECT_TIMEOUT:?}"))
+        .context(format!("waited {RECONNECT_TIMEOUT:?} for the keyboard to answer again"))
 }
 
 /// Buffer handle used for the firmware file.
@@ -94,19 +112,29 @@ fn reconnect() -> Result<Device> {
 /// `INVALID_STATE`, so there is no reason to spread them around.
 const FIRMWARE_HANDLE: u8 = 1;
 
-/// Payload bytes per report.
+/// Payload bytes that fit in one report, from the updater's own arithmetic.
 ///
-/// The report is 1024 bytes and this device frames a request in two, so 1017
-/// would fit in the first chunk. The updater computes `reportLength - 4 - 1 -
-/// 4`, which assumes a four-byte header, and that is the figure used here: a
-/// chunk shorter than the device can take always works, while one longer than
-/// it expects does not, and the cost is a few more transfers over 23 KB.
-const CHUNK: usize = 1024 - 4 - 1 - 4;
+/// It computes `reportLength - 4 - 1 - 4`: a four-byte Bragi header, the report
+/// id, and the four-byte total length that rides in the first chunk. A chunk
+/// shorter than the device can take always works, while one longer than it
+/// expects does not, so the conservative reading is the one used.
+///
+/// `report` has to come from the device. The application declares 1024-byte
+/// endpoints and **the bootloader declares 64**, so a figure derived from the
+/// application is sixteen times too large for the program that actually does
+/// the writing.
+fn chunk_size(report: usize) -> Result<usize> {
+    report.checked_sub(4 + 1 + 4).filter(|&c| c > 0).ok_or_else(|| {
+        anyhow::anyhow!("a {report}-byte report leaves no room for a firmware chunk")
+    })
+}
 
 /// What a flash would do, without doing it.
 pub struct Plan {
     pub total: usize,
     pub chunks: usize,
+    pub chunk: usize,
+    pub report: usize,
 }
 
 /// Writes a firmware image, or reports what it would write.
@@ -120,9 +148,12 @@ pub struct Plan {
 /// opened and no buffer is written. That is the default everywhere above this
 /// function.
 pub fn flash(device: &Device, image: &[u8], commit: bool) -> Result<Plan> {
+    let chunk = chunk_size(device.report_size)?;
     let plan = Plan {
         total: image.len(),
-        chunks: image.len().div_ceil(CHUNK),
+        chunks: image.len().div_ceil(chunk),
+        chunk,
+        report: device.report_size,
     };
 
     if !commit {
@@ -153,7 +184,7 @@ pub fn flash(device: &Device, image: &[u8], commit: bool) -> Result<Plan> {
 }
 
 fn write_image(device: &Device, image: &[u8], plan: &Plan) -> Result<()> {
-    let mut chunks = image.chunks(CHUNK);
+    let mut chunks = image.chunks(plan.chunk);
 
     let first = chunks.next().unwrap_or(&[]);
     let begun = device.exchange(&Request::write_buffer_begin(

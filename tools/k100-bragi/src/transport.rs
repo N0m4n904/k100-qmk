@@ -8,6 +8,7 @@
 //! No elevated privileges are required: the usbfs node carries an ACL granting the
 //! logged-in user access, as OpenRGB's and ckb-next's udev rules arrange.
 
+use std::collections::BTreeMap;
 use std::ffi::{c_int, c_uint, c_void};
 use std::fs::{File, OpenOptions};
 use std::os::fd::AsRawFd;
@@ -64,6 +65,7 @@ const USBDEVFS_GETDRIVER: u32 = ioc::encode(ioc::WRITE, b'U', 8, size_of::<GetDr
 const USBDEVFS_CLAIMINTERFACE: u32 = ioc::encode(ioc::READ, b'U', 15, size_of::<c_uint>());
 const USBDEVFS_RELEASEINTERFACE: u32 = ioc::encode(ioc::READ, b'U', 16, size_of::<c_uint>());
 const USBDEVFS_IOCTL: u32 = ioc::encode(ioc::READ | ioc::WRITE, b'U', 18, size_of::<DriverIoctl>());
+const USBDEVFS_RESET: u32 = ioc::encode(ioc::NONE, b'U', 20, 0);
 
 /// Passed as the `code` inside a [`DriverIoctl`] rather than issued directly.
 const USBDEVFS_DISCONNECT: c_int = ioc::encode(ioc::NONE, b'U', 22, 0) as c_int;
@@ -81,6 +83,31 @@ pub struct Found {
     /// leaving one unclaimed was observed to stop the device responding, so the set has to
     /// come from the device.
     pub interfaces: Vec<u8>,
+    /// Maximum packet size of each endpoint, by address, read from the descriptors.
+    ///
+    /// This is not a detail. The application's vendor endpoints are 1024 bytes and the
+    /// **bootloader's are 64**, so a report size assumed from one is silently wrong in the
+    /// other: every request goes out as sixteen packets, the device never sees a whole
+    /// report, and it answers nothing at all. Observed on hardware, and it is why this comes
+    /// from the device rather than from a constant.
+    pub endpoints: BTreeMap<u8, usize>,
+}
+
+impl Found {
+    /// The report size to use on an endpoint: one packet, as the device declares it.
+    pub fn report_size(&self, endpoint: u8) -> Result<usize> {
+        self.endpoints.get(&endpoint).copied().ok_or_else(|| {
+            anyhow!(
+                "{} presents no endpoint {endpoint:#04x}; it has {}",
+                self.node.display(),
+                self.endpoints
+                    .keys()
+                    .map(|e| format!("{e:#04x}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
+    }
 }
 
 /// Interface numbers of a sysfs USB device.
@@ -109,6 +136,32 @@ fn interfaces_of(path: &Path) -> Vec<u8> {
     interfaces.sort_unstable();
     interfaces.dedup();
     interfaces
+}
+
+/// Maximum packet size of every endpoint the device presents, by address.
+///
+/// Each interface directory holds one `ep_<hex address>` child per endpoint, whose
+/// `wMaxPacketSize` is four hex digits with no prefix.
+fn endpoints_of(path: &Path) -> BTreeMap<u8, usize> {
+    let Some(prefix) = path.file_name().and_then(|n| n.to_str()) else {
+        return BTreeMap::new();
+    };
+
+    std::fs::read_dir(path)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|child| {
+            child.file_name().to_str().is_some_and(|n| n.starts_with(&format!("{prefix}:")))
+        })
+        .flat_map(|interface| std::fs::read_dir(interface.path()).into_iter().flatten().flatten())
+        .filter_map(|child| {
+            let name = child.file_name().to_str()?.strip_prefix("ep_")?.to_owned();
+            let address = u8::from_str_radix(&name, 16).ok()?;
+            let text = std::fs::read_to_string(child.path().join("wMaxPacketSize")).ok()?;
+            Some((address, usize::from_str_radix(text.trim(), 16).ok()?))
+        })
+        .collect()
 }
 
 /// Scans sysfs for devices matching a vendor and any of several products.
@@ -150,6 +203,7 @@ fn scan(vendor: u16, accept: impl Fn(u16) -> bool) -> Result<Vec<Found>> {
             node: PathBuf::from(format!("/dev/bus/usb/{bus:03}/{device:03}")),
             product: pid,
             interfaces: interfaces_of(&path),
+            endpoints: endpoints_of(&path),
         });
     }
     Ok(found)
@@ -255,6 +309,48 @@ impl UsbDevice {
         Ok(buffer)
     }
 
+    /// Resets the port, which is as close to unplugging the device as software gets.
+    ///
+    /// `docs/recovery.md` opens its procedure with "replug the keyboard": the vendor command
+    /// endpoint can be left refusing every transfer with `ETIMEDOUT` by a client that failed
+    /// mid-exchange, and only a fresh start clears it. A USB port reset is the kernel's own
+    /// version of that -- the device re-enumerates and its endpoints are re-established --
+    /// and it costs no physical access, which matters when the keyboard is not on the machine
+    /// doing the work.
+    ///
+    /// It is not identical to a power cycle: the device is not de-powered, so firmware state
+    /// that only `VBUS` dropping would clear survives. If a reset does not revive the
+    /// endpoint, an actual replug is the next thing to try, not a second reset.
+    ///
+    /// The device re-enumerates at a new address, so this consumes the handle.
+    pub fn reset(mut self) -> Result<()> {
+        // The interfaces go back to the kernel first. Resetting while this process still
+        // holds them leaves the kernel unable to re-bind its keyboard driver, so the device
+        // would come back enumerated but not typing.
+        self.release();
+
+        self.check(unsafe { libc::ioctl(self.file.as_raw_fd(), USBDEVFS_RESET as _, 0) })
+            .context("resetting the USB port")?;
+        Ok(())
+    }
+
+    /// Gives every claimed interface back and reattaches every driver that was detached.
+    ///
+    /// Taken out of [`Drop`] so [`reset`](Self::reset) can do it early and explicitly.
+    /// Draining the lists makes it idempotent, which is what lets `Drop` run afterwards
+    /// without undoing anything twice.
+    fn release(&mut self) {
+        for interface in std::mem::take(&mut self.claimed).into_iter().rev() {
+            let number = c_uint::from(interface);
+            unsafe {
+                libc::ioctl(self.file.as_raw_fd(), USBDEVFS_RELEASEINTERFACE as _, &number);
+            }
+        }
+        for interface in std::mem::take(&mut self.detached).into_iter().rev() {
+            let _ = self.driver_ioctl(interface, USBDEVFS_CONNECT);
+        }
+    }
+
     /// Maps a negative ioctl return into the underlying errno, which is the whole point of
     /// using this transport: a rejected transfer must be distinguishable from a silent one.
     fn check(&self, result: c_int) -> Result<c_int> {
@@ -268,15 +364,7 @@ impl UsbDevice {
 
 impl Drop for UsbDevice {
     fn drop(&mut self) {
-        for &interface in self.claimed.iter().rev() {
-            let number = c_uint::from(interface);
-            unsafe {
-                libc::ioctl(self.file.as_raw_fd(), USBDEVFS_RELEASEINTERFACE as _, &number);
-            }
-        }
-        for &interface in self.detached.clone().iter().rev() {
-            let _ = self.driver_ioctl(interface, USBDEVFS_CONNECT);
-        }
+        self.release();
     }
 }
 
@@ -294,6 +382,7 @@ mod tests {
         assert_eq!(USBDEVFS_CLAIMINTERFACE, 0x8004_550F);
         assert_eq!(USBDEVFS_RELEASEINTERFACE, 0x8004_5510);
         assert_eq!(USBDEVFS_IOCTL, 0xC010_5512);
+        assert_eq!(USBDEVFS_RESET, 0x5514);
         assert_eq!(USBDEVFS_DISCONNECT, 0x5516);
         assert_eq!(USBDEVFS_CONNECT, 0x5517);
     }
