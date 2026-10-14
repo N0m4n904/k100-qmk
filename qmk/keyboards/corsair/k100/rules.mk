@@ -15,3 +15,9 @@ SRC += is31fl3743b_leds.c
 # is31fl3743b, but not when rgb_matrix is off -- and the two files above are
 # compiled either way, so that they cannot rot while the feature is disabled.
 VPATH += $(TOP_DIR)/drivers/led/issi
+
+# The application lives behind Corsair's bootloader, which occupies the first
+# 64 KB of flash, so it links at 0x00010000 rather than at zero. An image linked
+# at zero would have a reset vector pointing into the bootloader and could not
+# run; see the script's own comment and docs/pin-mapping.md.
+MCU_LDSCRIPT = LPC546xx_app_at_64k

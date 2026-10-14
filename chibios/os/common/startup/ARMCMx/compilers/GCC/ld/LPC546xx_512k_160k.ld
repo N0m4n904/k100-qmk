@@ -22,10 +22,15 @@
  */
 
 /*
- * Memory setup for every LPC546xx part with 512 KB of flash and 160 KB of main
- * SRAM, which covers all of them this port supports -- NXP's own linker scripts
- * for the LPC54605J512 and the LPC54628J512 are byte-identical in their memory
- * regions, so the keyboard's part and the LPCXpresso54628 devboard's share this.
+ * Memory setup for an LPC546xx with 512 KB of flash and 160 KB of main SRAM,
+ * running as the *only* program on the part: flash starts at zero, where the
+ * boot ROM looks.
+ *
+ * This is right for a devboard and **wrong for the K100**, whose first 64 KB is
+ * Corsair's bootloader and whose application is linked at 0x00010000. Use
+ * LPC546xx_app_at_64k.ld there; linking at zero and flashing to the application
+ * slot produces an image whose reset vector points into the bootloader, which
+ * cannot work and destroys the working firmware in the attempt.
  *
  * Named for the memory rather than for a part on purpose. The alternative, a
  * file per part including a shared one, does not work here: the linker is given

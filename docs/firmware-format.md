@@ -160,7 +160,7 @@ Header layout:
 | --- | --- | --- |
 | `0x00` | u32 | **CRC32/MPEG-2 over bytes `[0x04 .. EOF]`** |
 | `0x04` | u32 | Total file length, including the header (150908) |
-| `0x08` | u32 | `0x00012569` (75113) — purpose not yet known |
+| `0x08` | u32 | **Entry point, a Thumb address** — `0x00012569` |
 | `0x0c` | u16 | `0x0001` — format or version field |
 | `0x0e` | — | ASCII build date, `"Aug 22 2023\0"` |
 | `0x1a` | — | ASCII build time, `"14:39:00\0"` |
@@ -184,11 +184,45 @@ Building a valid custom image is now a solved problem: lay out the payload, writ
 length at `0x04`, compute CRC32/MPEG-2 over everything from `0x04` onward, store it at
 `0x00`. No encryption and no signature in the container.
 
+### The entry point, and why there is no vector table
+
+The field at `0x08` is the application's entry point, and finding that out also settles where the
+image lands in flash. The two questions turned out to be the same question.
+
+`0x00012569` is odd, so a Thumb address, and inside the application's flash range. Treating it as
+an entry point gives a test with exactly one right answer, because only one load mapping makes it
+point at an instruction boundary:
+
+| Mapping | Entry lands at file | Bytes there |
+| --- | --- | --- |
+| payload `0x2c` → flash `0x10000` | `0x2595` | `04 0f 43 f8` — mid-instruction |
+| **file `0x00` → flash `0x10000`** | `0x2569` | `80 b5 00 af 72 b6` |
+
+Those three instructions are `push {r7, lr}`, `add r7, sp, #0`, `cpsid i` — a frame setup followed
+by disabling interrupts, which is what an entry routine does and what nothing else does. Both
+published images carry the same entry value, as a fixed entry point should.
+
+So the layout in flash is:
+
+```
+0x00000000   Corsair's bootloader, 64 KB
+0x00010000   this 0x2c container header, written to flash as part of the image
+0x0001002c   the application's code
+             entry at 0x00012569, branched to by the bootloader
+```
+
+**The bootloader does not use a vector table to start the application.** It reads the entry
+address out of the header and branches there. The whole image was scanned for a Cortex-M vector
+table and contains none: the one candidate, at file offset `0x3FFC`, runs for seven entries before
+turning into RAM pointers and code, so it is a data structure rather than a table of eighty
+handlers.
+
+That has a consequence for any custom firmware. A standard Cortex-M image begins with its vector
+table, and this bootloader would branch past it into whatever follows — so a custom image has to
+carry this header, put its entry address in it, and leave its vector table somewhere the entry
+code points `VTOR` at, rather than at the start.
+
 ### Still open
 
 - Does the **bootloader itself** additionally verify a signature, beyond the CRC the manifest
   describes? The manifest's wording suggests not, but only a real write proves it.
-- What is the field at `0x08` (`75113`)? It is neither the file length nor the payload length.
-- What is the load address, and does the payload start with a vector table at some offset?
-  The image begins with code at `0x2c` rather than a Cortex-M vector table, so the bootloader
-  likely places it at a fixed flash offset.
