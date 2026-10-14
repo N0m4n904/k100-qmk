@@ -325,13 +325,16 @@ Confirmed on hardware. Entering the bootloader changes the descriptors:
 
 | | Application | Bootloader |
 | --- | --- | --- |
-| `bcdDevice` | the firmware's version | **`0.0a`** — its own, 0.10.45 |
+| `bcdDevice` | the firmware's minor version | **its own** — `0x0a`, bootloader 0.10.45 |
 | Interfaces | 3 | **2** |
 | Vendor endpoints | `0x01` OUT, `0x82` IN | the same two |
 | `wMaxPacketSize` | **1024** | **64** |
 
 The product id does **not** change: it stays `1b1c:1b7c`, so a keyboard that looks entirely
-ordinary in `lsusb -d` may be sitting in its bootloader. `bcdDevice` is the giveaway.
+ordinary in `lsusb -d` may be sitting in its bootloader. `bcdDevice` is the giveaway, and it
+carries the running program's **minor version**: observed `0x20` on firmware 0.32.6, `0x23`
+after flashing 0.35.288, and `0x0a` in the bootloader at 0.10.45. That makes it a
+descriptor-only way to read the version, with no command sent.
 
 **The packet size is the trap.** Requests sized for the application go out as sixteen packets
 on a 64-byte endpoint, the bootloader never sees a whole report, and it answers nothing —
@@ -342,6 +345,20 @@ own endpoint, which is why one implementation drives both programs.
 In the bootloader, `GET FIRMWARE_VERSION` and `GET BOOTLOADER_VERSION` both answer and
 `GET OPERATING_MODE` returns `Bootloader`. `GET HW_LAYOUT` returns `INVALID_STATE`, which
 makes sense: the bootloader does not know what keyboard it is attached to.
+
+### Versions carry a 16-bit patch, and reading it as one byte silently truncates
+
+`parseFirmwareVersion` in the bundle, against a two-byte header layout:
+
+```js
+const major = n[3], minor = n[4];
+const patch = (n.length > 6 && n[6] !== 0) ? n[5] + n[6] * 256 : n[5];
+```
+
+So the payload is `major, minor, patch16-le`. Taking the patch as one byte looks right for
+every version small enough to fit -- "fw 0.32.6, bld 0.10.45", which ckb-next recorded and
+this keyboard reported -- and then quietly lies: after flashing 0.35.**288** the device read
+back as 0.35.**32**, because 288 is `0x120` and only the low byte was being used.
 
 ### The mode round trip, proven
 

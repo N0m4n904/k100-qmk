@@ -175,6 +175,30 @@ Steps 1, 3 and 5 are proven on hardware on their own, with nothing written: see 
 round trip, proven" in `bragi-firmware-update.md`. That was worth doing first, because it
 establishes the way back before anything needs it.
 
+## Rule 2 is done. The round trip works.
+
+Carried out on the keyboard, with Corsair's own verified image:
+
+```
+before   firmware 0.32.6,  bootloader 0.10.45, SelfOperated, 1024-byte reports
+         took host control, the mode the manifest lists first
+         wrote 150908 bytes in 148 chunks (1017 then 1021), file id 3
+         applied as Firmware with checksum 0x835570e1, acknowledged
+         rebooted, back in SelfOperated
+after    firmware 0.35.288, bootloader 0.10.45, SelfOperated, 1024-byte reports
+         bcdDevice 0.20 -> 0.23, three interfaces, usbhid bound to all of them
+```
+
+The version the keyboard reports is exactly the one the image declares, so the write reached
+flash and the device is running it. Nothing was lost: the keyboard came back a working
+keyboard, on newer official firmware than it started with.
+
+That settles the parts of the recovery path that were previously argued from documentation:
+the bootloader can be entered and left, a firmware image can be written and applied, and the
+result is observable. What it does **not** settle is whether the bootloader re-enters when the
+application is *broken* — see the residual risk below. That one cannot be tested without
+breaking the application.
+
 If that loop works, recovery is demonstrated empirically rather than argued from
 documentation, and both images are already verified authentic against Corsair's published
 sha512 hashes. If it does not work, we have learned so with the stock firmware still intact

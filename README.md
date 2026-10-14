@@ -38,8 +38,8 @@ and the two rules that keep a mistake survivable.
 | --- | --- |
 | Firmware container format | **Proven.** The writer rebuilds both official images byte for byte. |
 | Firmware distribution | **Understood and verified.** Official images download and validate. |
-| Recovery path | **Established in code**, not yet exercised on hardware. |
-| Bragi protocol | **Command set recovered**, read-only commands confirmed against a real unit. |
+| Recovery path | **Proven on hardware.** An official image was written, applied and verified. |
+| Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |
 | QMK layout, keymap, LED map, VIA | **Done** for OPX ISO DE, generated from ckb-next's data. |
 | ChibiOS LPC546xx port | **Clocks, GPIO, SPI and USB written.** Builds and links; has never run. |
 | Key matrix pins | **Found** by disassembly. Sense polarity and settling time are untested guesses. |

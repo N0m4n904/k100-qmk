@@ -192,15 +192,25 @@ impl Device {
         self.read_version(Property::BootloaderVersion)
     }
 
-    /// Versions are three payload bytes: major, minor, patch. Corroborated by ckb-next
-    /// recording a K100 at "fw 0.32.6, bld 0.10.45", which matches a real unit exactly.
+    /// A version is major, minor, and a **16-bit** patch, little-endian.
+    ///
+    /// `parseFirmwareVersion` in the updater bundle, which takes the patch as
+    /// `payload[2] + payload[3] * 256` and falls back to one byte when the high byte is zero.
+    /// Reading it as a single byte looks right for every version that fits -- "fw 0.32.6,
+    /// bld 0.10.45", which ckb-next recorded and this keyboard reported -- and then silently
+    /// truncates: 0.35.288 reads back as 0.35.32, because 288 is 0x120.
     fn read_version(&self, property: Property) -> Result<String> {
         let response = self.expect_ok(&Request::get(property))?;
         let payload = response.payload();
         if payload.len() < 3 {
             bail!("{property:?} payload was only {} bytes", payload.len());
         }
-        Ok(format!("{}.{}.{}", payload[0], payload[1], payload[2]))
+
+        let patch = match payload.get(3) {
+            Some(&high) if high != 0 => u32::from(payload[2]) + u32::from(high) * 256,
+            _ => u32::from(payload[2]),
+        };
+        Ok(format!("{}.{}.{patch}", payload[0], payload[1]))
     }
 
     pub fn usb_pid(&self) -> Result<u16> {

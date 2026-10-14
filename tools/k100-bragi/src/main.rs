@@ -125,17 +125,11 @@ fn flash(path: &std::path::Path, commit: bool, product: u16) -> Result<()> {
     header.validate(&image, device.product)?;
     println!("       image matches this keyboard and its container is sound");
 
-    // The K100's own manifest lists which modes accept a firmware write:
-    // "operating-modes": ["host-controlled", "bootloader"]. Self-operated is not among them
-    // and the device refuses file commands there with InvalidState anyway.
     let mode = device.operating_mode()?;
     println!("       operating mode {mode:?}");
-    if !WRITABLE_MODES.contains(&mode) {
-        bail!(
-            "the keyboard is in {mode:?}. Its manifest accepts a firmware write only in \
-             {WRITABLE_MODES:?}; `enter-bootloader` reaches the second, and the first is the \
-             one the vendor's updater prefers."
-        );
+
+    if commit {
+        enter_writable_mode(&device, mode)?;
     }
 
     let plan = roundtrip::flash(&device, &image, commit)?;
@@ -150,6 +144,10 @@ fn flash(path: &std::path::Path, commit: bool, product: u16) -> Result<()> {
         println!("    {} chunks -- {} bytes in the first, then {} bytes each",
                  plan.chunks, plan.first_chunk, plan.chunk);
         println!("  then apply as {:?} with that checksum", protocol::ImageType::Firmware);
+        if !WRITABLE_MODES.contains(&mode) {
+            println!("  committing would first take host control; {mode:?} refuses file \
+                      commands");
+        }
         println!("  re-run with --commit to do it");
         return Ok(());
     }
@@ -169,9 +167,36 @@ fn flash(path: &std::path::Path, commit: bool, product: u16) -> Result<()> {
     Ok(())
 }
 
-/// Modes the K100's manifest says accept a firmware write, in its own order of preference.
+/// Modes the K100's manifest says accept a firmware write, in its own order of preference:
+/// `"operating-modes": ["host-controlled", "bootloader"]`.
 const WRITABLE_MODES: [OperatingMode; 2] =
     [OperatingMode::HostControlled, OperatingMode::Bootloader];
+
+/// Puts the keyboard into a mode that accepts a write, if it is not in one already.
+///
+/// Self-operated is the power-on state and it refuses file commands with `InvalidState`, so
+/// taking host control is part of flashing rather than something to demand of the caller --
+/// it is what the vendor's updater does too. The mode is deliberately *not* restored
+/// afterwards: a successful apply reboots the device, so there is nothing left to restore,
+/// and `exit-bootloader` or a replug is what returns it to normal.
+fn enter_writable_mode(device: &Device, mode: OperatingMode) -> Result<()> {
+    if WRITABLE_MODES.contains(&mode) {
+        return Ok(());
+    }
+
+    if mode != OperatingMode::SelfOperated {
+        bail!(
+            "the keyboard is in {mode:?}. Its manifest accepts a firmware write only in \
+             {WRITABLE_MODES:?}, and there is no documented path there from {mode:?}."
+        );
+    }
+
+    device
+        .set_operating_mode(OperatingMode::HostControlled)
+        .context("taking host control, which a firmware write needs")?;
+    println!("       took host control, the mode its manifest lists first");
+    Ok(())
+}
 
 fn open() -> Result<Device> {
     Device::open()
