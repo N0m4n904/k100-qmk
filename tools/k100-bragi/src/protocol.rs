@@ -163,6 +163,13 @@ pub enum ImageType {
     SecondaryChipFirmware = 4,
 }
 
+/// Checksum algorithms the protocol defines. The K100's manifest names `crc32-mpeg2`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ChecksumAlgorithm {
+    Crc32Mpeg2 = 1,
+}
+
 impl ImageType {
     pub fn from_raw(value: u16) -> Option<Self> {
         Some(match value {
@@ -262,6 +269,13 @@ pub struct Request {
     pub args: Vec<u8>,
 }
 
+/// Bytes a request spends before its first argument: the magic and the command.
+///
+/// This generation of the protocol has no separate property field; a property is simply the
+/// first argument, 16 bits wide. Proven on hardware -- see the request layouts in
+/// `docs/bragi-firmware-update.md`.
+pub const REQUEST_HEADER: usize = 2;
+
 impl Request {
     pub fn new(command: Command, args: impl Into<Vec<u8>>) -> Self {
         Self { command, args: args.into() }
@@ -304,12 +318,27 @@ impl Request {
         Self::new(Command::WriteBuffer, args)
     }
 
-    /// Commits a written firmware image.
+    /// Commits a written firmware image, with the checksum the device must verify.
     ///
-    /// The *extended* form, 22, which the K100's manifest names as its
-    /// `apply-extended` command rather than the plain 16.
-    pub fn apply_firmware_extended() -> Self {
-        Self::new(Command::ApplyFirmwareExtended, Vec::new())
+    /// The *extended* form, 22, which the K100's own manifest names: its `bragi-props.fwupd`
+    /// entry reads `{"type": "firmware", "command": "apply-extended",
+    /// "checksum-validation": "crc32-mpeg2", "reboot": true}`.
+    ///
+    /// The argument list is `applyFirmwareExtended` from the updater bundle:
+    /// `[0, 1, fileId as two little-endian bytes, image type, checksum algorithm, checksum
+    /// as four little-endian bytes]`. The leading pair is Corsair's; the plain form at 16
+    /// starts with a file count, so `1` here is most likely that count, and the bundle pads
+    /// the list to eight bytes, which ten already exceeds.
+    ///
+    /// `checksum` is CRC-32/MPEG-2 over the **whole image file**, header included. That is a
+    /// different range from the CRC *inside* the container, which covers `[0x04..EOF]`, and
+    /// the two values differ. The bundle's own checksum routine takes the entire array it is
+    /// given, and it is given the file as loaded.
+    pub fn apply_firmware_extended(file_id: u16, image_type: ImageType, checksum: u32) -> Self {
+        let [id_lo, id_hi] = file_id.to_le_bytes();
+        let mut args = vec![0, 1, id_lo, id_hi, image_type as u8, ChecksumAlgorithm::Crc32Mpeg2 as u8];
+        args.extend_from_slice(&checksum.to_le_bytes());
+        Self::new(Command::ApplyFirmwareExtended, args)
     }
 
     pub fn open_file(handle: u8, file_id: u16) -> Self {

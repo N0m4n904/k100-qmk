@@ -164,6 +164,17 @@ k100-bragi flash fw/Heracles_...v0.35.288.bin --commit  # step 4
 k100-bragi exit-bootloader && k100-bragi info           # step 5
 ```
 
+**Steps 1 and 5 are optional.** The keyboard's own manifest lists
+`"operating-modes": ["host-controlled", "bootloader"]` for a firmware write, host-controlled
+first, and that is the mode Corsair's updater prefers. So the bootloader is a *fallback* for a
+device already stranded there, not a precondition for flashing one that works. Writing from
+host-controlled mode leaves the application in charge of its own replacement, which is the
+better-trodden path of the two.
+
+Steps 1, 3 and 5 are proven on hardware on their own, with nothing written: see "The mode
+round trip, proven" in `bragi-firmware-update.md`. That was worth doing first, because it
+establishes the way back before anything needs it.
+
 If that loop works, recovery is demonstrated empirically rather than argued from
 documentation, and both images are already verified authentic against Corsair's published
 sha512 hashes. If it does not work, we have learned so with the stock firmware still intact
@@ -185,7 +196,7 @@ keyboard could be lost, removed before anything is sent:
 | An image built for another product id | `1bc5` is a different chip entirely; its image is ruin here |
 | An even entry point | Not a Thumb address; the bootloader branches to it and faults |
 | An entry outside `0x1002c..0x80000` | Branches into the bootloader or into nothing |
-| A keyboard not in `Bootloader` mode | Writing from the application is not the vendor's path |
+| A mode the device's manifest does not list | It names `host-controlled` and `bootloader`; self-operated refuses file commands |
 | Any device other than the named product id | See below |
 | Anything at all, without `--commit` | The default is a dry run that sends nothing |
 

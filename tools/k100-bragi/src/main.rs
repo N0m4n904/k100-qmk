@@ -125,32 +125,53 @@ fn flash(path: &std::path::Path, commit: bool, product: u16) -> Result<()> {
     header.validate(&image, device.product)?;
     println!("       image matches this keyboard and its container is sound");
 
+    // The K100's own manifest lists which modes accept a firmware write:
+    // "operating-modes": ["host-controlled", "bootloader"]. Self-operated is not among them
+    // and the device refuses file commands there with InvalidState anyway.
     let mode = device.operating_mode()?;
     println!("       operating mode {mode:?}");
-    if mode != OperatingMode::Bootloader {
+    if !WRITABLE_MODES.contains(&mode) {
         bail!(
-            "the keyboard is in {mode:?}, not Bootloader. Writing firmware from \
-             here is not the documented path; run `enter-bootloader` first."
+            "the keyboard is in {mode:?}. Its manifest accepts a firmware write only in \
+             {WRITABLE_MODES:?}; `enter-bootloader` reaches the second, and the first is the \
+             one the vendor's updater prefers."
         );
     }
 
     let plan = roundtrip::flash(&device, &image, commit)?;
 
+    println!("       image checksum {:#010x} (CRC-32/MPEG-2 over the whole file)", plan.checksum);
+
     if !commit {
         println!();
         println!("dry run: nothing was sent that changes the keyboard.");
-        println!("  would write {} bytes to file id {}, as {} chunks of {} bytes in \
-                  {}-byte reports, then apply",
-                 plan.total, protocol::FILE_ID_FIRMWARE, plan.chunks, plan.chunk, plan.report);
+        println!("  would write {} bytes to file id {} in {}-byte reports:",
+                 plan.total, protocol::FILE_ID_FIRMWARE, plan.report);
+        println!("    {} chunks -- {} bytes in the first, then {} bytes each",
+                 plan.chunks, plan.first_chunk, plan.chunk);
+        println!("  then apply as {:?} with that checksum", protocol::ImageType::Firmware);
         println!("  re-run with --commit to do it");
         return Ok(());
     }
 
     println!();
     println!("wrote {} bytes in {} chunks and applied", plan.total, plan.chunks);
-    println!("the keyboard should re-enumerate; `info` will say what it is running");
+
+    let running = roundtrip::confirm_after_apply()?;
+    println!();
+    println!("the keyboard reports firmware {running}");
+    if running == header.version() {
+        println!("which is the version this image declares. The write took effect.");
+    } else {
+        println!("but this image declares {}. The device did not take it, or it reports a \
+                  version from somewhere other than the image header.", header.version());
+    }
     Ok(())
 }
+
+/// Modes the K100's manifest says accept a firmware write, in its own order of preference.
+const WRITABLE_MODES: [OperatingMode; 2] =
+    [OperatingMode::HostControlled, OperatingMode::Bootloader];
 
 fn open() -> Result<Device> {
     Device::open()

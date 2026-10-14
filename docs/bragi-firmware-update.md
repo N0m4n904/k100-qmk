@@ -319,6 +319,57 @@ four-byte only at protocol version 1.5; this keyboard is the older generation, s
 reference in that bundle sits one byte further along than it should for us. Treat the bundle
 as authoritative for *semantics* and ckb-next as authoritative for *byte positions*.
 
+### The bootloader is a different device, and the report size is how you tell
+
+Confirmed on hardware. Entering the bootloader changes the descriptors:
+
+| | Application | Bootloader |
+| --- | --- | --- |
+| `bcdDevice` | the firmware's version | **`0.0a`** — its own, 0.10.45 |
+| Interfaces | 3 | **2** |
+| Vendor endpoints | `0x01` OUT, `0x82` IN | the same two |
+| `wMaxPacketSize` | **1024** | **64** |
+
+The product id does **not** change: it stays `1b1c:1b7c`, so a keyboard that looks entirely
+ordinary in `lsusb -d` may be sitting in its bootloader. `bcdDevice` is the giveaway.
+
+**The packet size is the trap.** Requests sized for the application go out as sixteen packets
+on a 64-byte endpoint, the bootloader never sees a whole report, and it answers nothing —
+while the OUT transfer still reports success. That looks exactly like a dead device and is
+not one. `k100-bragi` reads `wMaxPacketSize` out of sysfs and sizes each direction from its
+own endpoint, which is why one implementation drives both programs.
+
+In the bootloader, `GET FIRMWARE_VERSION` and `GET BOOTLOADER_VERSION` both answer and
+`GET OPERATING_MODE` returns `Bootloader`. `GET HW_LAYOUT` returns `INVALID_STATE`, which
+makes sense: the bootloader does not know what keyboard it is attached to.
+
+### The mode round trip, proven
+
+With the right report size, and writing nothing:
+
+```
+info             SelfOperated, firmware 0.32.6, bootloader 0.10.45, layout Iso, 1024-byte reports
+enter-bootloader SelfOperated -> Bootloader
+info             Bootloader, 64-byte reports, firmware 0.32.6 still reported
+exit-bootloader  Bootloader -> SelfOperated, 1024-byte reports, firmware 0.32.6
+```
+
+Afterwards the kernel has `usbhid` bound to all three interfaces again, so the keyboard types.
+
+Two details that are easy to get wrong:
+
+- **Both directions re-enumerate**, so neither has a reply to give. Entering was already
+  treated as fire-and-forget; leaving needs the same treatment, and the handle that sent the
+  request has to go back to the kernel before the device is reopened.
+- **Appearing on the bus is not being ready.** The device is listed in sysfs before its
+  endpoints will carry a transfer, so waiting for a successful *open* and then issuing a
+  command gets a timeout. Wait for a successful *command* instead.
+
+A wedged command endpoint — every transfer returning `ETIMEDOUT`, which a client that failed
+mid-exchange can leave behind — is cleared by a **USB port reset** (`USBDEVFS_RESET`), with no
+need to touch the cable. `k100-bragi reset` does that and then proves it by reading the mode
+back. It does not drop VBUS, so it is not a full substitute for a replug.
+
 ### Operating mode gates everything
 
 Buffer and file commands are refused with `INVALID_STATE(3)` while the keyboard is
@@ -536,13 +587,124 @@ From `writeFile` in the bundle:
    is the **total** length as 4 little-endian bytes.
 3. `writeBuffer({bufferIndex, data})` → `sendCommand(WRITE_BUFFER, 0, [bufferIndex, ...chunk])`
    for the remainder.
-4. `APPLY_FIRMWARE_EXTENDED`.
+4. `unbindBuffers({bufferIndex})`, then `APPLY_FIRMWARE_EXTENDED`.
 
-First-chunk capacity is `reportLength - 4 - 1 - sizeWidth`, with `sizeWidth` 4 on protocol 1.5
-and 2 otherwise.
+It sleeps 1 s after the begin and 500 ms after the unbind, and on any failure unbinds again
+before rethrowing.
 
-The missing piece is the **file ID for the firmware buffer**. `DESCRIBE_BUFFER` returns a
-buffer's length, so enumerating file IDs and describing them is a read-only way to find it.
+#### The two chunk sizes, and why they have to be exact
+
+The bundle computes them as
+
+```js
+const m = 4, C = 1;
+const v = this.device.getProtocolVersion() === 1.5 ? 4 : 2;
+const E = this.reportLength - m - C - v;   // first chunk
+const L = this.reportLength - C - v;       // every chunk after it
+```
+
+Note `m` is subtracted only for the first — the two sizes **differ**, and the image is split
+at the first rather than chunked uniformly.
+
+The `size` field is always four bytes (`new Uint8Array(4)`, all four filled). `v` is a
+per-report allowance that changes with the protocol generation, not the width of that field;
+an earlier version of this document had that the other way round.
+
+Taking `reportLength` as the report the device declares, and `v = 2` for this keyboard's
+generation, that gives **57 and 61** for the bootloader's 64-byte report, and 1017 and 1021
+for the application's 1024-byte one. Our own wire layout reaches the same pair from the other
+direction:
+
+```
+08 06 <handle> <total:4> <payload…>    overhead 7  ->   64 - 7 = 57
+08 07 <handle> <payload…>              overhead 3  ->   64 - 3 = 61
+```
+
+**A conservative chunk size is wrong here, not safe.** Nothing on the wire carries a
+per-report payload length: every report is padded to full length, and the device knows only
+the total it was told up front, so it must treat each report as full. A chunk one byte short
+shifts the remainder of the image by one byte. `chunk_sizes` in `roundtrip.rs` is tested
+against both arithmetics for exactly this reason.
+
+### Applying: the command carries a checksum
+
+`applyFirmwareExtended` is not an empty command. Its arguments are
+
+```js
+const [d, h] = fileIdLe16(fileId);
+const m = [0, 1, d, h, imageType, checksumAlgorithm, ...checksum];
+while (m.length < 8) m.push(0);
+```
+
+so `[0, 1, fileId16, imageType, checksumAlgorithm, checksum32]` — ten bytes. The plain form
+at 16 starts with a file count, which is the likely reading of the `1`.
+
+The checksum is CRC-32/MPEG-2 **over the whole image file, header included**:
+
+```js
+function checksum(e) {               // 79764919 == 0x04C11DB7
+  let r = 0xFFFFFFFF;
+  for (let i = 0; i < e.length; i++) {
+    r ^= e[i] << 24;
+    for (let l = 0; l < 8; l++) { const o = r >> 31 & 1; r = r << 1 >>> 0; r ^= 0 - o & 79764919; }
+  }
+  ...                                // returned as four little-endian bytes
+}
+```
+
+That is a **different range from the CRC inside the container**, which covers `[0x04..EOF]`,
+so the two values differ for the same file. Both are needed: the container's own for the
+header, this one for the apply command.
+
+An apply may legitimately get **no reply at all**. The K100's manifest sets `reboot: true`,
+so the device restarts on success and the reply is lost; the bundle logs "Apply extended
+finished without response" and carries on. Only a reply that arrives *and* carries a non-zero
+status is a failure.
+
+### The device's own manifest settles the rest
+
+`/manifests/k100-rgb_1b1c_1b7c_manifest.json`:
+
+```json
+{
+  "proto": "bragi",
+  "bragi-props": { "fwupd": {
+    "apply-fw-timeout": 8000,
+    "img-fw-options": [{
+      "type": "firmware",
+      "command": "apply-extended",
+      "checksum-validation": "crc32-mpeg2",
+      "reboot": true,
+      "operating-modes": ["host-controlled", "bootloader"]
+    }]
+  }}
+}
+```
+
+Three things follow. The extended apply is the right command for this device, not the plain
+one. A write is accepted in **host-controlled mode as well as bootloader mode**, and
+host-controlled is listed first, which is what the updater prefers — so putting the keyboard
+into the bootloader is not a precondition for flashing it, only a fallback for one already
+stranded there. And after the apply the device is allowed 8 s away before it is considered
+gone.
+
+### Confirmed enumerations
+
+```js
+Command:   SET=1 GET=2 UNBIND_BUFFERS=5 WRITE_BUFFER_BEGIN=6 WRITE_BUFFER=7 READ_BUFFER=8
+           DESCRIBE_BUFFER=9 OPEN_FILE=13 RESET_TO_DEFAULTS=15 APPLY_FIRMWARE=16
+           PAIRING_CONTROL=17 PING=18 APPLY_FIRMWARE_EXTENDED=22
+           HOST_SOFTWARE_SESSION_CONTROL=27
+FileId:    FIRMWARE=3 PAIRING_ID=5 WIRELESS_ENCRYPTION_KEY=6 SECONDARY_CHIP_FIRMWARE=18
+           BLUETOOTH_DEVICE_ADDRESS=20 PAIRED_SUBDEVICES_IDS=36 PAIRING_ID_V2=53
+           CONNECTED_SUBDEVICES_IDS=54 SCREEN_MODULE_FIRMWARE=59 DIAL_MODULE_FIRMWARE=60
+ImageType: RESERVED=0 FIRMWARE=1 BOOTLOADER=2 FIRMWARE_WITH_BOOTLOADER=3
+           SECONDARY_CHIP_FIRMWARE=4 SCREEN_MODULE_FIRMWARE=5 DIAL_MODULE_FIRMWARE=6
+Checksum:  RESERVED=0 CRC32_MPEG2=1
+```
+
+**There is no bootloader file id.** `FileId` has no entry for one at all, so the one
+unrecoverable write is not reachable through this interface — see `docs/recovery.md`, rule 1.
 
 ## Properties
 

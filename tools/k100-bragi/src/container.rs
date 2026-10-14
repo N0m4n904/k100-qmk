@@ -136,6 +136,14 @@ impl Container {
         Ok(())
     }
 
+    /// The version this image declares, formatted the way the device reports its own.
+    ///
+    /// The header carries only the minor and patch; the major is the `0` every published
+    /// K100 image and every reading off the device has shown.
+    pub fn version(&self) -> String {
+        format!("0.{}.{}", self.version_minor, self.version_patch)
+    }
+
     pub fn describe(&self) -> String {
         format!(
             "0.{}.{}, entry {:#010x}, product {:#06x}, type {:?}, {} bytes",
