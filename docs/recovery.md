@@ -382,6 +382,58 @@ which quietly defeated the read-back guard around it: a flag that never arrives 
 recovery path itself rather than reporting that the write failed. It is now bounded, and the
 function returns `false` instead of spinning.
 
+## The firmware runs, and recovered itself — measured
+
+Custom firmware was written to the keyboard and the bus watched while it booted. The device
+left the bus, stayed off it for about nine seconds, and then the **bootloader** came back:
+
+```
+15:08:45  bcdDevice 000a     bootloader, before the write
+15:08:48  ABSENT             reset into the new firmware
+15:08:57  bcdDevice 000a     bootloader again
+```
+
+Nine seconds is the USB watchdog's ten. Nothing else in the system takes that long, and the
+only code that can put the keyboard back into the bootloader is this firmware's own. So the
+gap is a measurement of how far boot got, and it got all the way:
+
+- the bootloader branched to the entry in the container header;
+- `crt0` ran, installed `VTOR`, and `__cpu_init` clocked SRAM1 to SRAM3 before the 160 KB of
+  `ram0` was zeroed;
+- `halInit()` configured the clocks — the one step in the unprotected window that had never
+  executed — and `palInit()` and `chSysInit()` followed;
+- the Escape check ran and correctly decided Escape was not held;
+- USB was started, and did not enumerate;
+- **the main loop turned**, since `housekeeping_task_kb` is what counts the ten seconds;
+- the EEPROM mode word was programmed and `NVIC_SystemReset` taken.
+
+That last point is the one worth dwelling on: **the recovery path is no longer theoretical.**
+The EEPROM write, the read-back, the reset and the bootloader's reading of the mode word have
+all now happened on hardware, unattended, in exactly the situation they exist for.
+
+What does not work is USB enumeration. That is now the whole of the problem, and it is a
+problem with the keyboard reachable and reflashable rather than a brick.
+
+### The first attempt also found a real bug
+
+Before this, the same image returned to the bootloader after about *three* seconds rather than
+nine — two boot cycles rather than one plus a timeout. The cause was the Escape check asking
+only whether Escape differed from the *majority* of its row. A reading that is simply wrong
+scatters bits arbitrarily, and Escape lands on the minority side of that about half the time,
+so the check fired on a keyboard nobody was touching. It now requires every other populated
+sense in the row to agree unanimously, across four consecutive samples, which a garbage read
+fails on the first one.
+
+It is worth noting what that near-miss looked like: firmware that silently put itself into the
+bootloader on every boot, indistinguishable from firmware that would not run at all.
+
+### Writing from the bootloader uses 64-byte reports, and that works too
+
+The second write went out as **392 chunks** where the first, from host-controlled mode, took
+24. Same image, same code: the report size comes from the endpoint descriptor, which is 64
+bytes in the bootloader and 1024 in the application. Both paths are now exercised against
+hardware.
+
 ## Reading the result of a custom flash
 
 **`k100-bragi` timing out afterwards is the expected outcome, not a brick.** QMK does not

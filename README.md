@@ -41,12 +41,12 @@ and the two rules that keep a mistake survivable.
 | Recovery path | **Proven on hardware.** An official image was written, applied and verified. |
 | Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |
 | QMK layout, keymap, LED map, VIA | **Done** for OPX ISO DE, generated from ckb-next's data. |
-| ChibiOS LPC546xx port | **Clocks, GPIO, SPI and USB written.** Builds and links; has never run. |
+| ChibiOS LPC546xx port | **Boots on the keyboard.** Clocks, SRAM, kernel and main loop all run. USB does not enumerate. |
 | Key matrix pins | **Found** by disassembly. Sense polarity and settling time are untested guesses. |
 | RGB driver chips and protocol | **Derived from firmware**: IS31FL3743B on SPI3, framing and registers known. |
 | RGB bus pins | **Unknown** — configured by the bootloader, not the application. No lighting yet. |
-| Route back to the bootloader | **Solved** for firmware that boots; see `docs/recovery.md` for the window it does not cover. |
-| Working firmware | **No.** Nothing in this repository has ever executed on the keyboard. |
+| Route back to the bootloader | **Proven on hardware.** The firmware's own watchdog returned the keyboard to the bootloader. |
+| Working firmware | **Not yet.** It runs and recovers itself, but does not enumerate as a USB device. |
 
 Start with [`NOTES.md`](NOTES.md) for the research and
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for the plan.

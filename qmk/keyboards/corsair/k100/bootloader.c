@@ -53,6 +53,19 @@
 #define ESCAPE_COL 1U
 
 /*
+ * Row 0 has no key on sense 14, from the generated layout. It is left out of the
+ * unanimity test below, because a sense with nothing attached to it cannot be
+ * expected to follow the ones that have.
+ */
+#define ESCAPE_ROW_UNUSED_COL 14U
+
+/*
+ * How many agreeing samples it takes. Each costs one strobe and the settling
+ * wait, so a handful is microseconds and rules out a single bad read.
+ */
+#define ESCAPE_SAMPLES 4U
+
+/*
  * How long to wait for USB before concluding this firmware is unusable.
  *
  * Generous on purpose. A host that is slow to enumerate, or a hub that resets
@@ -121,29 +134,53 @@ void mcu_reset(void) {
  * this does not ask "does Escape read low". It asks whether Escape disagrees
  * with the rest of its row.
  *
- * Row 0 carries seventeen of the eighteen senses, so with nothing held the
- * populated keys all read the same level and Escape agrees with them. Holding
- * Escape alone makes it the one that differs, under either polarity and either
- * pull direction. The single unpopulated column is one vote among seventeen and
- * cannot swing the majority.
+ * Row 0 carries a key on every sense but one, so with nothing held they all read
+ * the same level and Escape agrees with them. Holding Escape alone makes it the
+ * one that differs, under either polarity and either pull direction.
  *
- * It fails safe in the direction that matters: if the reading is uniform --
- * including the case where the matrix does not work at all and every sense
- * reads alike -- nothing is held and the keyboard boots normally.
+ * **Every other populated sense has to agree.** An earlier version asked only
+ * whether Escape differed from the *majority*, which is far too weak: a reading
+ * that is simply wrong -- the wrong pins, a strobe that drives nothing, a bus
+ * left floating -- scatters bits arbitrarily, and Escape lands on the minority
+ * side of that about half the time. The check then fires on a keyboard nobody
+ * touched, and since it fires before USB, the result is a keyboard that boots
+ * into the bootloader and looks for all the world like firmware that will not
+ * run. Requiring unanimity among the other sixteen costs nothing when a key
+ * really is held and rejects a garbage read immediately.
+ *
+ * Column 14 is excluded because row 0 has no key on it. With pull-ups it reads
+ * high regardless, so under the polarity where a released key reads *low* it
+ * would disagree with every real sense and veto the check forever.
+ *
+ * Sampling several times and demanding the same answer each time guards against
+ * a single bad read, which costs microseconds here.
+ *
+ * It fails safe in the direction that matters: anything other than exactly this
+ * pattern means "not held", and the keyboard boots normally.
  */
 static bool escape_held(void) {
+    const uint32_t escape = 1UL << ESCAPE_COL;
+    const uint32_t senses = ((1UL << MATRIX_COLS) - 1UL) & ~(1UL << ESCAPE_ROW_UNUSED_COL);
+    const uint32_t others = senses & ~escape;
+
     k100_matrix_configure_pins();
 
-    const uint32_t senses = k100_matrix_sample_row(ESCAPE_ROW);
-    const uint32_t others = senses & ~(1UL << ESCAPE_COL) & ((1UL << MATRIX_COLS) - 1UL);
+    for (uint8_t sample = 0; sample < ESCAPE_SAMPLES; sample++) {
+        const uint32_t reading = k100_matrix_sample_row(ESCAPE_ROW) & senses;
 
-    const unsigned high  = (unsigned)__builtin_popcount(others);
-    const unsigned total = MATRIX_COLS - 1U;
+        /* Unanimous among the others, and Escape the opposite of them. The two
+           acceptable readings are "others all high, Escape low" and its
+           inverse; anything else is not a held key. */
+        const bool all_high = (reading & others) == others;
+        const bool all_low  = (reading & others) == 0UL;
+        const bool escape_high = (reading & escape) != 0UL;
 
-    const bool released_level = (high * 2U) > total;
-    const bool escape_level   = (senses & (1UL << ESCAPE_COL)) != 0UL;
+        if (!((all_high && !escape_high) || (all_low && escape_high))) {
+            return false;
+        }
+    }
 
-    return escape_level != released_level;
+    return true;
 }
 
 void keyboard_pre_init_kb(void) {
