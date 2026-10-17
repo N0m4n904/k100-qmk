@@ -45,7 +45,7 @@ and the two rules that keep a mistake survivable.
 | Key matrix pins | **Found** by disassembly. Sense polarity and settling time are untested guesses. |
 | RGB driver chips and protocol | **Derived from firmware**: IS31FL3743B on SPI3, framing and registers known. |
 | RGB bus pins | **Unknown** — configured by the bootloader, not the application. No lighting yet. |
-| Route back to the bootloader | **Solved.** Corsair's own EEPROM mechanism, three ways in. |
+| Route back to the bootloader | **Solved** for firmware that boots; see `docs/recovery.md` for the window it does not cover. |
 | Working firmware | **No.** Nothing in this repository has ever executed on the keyboard. |
 
 Start with [`NOTES.md`](NOTES.md) for the research and

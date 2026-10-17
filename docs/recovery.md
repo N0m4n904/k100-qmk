@@ -250,13 +250,36 @@ things:
 2. arms a 10 ms timer whose callback is an inlined `NVIC_SystemReset` at `0x1556c`.
 
 That is the whole mechanism. **The mode lives in EEPROM, and the chip soft-resets into the
-bootloader, which reads it back.** Two consequences follow, and both matter:
+bootloader, which reads it back.** The consequence that matters: any firmware that can write
+that EEPROM word can enter the bootloader. It does **not** require Corsair's application, the
+Bragi protocol, or a working USB stack.
 
-- The choice is **persistent across power loss**, so a keyboard put into bootloader mode stays
-  there until something writes a different mode. The bootloader is therefore reliably
-  reachable rather than reachable only within a session.
-- Any firmware that can write that EEPROM word can enter the bootloader. It does **not**
-  require Corsair's application, the Bragi protocol, or a working USB stack.
+### Bootloader mode does not survive a power cycle — tested
+
+The obvious reading of "the mode lives in EEPROM" is that the choice persists, so a keyboard
+left in bootloader mode would still be there after unplugging it. **That is wrong, and it was
+measured rather than reasoned about.** Put into bootloader mode and then fully power-cycled,
+the keyboard came back running the *application*: `bcdDevice` `0x23`, three interfaces,
+1024-byte endpoints.
+
+So the bootloader does not simply read word 2 and stay. Either it also requires the reset to
+have been a soft one, or it clears the word once it has acted on it; nothing here distinguishes
+the two, and Bragi exposes no way to read an EEPROM word back to find out. Both readings have
+the same two practical consequences, which is why it is not worth guessing between them:
+
+- **A power cycle always returns to the application.** It is not a rescue. A keyboard running
+  firmware that hangs cannot be recovered by unplugging it, and the "hold Escape at power-on"
+  route works because the *firmware* checks Escape, not because the bootloader does.
+- **Our route matches the one path known to work.** The firmware here writes the same word and
+  then calls `NVIC_SystemReset`, which is a soft reset — exactly what the stock application
+  does. Whichever of the two readings is true, this is the sequence that has been observed to
+  land in the bootloader.
+
+> **Unplugging this keyboard means both connectors.** The K100's captive cable ends in two USB
+> plugs, and the keyboard keeps running on either one alone — pulling just the first does
+> nothing at all. A real power cycle needs both out. This cost one confusing test before it was
+> noticed, and `k100-bragi reset` exists partly because a USB port reset is easier to arrange
+> than reaching behind a desk for two plugs.
 
 The access path, from the driver at `0x233f8` which is NXP's EEPROM word write:
 
@@ -304,6 +327,33 @@ polarity, the strobe settling time, the SPI pins. It arms a timer early in boot 
 not reached a configured state by the time it fires, writes the EEPROM word and resets. A
 firmware that never becomes usable then puts itself back in the bootloader without anyone
 touching the keyboard.
+
+### The window none of them covers
+
+All three run *inside* the firmware, so all three need boot to get as far as
+`keyboard_pre_init_kb`. That is where the Escape check lives, and it cannot be moved earlier:
+programming the EEPROM needs its clock divider set from the real system clock, and the system
+clock is only what it should be once `halInit()` has run.
+
+So the code that executes with no way back is:
+
+| Stage | Confidence |
+| --- | --- |
+| `crt0`, `__cpu_init` | Small and now known to need the SRAM clock enable |
+| `halInit()` — clock setup, `palInit()` | FRO at 48 MHz straight to core and USB, no PLL in the path; every register field is checked by `chibios/test/check-registers.sh` and every pad mode by the PAL encoding check |
+| `chSysInit()` | ChibiOS's own, not this project's |
+| `protocol_pre_init()` — USB driver start | **The least proven thing in the list.** `tools/check-firmware-image.py` verifies what fails silently about it — endpoint memory alignment, its 4 MB window, bus reachability — but the driver has never run |
+
+A fault or hang in any of those is unrecoverable, and as established above a power cycle does
+not help. Everything this project is *actually* guessing at — matrix polarity, strobe timing,
+the SPI pins, the LED driver — initialises after the Escape check, which is the point of
+putting it where it is.
+
+Moving the check into `board_init()`, which `halInit()` calls at its end, would close
+`chSysInit()` and the USB bring-up out of that window. It is deliberately not done: there is no
+kernel at that point, so `wait_us()` is unusable and the matrix read would need its own delay
+primitive. Adding never-executed code to the earliest and most fragile part of boot, in order
+to guard a later part of boot, trades a narrow failure for a broader one.
 
 ## The unknown
 
