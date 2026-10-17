@@ -382,6 +382,34 @@ which quietly defeated the read-back guard around it: a flag that never arrives 
 recovery path itself rather than reporting that the write failed. It is now bounded, and the
 function returns `false` instead of spinning.
 
+## Reading the result of a custom flash
+
+**`k100-bragi` timing out afterwards is the expected outcome, not a brick.** QMK does not
+implement Bragi, so once custom firmware runs there is no vendor interface to answer. Judging
+the flash by whether `info` still works would read every success as a failure.
+
+What to look at instead is `bcdDevice`, which each of the three programs sets differently and
+which needs no command sent at all:
+
+| `bcdDevice` | Running |
+| --- | --- |
+| `0.23` | Corsair's application, firmware 0.35.288 |
+| `0.0a` | Corsair's bootloader, 0.10.45 |
+| `0.01` | **this project's firmware** — `DEVICE_VER 0x0001` from `keyboard.json` |
+
+The USB vendor and product ids stay `1b1c:1b7c` in all three cases, deliberately: the udev
+rules keep working and nothing on the host has to be reconfigured. `bcdDevice` is the only
+field that distinguishes them.
+
+So, after writing a custom image:
+
+1. `lsusb -v -d 1b1c:1b7c | grep bcdDevice` — `0.01` means it booted.
+2. Type something. Two HID interfaces and working keys means the matrix guesses were right
+   too; keys that stick or report their neighbours mean `MATRIX_SENSE_ACTIVE_LOW` or
+   `MATRIX_STROBE_SETTLE_US` need the other value, which is a reflash, not a brick.
+3. Nothing at all after ten seconds means the watchdog should already have put it back in the
+   bootloader; check for `bcdDevice 0.0a`.
+
 ## The unknown
 
 **Whether ECRP is set on the shipped part.** NXP community threads describe LPC546xx devices
