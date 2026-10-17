@@ -78,13 +78,13 @@
 /** @} */
 
 /**
- * @name    Clock sources for USB0CLKSEL
+ * @name    Clock sources for USB1CLKSEL
  * @{
  */
-#define LPC_USB0CLKSEL_FROHF        0U  /**< @brief FRO at 48 or 96 MHz.    */
-#define LPC_USB0CLKSEL_PLL          1U  /**< @brief System PLL output.      */
-#define LPC_USB0CLKSEL_USBPLL       2U  /**< @brief Dedicated USB PLL.      */
-#define LPC_USB0CLKSEL_NONE         7U  /**< @brief Gated off.              */
+#define LPC_USB1CLKSEL_FROHF        0U  /**< @brief FRO at 48 or 96 MHz.    */
+#define LPC_USB1CLKSEL_PLL          1U  /**< @brief System PLL output.      */
+#define LPC_USB1CLKSEL_USBPLL       2U  /**< @brief Dedicated USB PLL.      */
+#define LPC_USB1CLKSEL_NONE         7U  /**< @brief Gated off.              */
 /** @} */
 
 /**
@@ -117,7 +117,7 @@
 
 /**
  * @brief   FRO high-frequency output.
- * @details 48 MHz is the default because USB0 can take @p fro_hf directly, so
+ * @details 48 MHz is the default because USB1 can take @p fro_hf directly, so
  *          a full-speed device needs no PLL at all.
  */
 #if !defined(LPC_FROHF_SEL) || defined(__DOXYGEN__)
@@ -147,17 +147,17 @@
 #endif
 
 /**
- * @brief   USB0 device clock source.
+ * @brief   USB1 device clock source.
  */
-#if !defined(LPC_USB0CLKSEL) || defined(__DOXYGEN__)
-#define LPC_USB0CLKSEL              LPC_USB0CLKSEL_FROHF
+#if !defined(LPC_USB1CLKSEL) || defined(__DOXYGEN__)
+#define LPC_USB1CLKSEL              LPC_USB1CLKSEL_FROHF
 #endif
 
 /**
- * @brief   USB0 clock divider, as the raw register value.
+ * @brief   USB1 clock divider, as the raw register value.
  */
-#if !defined(LPC_USB0CLKDIV) || defined(__DOXYGEN__)
-#define LPC_USB0CLKDIV              0U
+#if !defined(LPC_USB1CLKDIV) || defined(__DOXYGEN__)
+#define LPC_USB1CLKDIV              0U
 #endif
 
 /**
@@ -261,16 +261,16 @@
 #define LPC_SYS_FREQUENCY           LPC_SYSCLK
 
 /**
- * @brief   USB0 device clock frequency.
+ * @brief   USB1 device clock frequency.
  */
-#if LPC_USB0CLKSEL == LPC_USB0CLKSEL_FROHF
-#define LPC_USB0CLK                 (LPC_FROHFCLK / (LPC_USB0CLKDIV + 1U))
+#if LPC_USB1CLKSEL == LPC_USB1CLKSEL_FROHF
+#define LPC_USB1CLK                 (LPC_FROHFCLK / (LPC_USB1CLKDIV + 1U))
 #else
-#error "LPC_USB0CLKSEL setting is not supported yet"
+#error "LPC_USB1CLKSEL setting is not supported yet"
 #endif
 
-#if LPC_HAS_USB && (LPC_USB0CLK != 48000000U)
-#error "USB0 requires a 48 MHz clock; check LPC_FROHF_SEL and LPC_USB0CLKDIV"
+#if LPC_HAS_USB && (LPC_USB1CLK != 48000000U)
+#error "USB1 requires a 48 MHz clock; check LPC_FROHF_SEL and LPC_USB1CLKDIV"
 #endif
 
 /*
@@ -319,7 +319,7 @@
 #define LPC_CLKPT_MAINCLK           0U  /**< @brief Main clock, pre-divider. */
 #define LPC_CLKPT_SYSCLK            1U  /**< @brief Core and AHB clock.      */
 #define LPC_CLKPT_FROHF             2U  /**< @brief FRO high-frequency out.  */
-#define LPC_CLKPT_USB0              3U  /**< @brief USB0 device clock.       */
+#define LPC_CLKPT_USB1              3U  /**< @brief USB1 device clock.       */
 /** @} */
 
 /**
@@ -336,7 +336,7 @@
   (((clkpt) == LPC_CLKPT_MAINCLK) ? (halfreq_t)LPC_MAINCLK :                \
    ((clkpt) == LPC_CLKPT_SYSCLK)  ? (halfreq_t)LPC_SYSCLK  :                \
    ((clkpt) == LPC_CLKPT_FROHF)   ? (halfreq_t)LPC_FROHFCLK :               \
-   ((clkpt) == LPC_CLKPT_USB0)    ? (halfreq_t)LPC_USB0CLK : (halfreq_t)0)
+   ((clkpt) == LPC_CLKPT_USB1)    ? (halfreq_t)LPC_USB1CLK : (halfreq_t)0)
 
 /*===========================================================================*/
 /* External declarations.                                                    */

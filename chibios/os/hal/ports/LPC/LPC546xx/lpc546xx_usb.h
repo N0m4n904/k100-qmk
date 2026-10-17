@@ -42,14 +42,23 @@
 /*===========================================================================*/
 
 /**
- * @brief   Base of the endpoint command/status list.
+ * @brief   Base of the endpoint command/status list, in the USB1 SRAM.
  *
- * @details The shared driver wants an address it can put in @p EPLISTSTART and
- *          bump-allocate endpoint buffers from. On LPC11Uxx that is the fixed
- *          base of a dedicated USB SRAM; here it is an ordinary array, because
- *          USB0 has no RAM of its own.
+ * @details A fixed address rather than an array, and it has to be. @p USBHSD
+ *          supplies the top twelve bits of @p EPLISTSTART itself -- bits 20 to
+ *          31 are the register's @p EP_LIST_FIXED field -- so the list is only
+ *          addressable inside the 1 MB window at @p 0x40100000, which is where
+ *          this part puts its 8 KB of dedicated USB SRAM. An array in main SRAM
+ *          cannot be reached by that register at all.
+ *
+ *          It works out tidier than the full-speed controller would have been:
+ *          @p DATABUFSTART here takes a whole 32-bit address rather than only
+ *          the high bits, so the shared driver's two writes need no help.
+ *
+ *          The stock firmware agrees, placing its own endpoint list at
+ *          @p 0x40100A00.
  */
-#define LPC_USB_SRAM_START          ((uint32_t)lpc_usb_sram)
+#define LPC_USB_SRAM_START          0x40100000U
 
 /**
  * @brief   One past the end of the endpoint memory.
@@ -64,8 +73,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-  extern uint8_t lpc_usb_sram[LPC_USB_SRAM_SIZE];
-
   void lpc_usb_clock_init(void);
   void lpc_usb_power_on(void);
   void lpc_usb_power_off(void);

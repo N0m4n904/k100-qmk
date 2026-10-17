@@ -15,7 +15,7 @@ PLATFORMINC := ${CHIBIOS}/os/hal/ports/common/ARMCMx \
 # Shared LPC low level drivers.
 #
 #   STM    plain Cortex-M SysTick, so it ports unchanged.
-#   USB    the same NXP device IP as this part's USB0. Register names are mapped
+#   USB    the same NXP device IP as this part's USBHSD. Register names are mapped
 #          by lpc546xx_usb_compat.h and the clocking, transceiver power and
 #          endpoint memory come from lpc546xx_usb.c. Requires the family seam
 #          patch; see chibios/patches/README.md.

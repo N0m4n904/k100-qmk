@@ -17,6 +17,10 @@
    mapping that does not resolve is a compile error. */
 #include "lpc546xx_usb_compat.h"
 
+/* For LPC_USB_SRAM_START, so the endpoint-list assertions below check the
+   address the port is actually configured with rather than a copy of it. */
+#include "lpc546xx_usb.h"
+
 void lpc546xx_register_check(void);
 
 void lpc546xx_register_check(void) {
@@ -38,10 +42,10 @@ void lpc546xx_register_check(void) {
   while ((SYSCON->AHBCLKDIV & SYSCON_AHBCLKDIV_REQFLAG_MASK) != 0U) {
   }
 
-  /* USB0 device clock. */
-  SYSCON->USB0CLKSEL = SYSCON_USB0CLKSEL_SEL(0U);
-  SYSCON->USB0CLKDIV = SYSCON_USB0CLKDIV_DIV(0U);
-  while ((SYSCON->USB0CLKDIV & SYSCON_USB0CLKDIV_REQFLAG_MASK) != 0U) {
+  /* USB1 device clock. */
+  SYSCON->USB1CLKSEL = SYSCON_USB1CLKSEL_SEL(0U);
+  SYSCON->USB1CLKDIV = SYSCON_USB1CLKDIV_DIV(0U);
+  while ((SYSCON->USB1CLKDIV & SYSCON_USB1CLKDIV_REQFLAG_MASK) != 0U) {
   }
 
   /* System PLL, from lpc546xx_pll.c. The dividers hold a shift-register
@@ -61,15 +65,20 @@ void lpc546xx_register_check(void) {
   while ((SYSCON->SYSPLLSTAT & SYSCON_SYSPLLSTAT_LOCK_MASK) == 0U) {
   }
 
-  /* USB0's clock gate and transceiver power, from lpc546xx_usb.c. USB0D is bit
-     25 of AHBCLKCTRL1, not AHBCLKCTRL0: the device and host gates for the same
-     controller live in different registers and NXP's macro names do not say
-     which. PDRUNCFG bits are power-down enables, so the clear register is what
-     powers the transceiver up. */
-  SYSCON->AHBCLKCTRLSET[1] = SYSCON_AHBCLKCTRL_USB0D_MASK;
-  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_USB0_PHY_MASK;
-  SYSCON->PDRUNCFGSET[0] = SYSCON_PDRUNCFG_PDEN_USB0_PHY_MASK;
+  /* The high-speed controller's clock gates and power, from lpc546xx_usb.c.
+     USB1D and USB1RAM are bits 5 and 6 of AHBCLKCTRL2, not AHBCLKCTRL0, where
+     those same bit numbers are SRAM3 and USB1RAM's namesake does not even
+     exist. NXP's macro names do not say which of the three registers they
+     belong to; their clock driver does, as
+     kCLOCK_Usbd1 = CLK_GATE_DEFINE(AHB_CLK_CTRL2, 5). PDRUNCFG bits are
+     power-down enables, so the clear register is what powers a block up. */
+  SYSCON->AHBCLKCTRLSET[2] = SYSCON_AHBCLKCTRL_USB1D_MASK |
+                             SYSCON_AHBCLKCTRL_USB1RAM_MASK;
+  SYSCON->FROCTRL |= SYSCON_FROCTRL_USBCLKADJ_MASK;
+  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
+                           SYSCON_PDRUNCFG_PDEN_USB_RAM_MASK;
 }
+
 
 /*
  * Every IOCON and GPIO expression the PAL driver uses.
@@ -192,9 +201,9 @@ void lpc546xx_usb_compat_check(void) {
                         USB_DEVCMDSTAT_DSUS_C | USB_DEVCMDSTAT_INTONNAK_CO |
                         USB_DEVCMDSTAT_DSUP |
                         (1U & USB_DEVCMDSTAT_DEVADDR_MASK);
-  (void)((LPC_USB->INFO & USB_INFO_FRAME_NR_MASK) >> USB_INFO_FRAME_NR_POS);
-  LPC_USB->EPLISTSTART = 0x20000000U & USB_EPLISTSTART_MASK;
-  LPC_USB->DATABUFSTART = 0x20000000U & USB_DATABUFSTART_MASK;
+  (void)((LPC_USB->INFO & USBHSD_INFO_FRAME_NR_MASK) >> USB_INFO_FRAME_NR_POS);
+  LPC_USB->EPLISTSTART = LPC_USB_SRAM_START & USB_EPLISTSTART_MASK;
+  LPC_USB->DATABUFSTART = LPC_USB_SRAM_START & USB_DATABUFSTART_MASK;
   LPC_USB->EPSKIP = 0U;
   LPC_USB->EPINUSE = 0U;
   LPC_USB->EPBUFCFG = 0U;
@@ -202,8 +211,18 @@ void lpc546xx_usb_compat_check(void) {
   /* The suspend bit, whose mapping rests on the two families placing it at the
      same bit number under different names: LPC11Uxx's header calls bit 17 DSUP
      and this one calls bit 17 DSUS. Pinned so a renumbering is caught. */
-  _Static_assert(USB_DEVCMDSTAT_DSUS_SHIFT == 17U,
+  _Static_assert(USBHSD_DEVCMDSTAT_DSUS_SHIFT == 17U,
                  "DSUS has moved; the DSUP mapping rested on it being bit 17");
+
+  /* The endpoint list's address is only partly programmable here: USBHSD fixes
+     bits 20 to 31 itself, so a list outside the 1 MB window at 0x40100000 is
+     unreachable however the register is written. Masking the base must come out
+     zero, which is what puts the list at the window's start. */
+  _Static_assert((LPC_USB_SRAM_START & USBHSD_EPLISTSTART_EP_LIST_FIXED_MASK) ==
+                 0x40100000U,
+                 "the endpoint list must sit in the USB1 SRAM window");
+  _Static_assert((LPC_USB_SRAM_START & USB_EPLISTSTART_MASK) == 0U,
+                 "the endpoint list must start at the window base");
 
   /* Interrupt bits, including the shifted forms the driver builds. */
   LPC_USB->INTSTAT = USB_INT_DEV_INT | USB_INT_FRAME_INT | USB_INT_EP_ALL_INT;

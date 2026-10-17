@@ -45,23 +45,37 @@
  * The IRQn values are NXP's, from the device header's IRQn_Type enumeration.
  */
 
-/* USB attributes. USB0 is the full-speed device controller, which shares the
-   NXP USB device IP that the shared LLD/USB driver already targets: an endpoint
-   command/status list in SRAM, DEVCMDSTAT, and five logical endpoints. */
+/* USB attributes. This part has two device controllers and they are different
+   peripherals: USB0 is full-speed at 0x40084000, USBHSD is high-speed at
+   0x40094000. Both are instances of the NXP USB device IP the shared LLD/USB
+   driver targets -- an endpoint command/status list, DEVCMDSTAT, and per-
+   endpoint interrupt bits -- and their register offsets are identical for
+   every register that driver touches.
+
+   USBHSD is the one to drive, because it is the one the K100 is wired to. The
+   stock firmware references 0x40094000 and never mentions 0x40084000, and the
+   keyboard negotiates high speed with 1024-byte interrupt endpoints, which
+   full speed cannot do at all. A port that brings up USB0 on this board
+   initialises a controller whose pins go nowhere: it works, reports no error,
+   and never enumerates. */
 #define LPC_HAS_USB                 TRUE
-#define LPC_USB_IRQ_VECTOR          VectorB0    /* USB0_IRQn = 28            */
-#define LPC_USB_NEEDCLK_IRQ_VECTOR  VectorAC    /* USB0_NEEDCLK_IRQn = 27    */
-#define LPC_USB_IRQ_NUMBER          USB0_IRQn
+#define LPC_USB_IRQ_VECTOR          VectorFC    /* USB1_IRQn = 47            */
+#define LPC_USB_NEEDCLK_IRQ_VECTOR  Vector100   /* USB1_NEEDCLK_IRQn = 48    */
+#define LPC_USB_IRQ_NUMBER          USB1_IRQn
 
 /* INTROUTING selects, on LPC11Uxx, whether USB interrupts reach the main
    handler or the frame-toggle one. This part has no such register and it is
    absent from NXP's USB_Type, so a driver referring to it does not compile. */
 #define LPC_USB_HAS_INTROUTING      FALSE
 
-/* The endpoint command/status list and the endpoint buffers. Unlike LPC11Uxx,
-   which has a dedicated 2 KB USB SRAM at a fixed address, USB0 here is an AHB
-   master with no RAM of its own, so this memory is allocated like any other.
-   See lpc546xx_usb.c for the alignment and placement constraints. */
+/* The endpoint command/status list and the endpoint buffers, in the dedicated
+   8 KB USB1 SRAM. This is not a preference: EPLISTSTART on USBHSD splits into
+   a programmable field at bits 8 to 19 and a *fixed* field at bits 20 to 31,
+   so the hardware supplies the top twelve address bits and the list can only
+   live in the 1 MB window at 0x40100000. Main SRAM is not reachable for it.
+
+   2 KB of the 8 KB is as much as the shared driver's bump allocator needs for
+   five endpoints; it asserts if that is ever wrong. */
 #define LPC_USB_SRAM_SIZE           2048U
 
 /* Flexcomm. Each instance is one of USART, SPI, I2C or I2S, selected at

@@ -77,7 +77,7 @@ static void lpc_set_divider(volatile uint32_t *reg, uint32_t value) {
 /**
  * @brief   LPC546xx clock initialization.
  *
- * @details Brings the core up on the FRO with no PLL. USB0 can take @p fro_hf
+ * @details Brings the core up on the FRO with no PLL. USB1 can take @p fro_hf
  *          directly, so a 48 MHz FRO serves both the core and a full-speed USB
  *          device, which keeps the first bring-up free of PLL configuration.
  *
@@ -112,10 +112,10 @@ void lpc_clock_init(void) {
   lpc_set_divider(&SYSCON->AHBCLKDIV, SYSCON_AHBCLKDIV_DIV(LPC_AHBCLKDIV));
 
 #if LPC_HAS_USB
-  /* USB0 device clock. The controller itself is enabled by the USB driver; this
+  /* USB1 device clock. The controller itself is enabled by the USB driver; this
      only routes a clock to it. */
-  SYSCON->USB0CLKSEL = SYSCON_USB0CLKSEL_SEL(LPC_USB0CLKSEL);
-  lpc_set_divider(&SYSCON->USB0CLKDIV, SYSCON_USB0CLKDIV_DIV(LPC_USB0CLKDIV));
+  SYSCON->USB1CLKSEL = SYSCON_USB1CLKSEL_SEL(LPC_USB1CLKSEL);
+  lpc_set_divider(&SYSCON->USB1CLKDIV, SYSCON_USB1CLKDIV_DIV(LPC_USB1CLKDIV));
 #endif
 
   /* The IOCON and GPIO clock gates belong to the PAL driver and are enabled in

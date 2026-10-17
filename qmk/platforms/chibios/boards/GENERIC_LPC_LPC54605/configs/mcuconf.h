@@ -3,8 +3,8 @@
 #pragma once
 
 /*
- * Clock tree. The FRO runs at 48 MHz and feeds both the core and USB0, so no
- * PLL is configured at all -- USB0CLKSEL takes fro_hf directly. The port's
+ * Clock tree. The FRO runs at 48 MHz and feeds both the core and USB1, so no
+ * PLL is configured at all -- USB1CLKSEL takes fro_hf directly. The port's
  * hal_lld.h refuses to build a configuration whose USB clock is not 48 MHz.
  *
  * The stock Corsair firmware runs the core at 180 MHz and the port can do that
@@ -18,13 +18,13 @@
 #define LPC_MAINCLKSELA   LPC_MAINCLKSELA_FROHF
 #define LPC_MAINCLKSELB   LPC_MAINCLKSELB_SELA
 #define LPC_AHBCLKDIV     0U
-#define LPC_USB0CLKSEL    LPC_USB0CLKSEL_FROHF
-#define LPC_USB0CLKDIV    0U
+#define LPC_USB1CLKSEL    LPC_USB1CLKSEL_FROHF
+#define LPC_USB1CLKDIV    0U
 
 /*
- * USB. The shared driver calls its single instance USB1; on this part that is
- * the USB0 full-speed device controller. The name is the driver's, not the
- * peripheral's.
+ * USB. The shared driver calls its single instance USB1, and here that happens
+ * to be right: it drives USBHSD, this part's high-speed device controller, which
+ * is the one the K100's connector is wired to. See chibios/.../lpc_registry.h.
  */
 #define LPC_USB_USE_USB1          TRUE
 #define LPC_USB_USB1_IRQ_PRIORITY 3

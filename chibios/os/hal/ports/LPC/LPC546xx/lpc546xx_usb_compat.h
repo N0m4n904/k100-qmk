@@ -21,7 +21,7 @@
  *
  * @details The shared @p LLD/USB driver targets the NXP USB device IP — an
  *          endpoint command/status list in SRAM, @p DEVCMDSTAT, and five
- *          logical endpoints — which this part's USB0 is also an instance of.
+ *          logical endpoints — which this part's USBHSD is also an instance of.
  *          Nine of the ten registers it touches exist here under the same
  *          names; only the bit macros differ, because NXP's newer headers
  *          suffix them with @p _MASK and name the interrupt bits per endpoint.
@@ -41,17 +41,21 @@
 #define LPC546XX_USB_COMPAT_H
 
 /**
- * @brief   The driver calls the peripheral @p LPC_USB; here it is @p USB0.
- * @note    USB1 is the separate high-speed controller and is not this driver's
- *          concern.
+ * @brief   The driver calls the peripheral @p LPC_USB; here it is @p USBHSD.
+ *
+ * @note    Not @p USB0. This part has both, they are separate peripherals, and
+ *          the K100 is wired to the high-speed one -- see @p lpc_registry.h.
+ *          Their register offsets are identical for everything this driver
+ *          touches, which is what makes the rest of this file a rename.
  */
-#define LPC_USB                     USB0
+#define LPC_USB                     USBHSD
 
 /*
  * NXP's header already defines a function-like setter of the same bare name for
  * each field, as in USB_DEVCMDSTAT_DEV_EN(x), which shifts a value into place.
- * The driver uses these names as plain bit masks, so the setters are undefined
- * first. Nothing else in a USB translation unit wants them, and leaving both
+ * Those are the full-speed controller's, and this file defines the same bare
+ * names as plain bit masks for the driver, so the setters are undefined first.
+ * The USBHSD_ spellings are left alone: nothing here defines those. Nothing else in a USB translation unit wants them, and leaving both
  * definitions in scope is a redefinition error rather than a silent hazard.
  */
 #undef USB_DEVCMDSTAT_DEV_EN
@@ -65,13 +69,13 @@
  * @name    DEVCMDSTAT bits
  * @{
  */
-#define USB_DEVCMDSTAT_DEVADDR_MASK USB_DEVCMDSTAT_DEV_ADDR_MASK
-#define USB_DEVCMDSTAT_DEV_EN       USB_DEVCMDSTAT_DEV_EN_MASK
-#define USB_DEVCMDSTAT_SETUP        USB_DEVCMDSTAT_SETUP_MASK
-#define USB_DEVCMDSTAT_DCON         USB_DEVCMDSTAT_DCON_MASK
-#define USB_DEVCMDSTAT_DRES_C       USB_DEVCMDSTAT_DRES_C_MASK
-#define USB_DEVCMDSTAT_DSUS_C       USB_DEVCMDSTAT_DSUS_C_MASK
-#define USB_DEVCMDSTAT_INTONNAK_CO  USB_DEVCMDSTAT_INTONNAK_CO_MASK
+#define USB_DEVCMDSTAT_DEVADDR_MASK USBHSD_DEVCMDSTAT_DEV_ADDR_MASK
+#define USB_DEVCMDSTAT_DEV_EN       USBHSD_DEVCMDSTAT_DEV_EN_MASK
+#define USB_DEVCMDSTAT_SETUP        USBHSD_DEVCMDSTAT_SETUP_MASK
+#define USB_DEVCMDSTAT_DCON         USBHSD_DEVCMDSTAT_DCON_MASK
+#define USB_DEVCMDSTAT_DRES_C       USBHSD_DEVCMDSTAT_DRES_C_MASK
+#define USB_DEVCMDSTAT_DSUS_C       USBHSD_DEVCMDSTAT_DSUS_C_MASK
+#define USB_DEVCMDSTAT_INTONNAK_CO  USBHSD_DEVCMDSTAT_INTONNAK_CO_MASK
 
 /**
  * @brief   Device suspend.
@@ -87,22 +91,22 @@
  *          was not certain and wanted checking against UM10912. Comparing the
  *          two headers settles it without one.
  */
-#define USB_DEVCMDSTAT_DSUP         USB_DEVCMDSTAT_DSUS_MASK
+#define USB_DEVCMDSTAT_DSUP         USBHSD_DEVCMDSTAT_DSUS_MASK
 /** @} */
 
 /**
  * @name    INFO bits
  * @{
  */
-#define USB_INFO_FRAME_NR_POS       USB_INFO_FRAME_NR_SHIFT
+#define USB_INFO_FRAME_NR_POS       USBHSD_INFO_FRAME_NR_SHIFT
 /** @} */
 
 /**
  * @name    Endpoint list and data buffer base registers
  * @{
  */
-#define USB_EPLISTSTART_MASK        USB_EPLISTSTART_EP_LIST_MASK
-#define USB_DATABUFSTART_MASK       USB_DATABUFSTART_DA_BUF_MASK
+#define USB_EPLISTSTART_MASK        USBHSD_EPLISTSTART_EP_LIST_PRG_MASK
+#define USB_DATABUFSTART_MASK       USBHSD_DATABUFSTART_DA_BUF_MASK
 /** @} */
 
 /**
@@ -113,34 +117,34 @@
  *          positions 0 to 9, two per logical endpoint.
  * @{
  */
-#define USB_INT_DEV_INT             USB_INTSTAT_DEV_INT_MASK
-#define USB_INT_FRAME_INT           USB_INTSTAT_FRAME_INT_MASK
-#define USB_INT_EPn_INT             USB_INTSTAT_EP0OUT_MASK
+#define USB_INT_DEV_INT             USBHSD_INTSTAT_DEV_INT_MASK
+#define USB_INT_FRAME_INT           USBHSD_INTSTAT_FRAME_INT_MASK
+#define USB_INT_EPn_INT             USBHSD_INTSTAT_EP0OUT_MASK
 
 /**
  * @brief   Interrupt bit for one endpoint direction.
  * @param[in] n     endpoint direction index, 0 to 9
  */
-#define USB_INT_EP(n)               (USB_INTSTAT_EP0OUT_MASK << (n))
+#define USB_INT_EP(n)               (USBHSD_INTSTAT_EP0OUT_MASK << (n))
 
 /**
  * @brief   All endpoint interrupt bits.
  */
-#define USB_INT_EP_ALL_INT          (USB_INTSTAT_EP0OUT_MASK |              \
-                                     USB_INTSTAT_EP0IN_MASK  |              \
-                                     USB_INTSTAT_EP1OUT_MASK |              \
-                                     USB_INTSTAT_EP1IN_MASK  |              \
-                                     USB_INTSTAT_EP2OUT_MASK |              \
-                                     USB_INTSTAT_EP2IN_MASK  |              \
-                                     USB_INTSTAT_EP3OUT_MASK |              \
-                                     USB_INTSTAT_EP3IN_MASK  |              \
-                                     USB_INTSTAT_EP4OUT_MASK |              \
-                                     USB_INTSTAT_EP4IN_MASK)
+#define USB_INT_EP_ALL_INT          (USBHSD_INTSTAT_EP0OUT_MASK |              \
+                                     USBHSD_INTSTAT_EP0IN_MASK  |              \
+                                     USBHSD_INTSTAT_EP1OUT_MASK |              \
+                                     USBHSD_INTSTAT_EP1IN_MASK  |              \
+                                     USBHSD_INTSTAT_EP2OUT_MASK |              \
+                                     USBHSD_INTSTAT_EP2IN_MASK  |              \
+                                     USBHSD_INTSTAT_EP3OUT_MASK |              \
+                                     USBHSD_INTSTAT_EP3IN_MASK  |              \
+                                     USBHSD_INTSTAT_EP4OUT_MASK |              \
+                                     USBHSD_INTSTAT_EP4IN_MASK)
 /** @} */
 
 /*
  * INTROUTING has no counterpart. On LPC11Uxx it selects whether USB interrupts
- * reach the main handler or the frame-toggle one; this part's USB0 has no such
+ * reach the main handler or the frame-toggle one; this part's USBHSD has no such
  * register, and its absence from NXP's USB_Type makes a reference to it a
  * compile error. The driver writes it once, as zero, in usb_lld_reset(), which
  * is the no-op case, so a capability flag is enough: LPC_USB_HAS_INTROUTING in

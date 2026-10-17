@@ -28,63 +28,52 @@
 #if (HAL_USE_USB == TRUE) || defined(__DOXYGEN__)
 
 /*===========================================================================*/
-/* Driver exported variables.                                                */
-/*===========================================================================*/
-
-/**
- * @brief   Endpoint command/status list and endpoint buffers.
- *
- * @details Three constraints shape this, and only the first is obvious:
- *
- *          - @p EPLISTSTART ignores the low eight address bits, so the list
- *            must be **256-byte aligned**.
- *          - @p DATABUFSTART supplies the high bits of every endpoint buffer
- *            address while the list entries carry only the low ones, so the
- *            list and all the buffers must sit in **one 4 MB region**. A single
- *            array guarantees it; this part's SRAM is nowhere near that large.
- *          - USB0 is an AHB master reaching memory through the bus matrix, and
- *            **not every RAM is reachable**. Ordinary static data lands in the
- *            160 KB SRAM at @p 0x20000000, which is; the 32 KB @p SRAMX at
- *            @p 0x04000000 is tightly coupled to the core and is not. Keeping
- *            this as plain static data rather than placing it with a linker
- *            section is what keeps it on the right side of that, so a board
- *            that moves @p .bss into @p SRAMX must move this back.
- *
- *          LPC11Uxx needs none of this: its USB controller has a dedicated
- *          2 KB SRAM at a fixed address and can reach nothing else, which is
- *          why the shared driver hardcodes an address instead of allocating.
- */
-uint8_t lpc_usb_sram[LPC_USB_SRAM_SIZE] __attribute__((aligned(256)));
-
-/*===========================================================================*/
 /* Driver exported functions.                                                */
 /*===========================================================================*/
 
 /**
- * @brief   Clocks the USB0 device controller.
+ * @brief   Clocks the high-speed device controller and its SRAM.
  *
- * @details Only the controller's own gate. Its 48 MHz reference is routed by
- *          the clock tree in @p hal_lld.c, which takes it from @p fro_hf
- *          directly and so needs no PLL at all -- the reason this function is
- *          three lines where the LPC11Uxx equivalent has to bring up a PLL and
- *          borrow the main PLL's configuration to do it.
+ * @details Two gates, not one, and both live in @p AHBCLKCTRL2: the controller
+ *          at bit 5 and its dedicated SRAM at bit 6. NXP's header names these
+ *          @p USB1D and @p USB1RAM without saying which of the three
+ *          @p AHBCLKCTRL registers they belong to, and the bit numbers collide
+ *          with @p SRAM2 and @p SRAM3 in @p AHBCLKCTRL0 -- enabling them in the
+ *          wrong register would clock the wrong thing and leave USB dead. The
+ *          register comes from NXP's own clock driver, where
+ *          @p kCLOCK_Usbd1 is @p CLK_GATE_DEFINE(AHB_CLK_CTRL2, 5).
+ *
+ *          @p USBCLKADJ makes the FRO trim itself against USB's start-of-frame
+ *          timing instead of relying on its factory trim, which is what NXP's
+ *          @p CLOCK_EnableUsbhs0DeviceClock does when the FRO is the USB clock
+ *          source. The frequency bits are set by @p hal_lld.c and left alone
+ *          here.
  *
  * @notapi
  */
 void lpc_usb_clock_init(void) {
 
-  /* USB0D is bit 25 of AHBCLKCTRL1. NXP's macro name does not say which of the
-     three registers it belongs to, and the device and host gates for this same
-     controller live in different ones. */
-  SYSCON->AHBCLKCTRLSET[1] = SYSCON_AHBCLKCTRL_USB0D_MASK;
+  SYSCON->AHBCLKCTRLSET[2] = SYSCON_AHBCLKCTRL_USB1D_MASK |
+                             SYSCON_AHBCLKCTRL_USB1RAM_MASK;
+
+  SYSCON->FROCTRL |= SYSCON_FROCTRL_USBCLKADJ_MASK;
 }
 
 /**
- * @brief   Powers up the full-speed transceiver.
+ * @brief   Powers up the transceiver and the endpoint SRAM.
  *
  * @details Separate from clocking because the HAL powers the transceiver only
  *          when the driver is started, so that a configured but stopped USB
  *          does not present itself on the bus.
+ *
+ * @note    The high-speed PHY also sits behind a voltage domain that NXP brings
+ *          up in @p POWER_SetUsbPhy(), which ships only as part of their binary
+ *          power library -- there is no source for it and no register
+ *          documentation in the device header. This port does not attempt it.
+ *          It does not have to: on this part the boot ROM and Corsair's
+ *          bootloader have already enumerated at high speed by the time an
+ *          application runs, so the domain is live at handover. That is why
+ *          @p lpc_usb_power_off() below does nothing.
  *
  * @notapi
  */
@@ -93,17 +82,23 @@ void lpc_usb_power_on(void) {
   /* PDRUNCFG bits are power *down* enables, so clearing one powers the block
      up. The dedicated clear register avoids a read-modify-write that could
      drop another block's bit if it changed in between. */
-  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_USB0_PHY_MASK;
+  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
+                           SYSCON_PDRUNCFG_PDEN_USB_RAM_MASK;
 }
 
 /**
- * @brief   Powers down the full-speed transceiver.
+ * @brief   Does not power the transceiver down.
+ *
+ * @details Deliberately empty. Powering this PHY down is not symmetric with
+ *          powering it up: bringing it back needs the voltage-domain sequence
+ *          described above, which this port cannot perform. Switching it off
+ *          would therefore be a one-way operation that makes USB unrecoverable
+ *          until the next reset, which is a far worse outcome than leaving a
+ *          stopped controller's transceiver powered.
  *
  * @notapi
  */
 void lpc_usb_power_off(void) {
-
-  SYSCON->PDRUNCFGSET[0] = SYSCON_PDRUNCFG_PDEN_USB0_PHY_MASK;
 }
 
 #endif /* HAL_USE_USB == TRUE */

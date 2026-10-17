@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Checks properties of a linked LPC546xx image that only the linker decides.
 
-Neither property can be asserted from source, and both fail *silently* on
-hardware -- a bad checksum means the boot ROM never starts the image, and
-misplaced endpoint memory means USB quietly does not work. So they are checked
-on the artifact, by whatever built it.
+Neither can be asserted from source, and both fail *silently* on hardware -- a
+bad checksum means the boot ROM never starts the image, and an interrupt vector
+in the wrong slot means the peripheral's handler is simply never called. So they
+are checked on the artifact, by whatever built it.
 
 Used by chibios/test/build-demo.sh and qmk/test/build-k100.sh.
 
@@ -20,16 +20,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-# EPLISTSTART ignores the low eight address bits.
-EPLIST_ALIGNMENT = 256
+# Cortex-M vector table index of an IRQ: sixteen system entries come first.
+FIRST_IRQ_INDEX = 16
 
-# DATABUFSTART supplies only the high address bits, so the endpoint list and
-# every buffer have to share one 4 MB region.
-DATABUF_REGION_SHIFT = 22
-
-# The SRAM the USB controller can reach as a bus master. SRAMX at 0x04000000 is
-# tightly coupled to the core and is not reachable.
-REACHABLE_SRAM = range(0x20000000, 0x20028000)
+# Peripherals whose handler must be wired up, by NXP IRQn. Getting one of these
+# wrong is not hypothetical: FLEXCOMM0 to FLEXCOMM2 were each one slot low in an
+# earlier version of this port, which no build or test noticed.
+REQUIRED_HANDLERS = {
+    47: "USB1 (USBHSD, the controller the K100 is wired to)",
+}
 
 
 def run(*args: str) -> str:
@@ -66,26 +65,46 @@ def check_boot_checksum(elf: str) -> bool:
     return total == 0
 
 
-def check_endpoint_memory(elf: str) -> bool:
-    """Alignment, region and reachability of the USB endpoint memory."""
-    symbols = run("arm-none-eabi-nm", "-S", elf)
-    match = re.search(r"^([0-9a-f]+) ([0-9a-f]+) . lpc_usb_sram$", symbols, re.M)
-    if match is None:
-        print("usb endpoint memory     FAIL   lpc_usb_sram is not in the image")
-        return False
+def handler_is_stub(elf: str, target: int) -> bool:
+    """Does this vector target ChibiOS's do-nothing handler?
 
-    address, size = int(match.group(1), 16), int(match.group(2), 16)
-    checks = {
-        f"{EPLIST_ALIGNMENT}-byte aligned": address % EPLIST_ALIGNMENT == 0,
-        "single 4MB window": (address >> DATABUF_REGION_SHIFT)
-        == ((address + size - 1) >> DATABUF_REGION_SHIFT),
-        "in reachable SRAM": address in REACHABLE_SRAM,
-    }
+    Not an address comparison, which is the obvious approach and does not work:
+    ChibiOS gives every unused vector its *own* weak symbol, each a single
+    branch to the shared @p _unhandled_exception. So the slots differ while all
+    meaning the same thing. Reading the one instruction they contain is what
+    actually distinguishes a wired handler from an unwired one.
+    """
+    start = target & ~1
+    listing = run("arm-none-eabi-objdump", "-d",
+                  f"--start-address={start}", f"--stop-address={start + 4}", elf)
+    return "_unhandled_exception" in listing
 
-    failed = [name for name, passed in checks.items() if not passed]
-    verdict = "ok" if not failed else "FAIL " + ", ".join(failed)
-    print(f"usb endpoint memory      {verdict}   0x{address:08x}, {size} bytes, "
-          + ", ".join(checks))
+
+def check_required_handlers(elf: str) -> bool:
+    """Each peripheral this port needs has a real handler in its vector slot.
+
+    ChibiOS names a vector by its byte offset into the table, so a one-slot
+    error is a plausible typo that compiles, links and produces an image whose
+    interrupt goes to the unhandled-exception stub -- where it spins forever,
+    looking exactly like a dead peripheral. Nothing else in the build catches
+    it.
+    """
+    words = vector_words(elf)
+
+    failed, reported = [], []
+    for irq, name in sorted(REQUIRED_HANDLERS.items()):
+        index = FIRST_IRQ_INDEX + irq
+        if index >= len(words):
+            failed.append(f"{name}: slot {index} is past the end of the table")
+            continue
+
+        target = words[index]
+        reported.append(f"IRQ {irq} -> 0x{target:08x}")
+        if handler_is_stub(elf, target):
+            failed.append(f"{name}: slot {index} is the unhandled-exception stub")
+
+    verdict = "ok" if not failed else "FAIL " + "; ".join(failed)
+    print(f"interrupt handlers       {verdict}   " + ", ".join(reported))
     return not failed
 
 
@@ -99,7 +118,7 @@ def main(argv: list[str]) -> int:
         print(f"no such file: {elf}", file=sys.stderr)
         return 2
 
-    results = [check_boot_checksum(elf), check_endpoint_memory(elf)]
+    results = [check_boot_checksum(elf), check_required_handlers(elf)]
     return 0 if all(results) else 1
 
 

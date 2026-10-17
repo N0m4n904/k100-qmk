@@ -134,7 +134,7 @@ static selftest_result_t check_spi(void) {
 void selftest_run(void) {
 
   selftest.sysclk = LPC_SYSCLK;
-  selftest.usbclk = LPC_USB0CLK;
+  selftest.usbclk = LPC_USB1CLK;
   selftest.flash_waitstates = LPC_FLASHCFG_WAITSTATES;
 
   /* Reaching here at all means the clock tree did not hang, the vector table

@@ -27,8 +27,8 @@
  * configuration from the command line without editing this file, which is how
  * the PLL path gets exercised -- see chibios/test/build-demo.sh.
  *
- * The FRO runs at 48 MHz and feeds both the core and USB0, so no PLL is set up
- * at all -- USB0CLKSEL can select fro_hf directly. hal_lld.h refuses to build a
+ * The FRO runs at 48 MHz and feeds both the core and USB1, so no PLL is set up
+ * at all -- USB1CLKSEL can select fro_hf directly. hal_lld.h refuses to build a
  * configuration whose USB clock does not come out at 48 MHz.
  */
 #ifndef LPC_FROHF_SEL
@@ -43,16 +43,16 @@
 #ifndef LPC_AHBCLKDIV
 #define LPC_AHBCLKDIV                       0U
 #endif
-#ifndef LPC_USB0CLKSEL
-#define LPC_USB0CLKSEL                      LPC_USB0CLKSEL_FROHF
+#ifndef LPC_USB1CLKSEL
+#define LPC_USB1CLKSEL                      LPC_USB1CLKSEL_FROHF
 #endif
-#ifndef LPC_USB0CLKDIV
-#define LPC_USB0CLKDIV                      0U
+#ifndef LPC_USB1CLKDIV
+#define LPC_USB1CLKDIV                      0U
 #endif
 
 /*
  * USB. The shared driver calls its single instance USB1, which on this part is
- * the USB0 full-speed device controller -- the name is the driver's, not the
+ * USBHSD, this part's high-speed device controller -- the name is the driver's,
  * peripheral's.
  */
 #define LPC_USB_USE_USB1                    TRUE
