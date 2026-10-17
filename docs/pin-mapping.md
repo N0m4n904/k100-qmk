@@ -696,3 +696,65 @@ pull-up/pull-down configuration alone.
 - **CTIMER4 probably drives the scan.** Its base `0x40049000` is referenced five times inside
   the matrix code between flash `0x171fc` and `0x17468`, which fits the 4000 Hz scan rate
   needing a hardware timer. Suggestive from locality rather than decoded.
+
+## USB: the right controller, and the one piece still missing
+
+**The K100 is wired to `USBHSD`, the high-speed device controller at `0x40094000`
+— not `USB0`, the full-speed one at `0x40084000`.** Three independent reasons:
+
+- the stock application references `0x40094000` and never mentions `0x40084000`;
+- the keyboard negotiates High Speed, which the kernel logs on every connect;
+- its application's vendor endpoints are **1024 bytes**, and full-speed interrupt
+  endpoints stop at 64.
+
+A port that brings up `USB0` on this board initialises a controller whose pins go
+nowhere. It succeeds, reports nothing wrong, and never enumerates — which is
+exactly what this project spent a flash cycle not understanding.
+
+The two are the same NXP IP, so the register offsets are identical for everything
+the shared ChibiOS driver touches. What genuinely differs:
+
+| | `USB0` | `USBHSD` |
+| --- | --- | --- |
+| `EPLISTSTART` | whole address, 256-aligned | bits 8–19 programmable, **20–31 fixed** |
+| `DATABUFSTART` | high bits only (one 4 MB region) | whole 32-bit address |
+| Endpoint list may live in | any reachable SRAM | **only the 1 MB window at `0x40100000`** |
+| Clock gates | `USB0D`, `AHBCLKCTRL1` bit 25 | `USB1D`+`USB1RAM`, **`AHBCLKCTRL2`** bits 5, 6 |
+| PHY power | `PDEN_USB0_PHY`, bit 21 | `PDEN_USB1_PHY` bit 0, `PDEN_USB1_PLL` bit 1 |
+| Interrupt | `USB0_IRQn` 28 → `VectorB0` | `USB1_IRQn` 47 → `VectorFC` |
+| Endpoints | 5 | 6 |
+
+The fixed field is the one that forces a design change rather than a constant: the
+hardware supplies the top twelve address bits, so an endpoint list in main SRAM is
+unreachable however the register is written. It has to be in the dedicated 8 KB
+USB SRAM, which is where the stock firmware puts its own, at `0x40100A00`.
+
+The `AHBCLKCTRL` register numbers are worth care. NXP's header names these bits
+without saying which of the three registers they belong to, and bits 5 and 6 of
+`AHBCLKCTRL0` are `SRAM3` and nothing at all. Their clock driver settles it:
+`kCLOCK_Usbd1 = CLK_GATE_DEFINE(AHB_CLK_CTRL2, 5)`.
+
+### Still missing: the PHY's voltage domain
+
+With all of the above corrected, the firmware runs and **still does not enumerate
+— and the host sees no attempt at all.** The kernel logs nothing between the
+disconnect and the bootloader returning: no descriptor read, no "device not
+accepting address", no error. So the device never pulls up D+ and never connects.
+That rules out the endpoint list, the descriptors and the control endpoint, all of
+which would produce a visible, failing enumeration instead.
+
+What remains is the high-speed PHY itself. NXP's own sequence,
+`CLOCK_EnableUsbhs0DeviceClock`, begins with `POWER_SetUsbPhy()` — "power on the
+VD5 for USB PHY" — and **that function ships only inside their binary power
+library.** There is no source for it in the SDK and no register documentation for
+it in the device header; `fsl_power.c` for this part contains nothing but
+brown-out detection.
+
+This port currently does everything around it: the gates in NXP's order, the
+transceiver and PLL power-down bits cleared, `USBCLKADJ` set, and the settling
+delay. Powering the transceiver *down* is a deliberate no-op, because bringing it
+back is the part that cannot be done.
+
+The route to the rest is the stock firmware, which links that same binary library,
+so the sequence is present in the image that this project already disassembles.
+Finding it is the next piece of work.
