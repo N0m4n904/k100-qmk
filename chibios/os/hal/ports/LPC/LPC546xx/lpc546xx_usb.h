@@ -73,6 +73,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+  void lpcUsbTrace(unsigned stage);
   void lpc_usb_clock_init(void);
   void lpc_usb_power_on(void);
   void lpc_usb_power_off(void);

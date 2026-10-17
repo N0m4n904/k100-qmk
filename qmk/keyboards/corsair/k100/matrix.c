@@ -115,6 +115,10 @@ void matrix_init_custom(void) {
 }
 
 bool matrix_scan_custom(matrix_row_t current_matrix[]) {
+#ifdef K100_USB_DIAGNOSTIC
+    k100_diagnostic_mark_first_scan();
+#endif
+
     bool changed = false;
 
     for (uint8_t row = 0; row < MATRIX_ROWS; row++) {

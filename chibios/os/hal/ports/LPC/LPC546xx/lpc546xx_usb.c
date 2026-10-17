@@ -63,6 +63,24 @@ static void usb_rough_delay(uint32_t microseconds) {
 /*===========================================================================*/
 
 /**
+ * @brief   Bring-up trace point, overridable by the application.
+ *
+ * @details Does nothing, and exists so that an application bringing USB up on a
+ *          board with no debug access has somewhere to hang an observation. The
+ *          stages are reached in order, so an application that can signal
+ *          externally -- by holding a keyboard off the bus for a measurable
+ *          time, for instance -- can tell how far this driver's setup got.
+ *
+ * @param[in] stage     1 for clock and power setup, 2 for the transceiver
+ *
+ * @notapi
+ */
+__attribute__((weak)) void lpcUsbTrace(unsigned stage) {
+
+  (void)stage;
+}
+
+/**
  * @brief   Clocks the high-speed device controller and its SRAM.
  *
  * @details Two gates, not one, and both live in @p AHBCLKCTRL2: the controller
@@ -83,6 +101,8 @@ static void usb_rough_delay(uint32_t microseconds) {
  * @notapi
  */
 void lpc_usb_clock_init(void) {
+
+  lpcUsbTrace(1U);
 
   /* NXP's order, from CLOCK_EnableUsbhs0DeviceClock: the controller's gate goes
      off before its clock source is touched, and back on afterwards, with time
@@ -152,6 +172,8 @@ void lpc_usb_clock_init(void) {
  * @notapi
  */
 void lpc_usb_power_on(void) {
+
+  lpcUsbTrace(2U);
 
   /* Idempotent, and deliberately a repeat of what lpc_usb_clock_init() already
      did. The HAL separates clocking from transceiver power so that a configured

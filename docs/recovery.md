@@ -448,13 +448,13 @@ longer rescues firmware that wedges with interrupts still running. That was a
 pleasant side effect rather than a design, and the two deliberate routes back —
 Escape at power-on and the USB watchdog — are unaffected.
 
-### Boot, stage by stage, and the six faults between them
+### Boot, stage by stage, and the seven faults between them
 
-The firmware now reaches QMK's `keyboard_pre_init_kb`. Getting there meant finding
-six separate faults, each of which produced the *same* external symptom — the
-keyboard away for a few seconds and back in bootloader mode — because the
-inherited watchdog resets the chip within about a second and a half of anything
-going wrong.
+The firmware now reaches QMK's `keyboard_post_init_kb`, which is the end of
+`keyboard_init()`. Getting there meant finding seven separate faults, each of
+which produced the *same* external symptom — the keyboard away for a few seconds
+and back in bootloader mode — because the inherited watchdog resets the chip
+within about a second and a half of anything going wrong.
 
 The method that worked: hold the keyboard off the bus for a measurable number of
 seconds at successive boot stages, **feeding the watchdog throughout**, and read
@@ -462,14 +462,31 @@ how far it got from the total absence. `K100_USB_DIAGNOSTIC` in `bootloader.c`
 carries it. Markers tens of seconds apart are necessary; a few seconds apart is
 lost in the variation of the apply and the bootloader's own boot.
 
+The markers are deliberately loop-counted rather than timed by `wait_us()`, which
+matters more than it sounds: for several rounds the thing being measured *was*
+the timer, and a marker timed by it cannot report on it.
+
 | Stage | Hook | Verdict |
 | --- | --- | --- |
 | before RAM init | `early_hardware_init_pre` | reached |
 | after RAM init, before `main` | `__late_init` | reached |
 | end of `halInit` | `board_init` | reached, **after four fixes** |
 | after `chSysInit` | `matrix_setup` | reached |
-| before QMK starts USB | `keyboard_pre_init_kb` | reached, **after one more fix** |
-| after USB and matrix init | `keyboard_post_init_kb` | **not reached** |
+| after QMK starts USB | `keyboard_pre_init_kb` | reached, **after one more fix** |
+| end of `keyboard_init` | `keyboard_post_init_kb` | reached, **after one more fix** |
+| first scan of the main loop | `matrix_scan_custom` | **not reached** |
+| end of the first loop pass | `housekeeping_task_kb` | **not reached** |
+
+One ordering fact is worth stating plainly, because getting it wrong sent this
+search into the wrong driver for several rounds. In `quantum/main.c`,
+`protocol_pre_init()` — which is where QMK starts the USB driver — runs *before*
+`keyboard_init()`, not after it. So `keyboard_pre_init_kb` being reached already
+meant USB initialisation had completed, and the failure was never inside it.
+
+The measured absences, against a working image's 0.76 s: 76.67 s for the build
+whose markers summed to 70 s at `keyboard_post_init_kb`, and 8.15 s — the
+no-marker failure baseline — for the builds marking the first matrix scan and the
+first housekeeping call. Two independent bus recordings agreed on each.
 
 What had to be fixed to get that far:
 
@@ -507,24 +524,64 @@ What had to be fixed to get that far:
    that trap on this part**, after `AHBCLKCTRL`; treat every
    `SYSCON_<REG>_<FIELD>` macro as needing an index from somewhere else, and get
    it from NXP's clock and power drivers, which do carry it.
+7. **Turning the DWT off took the realtime counter with it, and every
+   microsecond delay in the firmware with that.** Fault 3 disabled the cycle
+   counter because touching it faults. But ChibiOS's realtime counter *is* that
+   cycle counter, and on this platform QMK's `wait_us()` is
+   `chSysPolledDelayX()`, which samples the counter, computes an end value and
+   spins until the counter passes it. Against a counter that never advances it
+   does not run short — it never returns. The first `wait_us()` in boot is the
+   settling delay of the first matrix read, called from the Escape check in
+   `keyboard_pre_init_kb`, so the firmware hung there and the watchdog reset it.
+
+   Fixed by giving the platform a counter of its own: the RIT, a free-running AHB
+   counter which with `AHBCLKDIV` at one ticks at exactly the rate `CYCCNT`
+   would, so `REALTIME_COUNTER_CLOCK` needs no adjusting. See
+   `chibios/os/hal/ports/LPC/LPC546xx/lpc546xx_rit.c` and
+   `chibios/patches/0007-external-realtime-counter.patch`, which routes
+   `port_rt_get_counter_value()` to it behind `PORT_USE_EXTERNAL_RT_COUNTER`.
+
+   Two things about this one are worth carrying forward. The gate is a **fourth**
+   instance of the index trap: `SYSCON_AHBCLKCTRL_RIT_MASK` is bit 1, and bit 1
+   of `AHBCLKCTRL0` is `ROM` — the register is `AHBCLKCTRL1`, per
+   `kCLOCK_Rit = CLK_GATE_DEFINE(AHB_CLK_CTRL1, 1)` in NXP's clock driver. And
+   the failure mode is bad enough to be worth a build-time guard, so
+   `tools/check-firmware-image.py` now refuses an image that references the DWT
+   and requires one that references the RIT — the second half being the control
+   that stops the first from passing vacuously.
 
 ### Where it still fails
 
-Inside `protocol_pre_init()` — QMK starting the USB driver. Two defects were
-found and fixed there without resolving it, and both are worth keeping:
+Between `keyboard_post_init_kb()` and the first `matrix_scan_custom()`. That gap
+is small: `protocol_post_init()`, which sets one function pointer, and the part
+of the first loop pass that precedes the scan — `protocol_pre_task()` and the
+start of `keyboard_task()`.
 
-- the driver's five unbounded waits on the controller now time out
-  (`0003-bound-usb-controller-waits.patch`);
-- it enabled the USB interrupt *before* `usb_lld_reset()` installed the endpoint
-  table, leaving a window in which the handler dereferences a null `epc[ep]`
-  (`0004-usb-reset-before-irq.patch`).
+Ruled out along the way, each by measurement rather than by reading:
 
-Eliminated by direct probe: the USB endpoint SRAM at `0x40100000` is reachable
-and reads back correctly, tested by writing and reading a word from `board_init`.
-So it is neither the memory nor its clock.
+- **USB initialisation.** It completes; see the ordering note above.
+- **The USB endpoint SRAM** at `0x40100000` is reachable and reads back
+  correctly, tested by writing and reading a word from `board_init`.
+- **`protocol_pre_task()`'s suspend loop**, QMK's `while (USB_DRIVER.state ==
+  USB_SUSPENDED)`, which was the obvious candidate because it is the only
+  unbounded loop in the gap and because starving `housekeeping_task_kb()` stops
+  the watchdog feed. Defining `NO_USB_STARTUP_CHECK` compiles it out, and the
+  absence was 8.15 s before and 8.16 s after — so the driver is never in that
+  state here. The define stays anyway: see the reasoning in the keyboard's
+  `config.h`.
+- **The LED driver.** `rgb_matrix` is off in `keyboard.json`, so none of the
+  untested SPI path runs in the loop.
 
-What is left to examine is `usb_lld_reset()` itself and the handler. The method
-is unchanged and it works: put a marker on each side of the thing in question.
+Four USB driver defects were found and fixed while the search was pointed at the
+wrong place. None of them resolved this, and all four are worth keeping: bounded
+controller waits (`0003`), the interrupt enabled before the endpoint table
+existed (`0004`), an endpoint list sized for five endpoints on a six-endpoint
+controller (`0005`), and an endpoint address treated as absolute where
+`DATABUFSTART` takes a whole base (`0006`).
+
+The method is unchanged and it works: put a marker on each side of the thing in
+question, tens of seconds apart, and never time the marker with the mechanism
+under test.
 
 ## Reading the result of a custom flash
 
@@ -553,6 +610,34 @@ So, after writing a custom image:
    `MATRIX_STROBE_SETTLE_US` need the other value, which is a reflash, not a brick.
 3. Nothing at all after ten seconds means the watchdog should already have put it back in the
    bootloader; check for `bcdDevice 0.0a`.
+
+### How long a working boot takes, measured
+
+Worth knowing, because the whole diagnostic method in this project is reading lengths of
+absence from the bus, and a length only means something against a baseline.
+
+Watching the bus across an apply of Corsair's own 0.35.288 — written *from bootloader mode*,
+which is the slower of the two routes — the keyboard was gone for **0.76 s** and came back as
+`bcdDevice=0023`, the running application.
+
+Two things follow:
+
+- **An apply does start the image it just wrote**, including from bootloader mode. The
+  operating mode reported afterwards is therefore an accept/reject oracle: `SelfOperated` means
+  the image was started and came up, `Bootloader` means the bootloader is what answered, so the
+  image was started and did not. The mode is read from whichever program replies, not from a
+  stored word, which is why it can be read this way at all.
+- **Under a second is the scale of a good boot.** So an absence of several seconds already
+  means something ran and stopped, and the useful markers are tens of seconds — far enough
+  apart that the two or three seconds of variation in an apply and a bootloader start cannot be
+  mistaken for a stage.
+
+A custom image that is started and fails shows up as a longer absence ending in `bcdDevice=0a`.
+One observed case: 8.15 s away, then the bootloader, and then no further bus activity for the
+next 115 s — so whatever happened settled rather than looping. What fills those 8 s is not
+established. Several starts of an image that dies to the watchdog in about a second and a half
+would account for it, and so would one start that survived longer; the measurement does not
+separate them, and nothing yet depends on which it is.
 
 ## The unknown
 

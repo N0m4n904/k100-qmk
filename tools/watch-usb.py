@@ -50,6 +50,10 @@ def snapshot(vendor: int | None) -> dict[str, dict[str, str]]:
             "serial": read("serial") or "",
             "class": read("bDeviceClass") or "",
             "interfaces": read("bNumInterfaces") or "",
+            # Which program is running, with no command sent: the bootloader,
+            # the stock application and this project's firmware each report a
+            # different one under the same vendor and product id.
+            "version": read("bcdDevice") or "",
         }
     return found
 
@@ -57,7 +61,7 @@ def snapshot(vendor: int | None) -> dict[str, dict[str, str]]:
 def describe(name: str, info: dict[str, str]) -> str:
     pid = int(info["pid"], 16) if info["pid"] != "?" else 0
     label = KNOWN.get(pid, "*** UNRECOGNISED IDENTITY ***")
-    return (f"{name}  {info['vid']}:{info['pid']}  {label}\n"
+    return (f"{name}  {info['vid']}:{info['pid']}  bcdDevice={info['version']}  {label}\n"
             f"        product={info['product']!r} class={info['class']} "
             f"interfaces={info['interfaces']} serial={info['serial']!r}")
 

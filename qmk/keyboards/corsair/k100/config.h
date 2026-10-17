@@ -21,3 +21,39 @@
 #endif
 
 #define IS31FL3743B_DRIVER_COUNT 3
+
+/* Temporary: USB bring-up diagnostic, see bootloader.c. */
+/*
+ * Never block the main loop waiting for the host.
+ *
+ * QMK's ChibiOS protocol_pre_task() otherwise spins in
+ *
+ *     while (USB_DRIVER.state == USB_SUSPENDED) { suspend_power_down(); ... }
+ *
+ * which is the one unbounded loop between keyboard_post_init_kb() and the first
+ * housekeeping_task(). On a keyboard that can afford to wait for the host that
+ * is reasonable. This one cannot, for two reasons that are both fatal rather
+ * than untidy:
+ *
+ * The watchdog this firmware inherits from Corsair's bootloader cannot be turned
+ * off, and it is fed from housekeeping_task_kb() -- deliberately, so that a
+ * wedged keyboard resets itself back into a reflashable bootloader instead of
+ * staying alive and useless. A loop that never reaches housekeeping therefore
+ * stops the feed and the part resets about a second and a half later.
+ *
+ * And the same housekeeping task carries the recovery path: if USB has not come
+ * up within ten seconds it hands the keyboard back to the bootloader. Starving
+ * that is what turns "USB does not enumerate" from a reflashable state into a
+ * keyboard that only cycles.
+ *
+ * This is a hazard removed, not a bug fixed. It was tried as a candidate for the
+ * hang between keyboard_post_init_kb() and the first housekeeping_task(), and
+ * measured: the length of absence from the bus was 8.15 s before the change and
+ * 8.16 s after it, so the driver is evidently never in USB_SUSPENDED here and
+ * this loop was not what boot was dying in. It stays because the reasoning above
+ * holds regardless -- an unbounded wait on the host, in a firmware whose
+ * watchdog is fed from the main loop, is a reset waiting for a host that
+ * suspends.
+ */
+#define NO_USB_STARTUP_CHECK
+

@@ -25,6 +25,8 @@
 
 #include "hal.h"
 
+#include "lpc546xx_rit.h"
+
 /*===========================================================================*/
 /* Driver local definitions.                                                 */
 /*===========================================================================*/
@@ -167,6 +169,17 @@ void lpc_clock_init(void) {
 void hal_lld_init(void) {
 
   lpc_clock_init();
+
+  /* After the clock, not before: this counter's callers are told it ticks at
+     LPC_SYSCLK, so it has to be started at LPC_SYSCLK. Early, too, because what
+     is built on it is every microsecond delay in the system -- and on this part
+     the alternative is a DWT that reads as a constant, which turns those delays
+     into hangs. See lpc546xx_rit.c.
+
+     The result is dropped rather than stored because it is not a fact about the
+     past: lpcRitIsRunning() answers the same question against the hardware at
+     any later moment, and a caller that cares should ask it then. */
+  (void)lpcRitInit();
 }
 
 /** @} */

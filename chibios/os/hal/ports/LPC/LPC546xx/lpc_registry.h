@@ -78,6 +78,22 @@
    five endpoints; it asserts if that is ever wrong. */
 #define LPC_USB_SRAM_SIZE           2048U
 
+/* USBHSD has six logical endpoints where LPC11Uxx has five, so its command and
+   status list is twenty-four entries rather than twenty. The hardware reads an
+   entry for every endpoint it has, used or not, and the shared driver allocates
+   endpoint buffers immediately after the list -- so a list sized for five here
+   would put the sixth endpoint's entries underneath the first buffer and let the
+   controller act on whatever that buffer happened to contain. */
+#define LPC_USB_EPLIST_ENTRIES      24U
+
+/* DATABUFSTART on USBHSD takes a whole 32-bit base rather than only the high
+   address bits -- its DA_BUF field is the full word, where USB0's is bits 31 to
+   22 -- so an endpoint entry's buffer field is an offset from that base. The
+   stock firmware settles it: it programs DATABUFSTART to 0x40100b80, a value
+   whose low bits would be meaningless if the register only supplied the top of
+   an address. */
+#define LPC_USB_EPLIST_ADDR_BASE    LPC_USB_SRAM_START
+
 /* Flexcomm. Each instance is one of USART, SPI, I2C or I2S, selected at
    runtime, so there is one vector per instance rather than per function.
    Flexcomm 3 is the one the stock keyboard firmware drives its LED drivers

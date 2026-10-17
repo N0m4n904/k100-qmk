@@ -33,6 +33,7 @@
 #include "usb_device_state.h"
 
 #include "lpc546xx_eeprom.h"
+#include "lpc546xx_rit.h"
 #include "lpc546xx_wwdt.h"
 #include "k100.h"
 
@@ -101,26 +102,63 @@
 /*
  * Stage markers, for finding how far boot gets.
  *
- * Each stage holds the keyboard off the bus for a different, deliberately
- * ill-matched number of seconds, so the total absence identifies which ones ran
- * without needing one flash per stage: 3 alone means boot died after board_init,
- * 15 means it also cleared keyboard_pre_init_kb, 45 means it got all the way
- * past USB and matrix initialisation. Ratios rather than precise times, because
- * the clock before halInit() is whatever the bootloader left running.
+ * Each stage holds the keyboard off the bus for a set number of seconds, feeding
+ * the watchdog while it waits. The stages are nested -- reaching one means every
+ * earlier one ran -- so the total absence is a prefix sum, and with the values
+ * below every prefix is a distinct, widely separated number. One flash therefore
+ * names the furthest stage reached, instead of answering one yes-or-no question:
+ *
+ *     ~2 s    nothing ran, or it died before matrix_setup
+ *     ~10 s   matrix_setup           the kernel is scheduling
+ *     ~30 s   keyboard_pre_init_kb   halInit() and USB init are behind it
+ *     ~70 s   keyboard_post_init_kb  the Escape check and the rest of
+ *                                    keyboard_init() completed
+ *     ~130 s  housekeeping_task_kb   it is a running keyboard
+ *
+ * Wide apart on purpose. Values a few seconds apart were useless: the apply
+ * before a reset and the bootloader's own start each vary by seconds, and a
+ * marker that runs before halInit() is timed by whatever clock the bootloader
+ * left behind. Against a working image, which is back on the bus in under a
+ * second, anything above ten seconds is unambiguous.
+ *
+ * Two placements carry more weight than the rest. The pre-init marker sits
+ * *before* the Escape check, which is the first thing in boot to call wait_us(),
+ * so 30 s against 70 s is also the answer to "does the realtime counter tick" --
+ * the one fact about the RIT taken from how the part is wired rather than read
+ * back from a register. And the housekeeping marker separates the two ways a
+ * keyboard that never enumerates can fail: if it runs, USB is the only thing
+ * wrong and housekeeping_task_kb() will hand the keyboard back to the bootloader
+ * by itself; if it does not, something before the main loop is hanging and that
+ * recovery path never gets its chance.
+ *
+ * DIAGNOSTIC_STAGE_SCAN_S is the odd one out: it marks the first matrix scan of
+ * the main loop, which sits between the last two stages above. It bisects the
+ * gap they leave -- keyboard_post_init_kb() is reached, the first
+ * housekeeping_task() is not, and between them lie only protocol_post_init(),
+ * which sets a pointer, and one pass of the loop. Nothing but that loop calls
+ * the scan; the Escape check reads the matrix through k100_matrix_sample_row()
+ * directly.
  *
  * The wait feeds the watchdog itself. Without that the marker is cut short by
  * the very reset it is trying to locate -- which is how an earlier version of
  * this diagnostic reported that the firmware never ran at all.
  */
-#    define DIAGNOSTIC_STAGE_LATE_S     0U
-#    define DIAGNOSTIC_STAGE_BOARD_S    0U
-/* Wide apart on purpose. Earlier values a few seconds apart were lost in the
-   noise: the apply before a reset and the bootloader's own boot each vary by
-   seconds, and a marker's length depends on whichever clock is running when it
-   executes. Totals of roughly 13, 33 and 73 seconds cannot be confused. */
-#    define DIAGNOSTIC_STAGE_MATRIX_S   0U
-#    define DIAGNOSTIC_STAGE_PREINIT_S  0U
-#    define DIAGNOSTIC_STAGE_POSTINIT_S 0U
+#    define DIAGNOSTIC_STAGE_LATE_S           0U
+#    define DIAGNOSTIC_STAGE_BOARD_S          0U
+#    define DIAGNOSTIC_STAGE_MATRIX_S         0U
+#    define DIAGNOSTIC_STAGE_PREINIT_S        0U
+#    define DIAGNOSTIC_STAGE_POSTINIT_S       0U
+#    define DIAGNOSTIC_STAGE_HOUSEKEEPING_S   0U
+#    define DIAGNOSTIC_STAGE_SCAN_S           0U
+
+/*
+ * Reported from board_init() instead of a stage length, for the case where the
+ * realtime counter is dead rather than merely slow. Left at zero while the
+ * prefix sums above are being read, because anything non-zero here shifts all of
+ * them.
+ */
+#    define DIAGNOSTIC_STAGE_RIT_LIVE_S       0U
+#    define DIAGNOSTIC_STAGE_RIT_DEAD_S       0U
 
 /* Reported unconditionally, before anything else runs, purely to answer "did
    this firmware execute at all". Long enough that it cannot be confused with
@@ -283,6 +321,41 @@ static void diagnostic_mark(uint32_t seconds) {
         }
     }
 }
+
+/**
+ * The same marker, but timed by wait_us() instead of by a loop count.
+ *
+ * This measures the realtime counter, which is the one thing in the clock tree
+ * that cannot be checked from the build. wait_us() here is chSysPolledDelayX()
+ * against the RIT, scaled by the rate the port claims the RIT ticks at -- and
+ * that rate is the one figure in lpc546xx_rit.c taken from how the part is
+ * wired rather than from a register. Asking for a known number of seconds and
+ * timing the result on the host settles it: the right length means the rate is
+ * right, half or double means it is out by that factor, and a couple of seconds
+ * means wait_us() did not return at all and the watchdog cut in.
+ *
+ * Marked unused because which marker a stage uses is an experiment-time choice,
+ * and a stage isolating a different variable has to use the loop-based one --
+ * a marker timed by the thing under test cannot report on it. Kept compiled so
+ * that it cannot rot between experiments.
+ */
+__attribute__((unused)) static void diagnostic_mark_timed(uint32_t seconds) {
+    for (uint32_t ms = 0U; ms < seconds * 1000U; ms++) {
+        lpcWwdtFeed();
+        wait_us(1000U);
+    }
+}
+#endif
+
+#ifdef K100_USB_DIAGNOSTIC
+void k100_diagnostic_mark_first_scan(void) {
+    static bool marked = false;
+
+    if (!marked) {
+        marked = true;
+        diagnostic_mark(DIAGNOSTIC_STAGE_SCAN_S);
+    }
+}
 #endif
 
 void early_hardware_init_pre(void) {
@@ -306,11 +379,25 @@ void board_init(void) {
     lpcWwdtFeed();
 #ifdef K100_USB_DIAGNOSTIC
     diagnostic_mark(DIAGNOSTIC_STAGE_BOARD_S);
+    diagnostic_mark(lpcRitIsRunning() ? DIAGNOSTIC_STAGE_RIT_LIVE_S
+                                      : DIAGNOSTIC_STAGE_RIT_DEAD_S);
 #endif
 }
 
 
 #ifdef K100_USB_DIAGNOSTIC
+/*
+ * The port's USB bring-up trace, wired to the delay channel. Stage 1 is its
+ * clock and power setup, reached from halInit(); stage 2 is the transceiver,
+ * reached from usbStart(). Only stage 2 is marked, because stage 1 is already
+ * known to run -- halInit() completes.
+ */
+void lpcUsbTrace(unsigned stage) {
+    if (stage == 2U) {
+        diagnostic_mark(10U);
+    }
+}
+
 /**
  * The three bits of DEVCMDSTAT that say why a device is not on the bus.
  *
@@ -376,6 +463,16 @@ void housekeeping_task_kb(void) {
 
     /* Every iteration, and before anything that might return early. */
     lpcWwdtFeed();
+
+#ifdef K100_USB_DIAGNOSTIC
+    /* Once, not every iteration: this one reports that the loop was reached, and
+       a marker that ran on every pass would stop it being a loop. */
+    static bool marked = false;
+    if (!marked) {
+        marked = true;
+        diagnostic_mark(DIAGNOSTIC_STAGE_HOUSEKEEPING_S);
+    }
+#endif
 
     if (usb_was_ready) {
         housekeeping_task_user();

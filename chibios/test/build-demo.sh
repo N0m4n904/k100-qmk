@@ -88,11 +88,12 @@ done
 
 chibios="$work/ChibiOS"
 contrib="$work/ChibiOS-Contrib"
-unpack "$work/cache/chibios.tar.gz" "$chibios"
 
-# The Contrib tree is rebuilt from the tarball every run, because the patch and
-# the port files are copied into it and a second apply would fail.
-rm -rf "$contrib"
+# Both trees are rebuilt from their tarballs every run, because both get patched
+# and a second apply fails. The tarballs themselves stay cached, so this costs
+# an extract rather than a download.
+rm -rf "$chibios" "$contrib"
+unpack "$work/cache/chibios.tar.gz" "$chibios"
 unpack "$work/cache/contrib.tar.gz" "$contrib"
 
 echo "applying the shared USB driver patch"
@@ -102,14 +103,22 @@ git -C "$contrib" apply --whitespace=nowarn \
     "$repo/patches/0003-bound-usb-controller-waits.patch"
 git -C "$contrib" apply --whitespace=nowarn \
     "$repo/patches/0004-usb-reset-before-irq.patch"
+git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/patches/0005-eplist-size-from-controller.patch"
+git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/patches/0006-eplist-buffer-base.patch"
 
-# And the DWT one, to ChibiOS proper. The demo does not need it -- it defaults
-# to leaving the counter enabled -- but applying it here is what keeps the patch
-# from silently rotting against a newer ChibiOS.
-echo "applying the optional-DWT patch"
+# And the two to ChibiOS proper, which are a pair: one makes enabling the DWT
+# optional, the other supplies a realtime counter for the parts that have to turn
+# it off. The demo's chconf.h does both, so this build is where they are actually
+# compiled -- the register checks cannot reach them, and a patch nothing compiles
+# rots against a newer ChibiOS without saying so.
+echo "applying the ChibiOS-proper patches"
 git -C "$chibios" init -q . 2>/dev/null || true
 git -C "$chibios" apply --whitespace=nowarn \
     "$repo/patches/0002-optional-dwt-enable.patch"
+git -C "$chibios" apply --whitespace=nowarn \
+    "$repo/patches/0007-external-realtime-counter.patch"
 
 # Beside LPC11Uxx.h, which is where ChibiOS-Contrib already keeps an NXP device
 # header. This is the path a build that cannot fetch anything has to take -- so
@@ -146,7 +155,9 @@ echo
 
 # Two properties of the linked image that no source file can assert, because the
 # linker decides them. Shared with the QMK build, which needs the same ones.
-python3 "$root/tools/check-firmware-image.py" "$elf"
+# --allow-dwt: this demo targets a devboard, whose debug block works, so it keeps
+# ChibiOS's stock cycle counter. The keyboard cannot, and its build checks that.
+python3 "$root/tools/check-firmware-image.py" "$elf" --allow-dwt
 
 # The self-test structure exists only to be read by a debugger, so nothing in
 # the program references it -- which means link-time optimisation will remove it

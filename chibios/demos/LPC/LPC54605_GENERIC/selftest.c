@@ -131,6 +131,41 @@ static selftest_result_t check_spi(void) {
 }
 #endif
 
+/**
+ * @brief   How long to measure the realtime counter over.
+ * @details Long enough that the system tick's own quantisation -- one tick, at
+ *          CH_CFG_ST_FREQUENCY -- is a rounding error rather than the result.
+ */
+#define RT_COUNTER_SAMPLE_MS                100U
+
+/** @brief How far the measured rate may sit from the configured one, per cent. */
+#define RT_COUNTER_TOLERANCE_PERCENT        10U
+
+static selftest_result_t check_realtime_counter(void) {
+  rtcnt_t start = chSysGetRealtimeCounterX();
+
+  chThdSleepMilliseconds(RT_COUNTER_SAMPLE_MS);
+
+  /* Unsigned arithmetic, so a wrap during the sample subtracts correctly. */
+  rtcnt_t elapsed = chSysGetRealtimeCounterX() - start;
+
+  selftest.realtime_counter_hz =
+    (uint32_t)(((uint64_t)elapsed * 1000ULL) / (uint64_t)RT_COUNTER_SAMPLE_MS);
+
+  /* The port tells its callers the counter ticks at the core clock, and
+     everything timed by chSysPolledDelayX() is scaled by that figure, so this
+     compares against it rather than against whatever the counter is doing. */
+  uint32_t expected = LPC_SYSCLK;
+  uint32_t slack = (uint32_t)(((uint64_t)expected * RT_COUNTER_TOLERANCE_PERCENT) /
+                              100ULL);
+
+  if ((selftest.realtime_counter_hz + slack < expected) ||
+      (selftest.realtime_counter_hz > expected + slack)) {
+    return SELFTEST_FAILED;
+  }
+  return SELFTEST_PASSED;
+}
+
 void selftest_run(void) {
 
   selftest.sysclk = LPC_SYSCLK;
@@ -142,6 +177,8 @@ void selftest_run(void) {
   selftest.kernel = SELFTEST_PASSED;
 
   selftest.pal_readback = check_pal();
+
+  selftest.realtime_counter = check_realtime_counter();
 
 #if HAL_USE_SPI == TRUE
   selftest.spi_loopback = check_spi();

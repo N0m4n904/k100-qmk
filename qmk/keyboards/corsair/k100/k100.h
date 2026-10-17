@@ -35,3 +35,11 @@ uint32_t k100_matrix_sample_row(uint8_t row);
  * calls bootloader_jump().
  */
 bool k100_enter_bootloader(void);
+
+#ifdef K100_USB_DIAGNOSTIC
+/**
+ * Marks the first matrix scan of the main loop; see bootloader.c. Diagnostic
+ * only, and compiled out with the rest of the delay channel.
+ */
+void k100_diagnostic_mark_first_scan(void);
+#endif

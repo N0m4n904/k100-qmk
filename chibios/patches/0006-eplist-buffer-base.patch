@@ -1,0 +1,37 @@
+diff --git a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+index 40abd25..8a06d4c 100644
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+@@ -113,8 +113,32 @@ struct usb_eplist {
+ #define EPLIST_ENTRY_BUFFER_RSHIFT            6U
+ #define EPLIST_ENTRY_BUFFER_POS               0U
+ #define EPLIST_ENTRY_BUFFER_MASK              (0xFFFF << EPLIST_ENTRY_BUFFER_POS)
++
++/**
++ * @brief   What the buffer field of an endpoint entry is measured from.
++ *
++ * @details The two generations of this IP divide a buffer address between
++ *          @p DATABUFSTART and the endpoint entry differently, and the register
++ *          says which: where @p DATABUFSTART holds only the high address bits,
++ *          the entry carries bits 21 to 6 of the absolute address, and where it
++ *          holds a whole 32-bit base, the entry carries an offset from that base.
++ *
++ *          Using the absolute form against a full base misses by whatever the
++ *          base's own high bits contribute -- the entry is then a plausible
++ *          number pointing outside the endpoint memory, which the controller
++ *          finds out about only when it transfers.
++ *
++ *          A family defines @p LPC_USB_EPLIST_ADDR_BASE when its register takes
++ *          a full base.
++ */
++#if defined(LPC_USB_EPLIST_ADDR_BASE)
++#define EPLIST_ADDR(ADDR)                     \
++  (((((uint32_t)(ADDR)) - (LPC_USB_EPLIST_ADDR_BASE)) >>                      \
++    EPLIST_ENTRY_BUFFER_RSHIFT) & EPLIST_ENTRY_BUFFER_MASK)
++#else
+ #define EPLIST_ADDR(ADDR)                     \
+   ((((uint32_t)(ADDR)) >> EPLIST_ENTRY_BUFFER_RSHIFT) & EPLIST_ENTRY_BUFFER_MASK)
++#endif
+ #define EPLIST_ENTRY_NBYTES_POS               16U
+ #define EPLIST_ENTRY_NBYTES_MASK              (0x3FF << EPLIST_ENTRY_NBYTES_POS)
+ #define EPLIST_ENTRY_NBYTES(BYTES)            \

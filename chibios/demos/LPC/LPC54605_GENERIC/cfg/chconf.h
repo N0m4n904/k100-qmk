@@ -32,6 +32,18 @@
 #define _CHIBIOS_RT_CONF_
 #define _CHIBIOS_RT_CONF_VER_7_0_
 
+/*
+ * Take the realtime counter from the platform rather than from the DWT.
+ *
+ * A devboard's DWT works, so this is not needed here for its own sake. It is
+ * here because the keyboard needs it and this is the only build that compiles
+ * the code: it exercises lpc546xx_rit.c and the external arm of
+ * patches/0007-external-realtime-counter.patch, and selftest_run() then measures
+ * what that counter actually ticks at. CORTEX_ENABLE_DWT is left alone, so the
+ * other patch to ChibiOS proper gets its default arm compiled at the same time.
+ */
+#define PORT_USE_EXTERNAL_RT_COUNTER
+
 /*===========================================================================*/
 /**
  * @name System settings

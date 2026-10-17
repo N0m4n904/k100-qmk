@@ -91,6 +91,23 @@ typedef struct {
     selftest_result_t pal_readback;
 
     /**
+     * @brief   The realtime counter advances, at the rate the port claims.
+     *
+     * @details Both halves matter and neither is obvious. A counter that does
+     *          not advance is not a slow clock, it is a hang: the only thing
+     *          built on this counter is chSysPolledDelayX(), which spins until
+     *          the counter passes a value, so a dead counter never returns. And
+     *          a counter running at some other rate scales every microsecond
+     *          delay in the system by the same factor, silently.
+     *
+     *          Measured against the system tick, which is driven from SysTick
+     *          and so is independent of it.
+     */
+    selftest_result_t realtime_counter;
+    /** @brief What it was measured to tick at, in Hz, next to @p sysclk. */
+    uint32_t realtime_counter_hz;
+
+    /**
      * @brief   Every IOCON pad configuration, as found at startup.
      *
      * @details The point of the whole structure. On the keyboard the

@@ -1,0 +1,39 @@
+diff --git a/os/common/ports/ARMv7-M/chcore.h b/os/common/ports/ARMv7-M/chcore.h
+--- a/os/common/ports/ARMv7-M/chcore.h
++++ b/os/common/ports/ARMv7-M/chcore.h
+@@ -931,10 +931,35 @@
+  *
+  * @return              The realtime counter value.
+  */
++#if defined(PORT_USE_EXTERNAL_RT_COUNTER) || defined(__DOXYGEN__)
++/**
++ * @brief   Realtime counter supplied by the platform.
++ *
++ * @details Declared here and defined elsewhere: a platform that sets
++ *          @p PORT_USE_EXTERNAL_RT_COUNTER provides this function, and the
++ *          counter below is not used.
++ *
++ *          It exists for parts whose DWT is not reachable from software, which
++ *          some vendors ship with debug access permanently disabled. There the
++ *          write that starts @p CYCCNT faults and, if it is skipped, the counter
++ *          reads as a constant -- and a constant realtime counter makes
++ *          @p chSysPolledDelayX() spin for ever rather than delay, because it
++ *          waits for a value the counter will never reach.
++ *
++ * @return              The realtime counter value.
++ */
++rtcnt_t port_rt_external_counter_value(void);
++
++__STATIC_FORCEINLINE rtcnt_t port_rt_get_counter_value(void) {
++
++  return port_rt_external_counter_value();
++}
++#else
+ __STATIC_FORCEINLINE rtcnt_t port_rt_get_counter_value(void) {
+ 
+   return DWT->CYCCNT;
+ }
++#endif
+ 
+ #endif /* !defined(_FROM_ASM_) */
+ 

@@ -1,0 +1,67 @@
+diff --git a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+index e5d9fa2..40abd25 100644
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+@@ -84,8 +84,28 @@ static const USBEndpointConfig ep0config = {
+   NULL,
+ };
+ 
++/**
++ * @brief   Endpoint command/status list entries.
++ *
++ * @details Four per logical endpoint, and the count is a property of the
++ *          controller rather than of this driver: the NXP USB device IP comes
++ *          with five logical endpoints on some parts and six on others, and the
++ *          hardware reads an entry for every one of them whether this driver
++ *          uses it or not.
++ *
++ *          Sizing this for five on a six-endpoint controller is not a harmless
++ *          waste. The buffer allocator starts immediately after the list, so the
++ *          sixth endpoint's four entries end up underneath the first endpoint
++ *          buffer -- and the controller then interprets whatever that buffer
++ *          holds as command and status, active bit included, and transfers
++ *          against an address derived from it.
++ */
++#if !defined(LPC_USB_EPLIST_ENTRIES)
++#define LPC_USB_EPLIST_ENTRIES                ((USB_MAX_ENDPOINTS + 1U) * 4U)
++#endif
++
+ struct usb_eplist {
+-  uint32_t entry[20];
++  uint32_t entry[LPC_USB_EPLIST_ENTRIES];
+ };
+ 
+ #define USB_EPLIST ((struct usb_eplist *)LPC_USB_SRAM_START)
+@@ -285,7 +305,7 @@ OSAL_IRQ_HANDLER(LPC_USB_IRQ_VECTOR) {
+   // Clocks, and whatever PLL the family needs to reach 48MHz
+   lpc_usb_clock_init();
+ 
+-  USBD1.epmem_next = (0x50 + LPC_USB_SRAM_START);
++  USBD1.epmem_next = (sizeof (struct usb_eplist) + LPC_USB_SRAM_START);
+ #endif // LPC_USB_USE_USB1 == TRUE
+ }
+ 
+@@ -383,7 +403,7 @@ void usb_lld_reset(USBDriver *usbp) {
+ 
+ 
+   // Reset Allocator
+-  usbp->epmem_next = (0x50 + LPC_USB_SRAM_START);
++  usbp->epmem_next = (sizeof (struct usb_eplist) + LPC_USB_SRAM_START);
+ 
+   usbp->setup_buffer = NULL;
+   for (int i = 0; i < 10; ++i)
+@@ -391,10 +411,11 @@ void usb_lld_reset(USBDriver *usbp) {
+     usbp->epn_buffer[i] = NULL;
+   }
+ 
+-  // Disable all endpoints
+-  for (int i = 0; i < 16; ++i)
++  // Disable every endpoint the controller has, not just the ones this driver
++  // uses: an entry left holding stale data is one the hardware may act on.
++  for (unsigned i = 4U; i < LPC_USB_EPLIST_ENTRIES; ++i)
+   {
+-    USB_EPLIST->entry[i + 4] = EPLIST_ENTRY_DISABLE;
++    USB_EPLIST->entry[i] = EPLIST_ENTRY_DISABLE;
+   }
+ 
+   /* EP0 initialization.*/

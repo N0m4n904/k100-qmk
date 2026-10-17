@@ -7,7 +7,8 @@ PLATFORMSRC := ${CHIBIOS}/os/hal/ports/common/ARMCMx/nvic.c \
                ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/hal_spi_lld.c \
                ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/lpc546xx_pll.c \
                ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/lpc546xx_eeprom.c \
-               ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/lpc546xx_wwdt.c
+               ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/lpc546xx_wwdt.c \
+               ${CHIBIOS_CONTRIB}/os/hal/ports/LPC/LPC546xx/lpc546xx_rit.c
 
 # Required include directories
 PLATFORMINC := ${CHIBIOS}/os/hal/ports/common/ARMCMx \

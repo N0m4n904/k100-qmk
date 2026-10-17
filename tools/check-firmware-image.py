@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
-"""Checks properties of a linked LPC546xx image that only the linker decides.
+"""Checks properties of a linked LPC546xx image that no source file states.
 
-Neither can be asserted from source, and both fail *silently* on hardware -- a
-bad checksum means the boot ROM never starts the image, and an interrupt vector
-in the wrong slot means the peripheral's handler is simply never called. So they
-are checked on the artifact, by whatever built it.
+Each of them fails *silently* on hardware: a bad checksum means the boot ROM
+never starts the image, an interrupt vector in the wrong slot means the
+peripheral's handler is simply never called, and a realtime counter taken from
+an inaccessible DWT turns every microsecond delay into a hang. None is visible
+in a source tree, because each is decided by the linker or by configuration
+spread across several trees -- so they are checked on the artifact, by whatever
+built it.
 
 Used by chibios/test/build-demo.sh and qmk/test/build-k100.sh.
 
-    tools/check-firmware-image.py <elf>
+    tools/check-firmware-image.py <elf> [--allow-dwt]
 
-Needs arm-none-eabi-objdump and arm-none-eabi-nm on PATH.
+Needs arm-none-eabi-objdump on PATH.
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import subprocess
 import sys
@@ -35,10 +39,16 @@ def run(*args: str) -> str:
     return subprocess.run(args, capture_output=True, text=True, check=True).stdout
 
 
-def vector_words(elf: str) -> list[int]:
-    """The .vectors section, as little-endian words."""
+def section_words(elf: str, section: str | None = None) -> list[int]:
+    """One section, or the whole image, as little-endian words.
+
+    objdump prints raw bytes in memory order, so a word has to be reassembled
+    rather than read off the line -- searching that output for an address as
+    written finds nothing, whether or not the address is there.
+    """
+    where = ("-j", section) if section else ()
     words: list[int] = []
-    for line in run("arm-none-eabi-objdump", "-s", "-j", ".vectors", elf).splitlines():
+    for line in run("arm-none-eabi-objdump", "-s", *where, elf).splitlines():
         match = re.match(r"\s*([0-9a-f]{4,8})\s((?:[0-9a-f]{8} ){1,4})", line)
         if match:
             words += [
@@ -50,7 +60,7 @@ def vector_words(elf: str) -> list[int]:
 
 def check_boot_checksum(elf: str) -> bool:
     """The boot ROM sums the first eight vectors and wants zero."""
-    words = vector_words(elf)
+    words = section_words(elf, ".vectors")
 
     # Without this the check would be worthless: a parse that matched nothing
     # leaves an empty list, whose sum is zero, which is the pass condition.
@@ -89,7 +99,7 @@ def check_required_handlers(elf: str) -> bool:
     looking exactly like a dead peripheral. Nothing else in the build catches
     it.
     """
-    words = vector_words(elf)
+    words = section_words(elf, ".vectors")
 
     failed, reported = [], []
     for irq, name in sorted(REQUIRED_HANDLERS.items()):
@@ -108,17 +118,83 @@ def check_required_handlers(elf: str) -> bool:
     return not failed
 
 
+def check_realtime_counter(elf: str, allow_dwt: bool = False) -> bool:
+    """The realtime counter comes from the RIT, and nothing reads the DWT.
+
+    This part's debug block is not reachable from software, so every DWT
+    register reads as a constant and the write that starts the cycle counter
+    faults. ChibiOS's realtime counter is that cycle counter by default, and the
+    one thing built on the realtime counter is chSysPolledDelayX() -- which waits
+    for the counter to pass a value, and so against a constant counter does not
+    delay but hangs. On this platform that function is QMK's wait_us(), which the
+    matrix scan calls before USB is started, so the whole visible symptom was a
+    keyboard that reached QMK's pre-init and vanished.
+
+    Nothing about that is visible in either source tree, and the configuration
+    that avoids it is spread across a keyboard chconf.h, two patches to ChibiOS
+    proper and a driver. Any one of them quietly reverting puts the hang back, so
+    the artifact is checked instead.
+
+    Both halves are checked by the same means, and that is the point of checking
+    the first one. An absence proves nothing unless the method can see a presence
+    -- grepping objdump's `-s` output for these addresses finds neither, because
+    that output is raw bytes and a little-endian word of 0x4002D000 is printed as
+    `00d00240`. So the RIT reference is *required* to be found: it is the control
+    that keeps the DWT half from passing vacuously.
+
+    What this cannot see is an address the compiler builds up with arithmetic
+    instead of loading whole, which lpcRitInit() is itself an example of. The
+    accessor the counter actually goes through loads it whole, so the control
+    holds.
+
+    @p allow_dwt is for an image built for a board whose debug block works,
+    where the stock cycle counter is the better choice and the RIT driver is
+    compiled only to keep it building.
+    """
+    rit_counter_base = 0x4002D000
+    dwt_registers = range(0xE0001000, 0xE0001020, 4)
+
+    words = set(section_words(elf))
+
+    found_dwt = sorted(word for word in dwt_registers if word in words)
+    found_rit = rit_counter_base in words
+
+    problems = []
+    if not found_rit:
+        problems.append(f"no reference to the RIT at 0x{rit_counter_base:08x}")
+    if found_dwt and not allow_dwt:
+        problems.append("DWT at " + ", ".join(f"0x{word:08x}" for word in found_dwt))
+
+    detail = "RIT" if found_rit else "no RIT"
+    detail += ", DWT too" if found_dwt else ", no DWT"
+
+    verdict = "ok" if not problems else "FAIL " + "; ".join(problems)
+    print(f"realtime counter         {verdict}   {detail}")
+    return not problems
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print(__doc__, file=sys.stderr)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("elf", help="the linked image to check")
+    parser.add_argument(
+        "--allow-dwt",
+        action="store_true",
+        help="permit DWT references, for a board whose debug block is accessible",
+    )
+    args = parser.parse_args(argv[1:])
+
+    if not Path(args.elf).is_file():
+        print(f"no such file: {args.elf}", file=sys.stderr)
         return 2
 
-    elf = argv[1]
-    if not Path(elf).is_file():
-        print(f"no such file: {elf}", file=sys.stderr)
-        return 2
-
-    results = [check_boot_checksum(elf), check_required_handlers(elf)]
+    results = [
+        check_boot_checksum(args.elf),
+        check_required_handlers(args.elf),
+        check_realtime_counter(args.elf, allow_dwt=args.allow_dwt),
+    ]
     return 0 if all(results) else 1
 
 

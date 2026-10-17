@@ -94,6 +94,10 @@ git -C "$contrib" apply --whitespace=nowarn \
     "$repo/chibios/patches/0003-bound-usb-controller-waits.patch"
 git -C "$contrib" apply --whitespace=nowarn \
     "$repo/chibios/patches/0004-usb-reset-before-irq.patch"
+git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/chibios/patches/0005-eplist-size-from-controller.patch"
+git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/chibios/patches/0006-eplist-buffer-base.patch"
 git -C "$qmk" init -q .
 git -C "$qmk" apply --whitespace=nowarn \
     "$repo/qmk/patches/0001-mcu-selection-lpc546xx.patch"
@@ -105,6 +109,8 @@ git -C "$qmk" apply --whitespace=nowarn \
 git -C "$qmk/lib/chibios" init -q .
 git -C "$qmk/lib/chibios" apply --whitespace=nowarn \
     "$repo/chibios/patches/0002-optional-dwt-enable.patch"
+git -C "$qmk/lib/chibios" apply --whitespace=nowarn \
+    "$repo/chibios/patches/0007-external-realtime-counter.patch"
 
 echo "placing the LPC546xx port into ChibiOS-Contrib"
 cp -r "$repo/chibios/os/hal/ports/LPC/LPC546xx" "$contrib/os/hal/ports/LPC/"
