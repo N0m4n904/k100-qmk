@@ -328,32 +328,59 @@ not reached a configured state by the time it fires, writes the EEPROM word and 
 firmware that never becomes usable then puts itself back in the bootloader without anyone
 touching the keyboard.
 
+### Where the Escape check sits, and what it therefore covers
+
+All three routes run *inside* the firmware, so the question is how much of boot happens before
+the earliest of them. The answer is less than it looks, because `keyboard_pre_init_kb` is not
+reached from `keyboard_init()` — it is reached from `keyboard_setup()`, which QMK calls
+earlier:
+
+```c
+int main(void) {
+    platform_setup();     // halInit(): clocks, palInit, boardInit;  then chSysInit()
+    protocol_setup();     // usb_device_state_init(), trivial
+    keyboard_setup();     // matrix_setup(); keyboard_pre_init_quantum() -> keyboard_pre_init_kb()
+    protocol_pre_init();  // init_usb_driver()
+    keyboard_init();      // matrix_init(), RGB init, ...
+    while (true) { ... housekeeping_task(); }
+}
+```
+
+So the Escape check runs after the clocks are right and the kernel is up — both of which it
+needs, one for the EEPROM divider and one for `wait_us()` — and **before** the USB driver, the
+matrix and the LED driver. Everything this project is actually guessing at is downstream of it.
+
+That matters because of what is in the USB driver. The shared LPC driver in ChibiOS-Contrib,
+which has never run on this part, contains five unbounded spins:
+
+```
+usb_lld_disable_endpoints   while (LPC_USB->EPSKIP) {}
+usb_lld_read_setup          while (usbp->setup_buffer == 0) {}
+usb_lld_stall_out/in        while (LPC_USB->EPSKIP & skip_flag) {}
+usb_lld_clear_out/in        while (LPC_USB->EPSKIP & skip_flag) {}
+```
+
+Several are reached from interrupt context during enumeration, and `read_setup`'s in
+particular would spin forever if the endpoint memory were not where the driver thinks it is.
+Those are exactly the hangs the Escape route has to survive, and it does, because it has
+already run by then.
+
 ### The window none of them covers
 
-All three run *inside* the firmware, so all three need boot to get as far as
-`keyboard_pre_init_kb`. That is where the Escape check lives, and it cannot be moved earlier:
-programming the EEPROM needs its clock divider set from the real system clock, and the system
-clock is only what it should be once `halInit()` has run.
+| Stage | Unbounded waits in it | Confidence |
+| --- | --- | --- |
+| `crt0`, `__cpu_init` | none | small, and now known to need the SRAM clock enable |
+| `halInit()` — clocks, `palInit()` | two, both `lpc_set_divider` waiting on `REQFLAG` | FRO at 48 MHz straight to core and USB; the PLL lock wait is compiled out of this configuration. Every register field is checked by `chibios/test/check-registers.sh` and every pad mode by the PAL encoding check |
+| `chSysInit()` | none | ChibiOS's own, not this project's |
 
-So the code that executes with no way back is:
+That is the whole of it: a fault, or one of two divider waits, in code that is either trivial
+or statically checked. A hang there is unrecoverable — as established above, a power cycle does
+not help — but it is a much smaller target than the USB bring-up, which is covered.
 
-| Stage | Confidence |
-| --- | --- |
-| `crt0`, `__cpu_init` | Small and now known to need the SRAM clock enable |
-| `halInit()` — clock setup, `palInit()` | FRO at 48 MHz straight to core and USB, no PLL in the path; every register field is checked by `chibios/test/check-registers.sh` and every pad mode by the PAL encoding check |
-| `chSysInit()` | ChibiOS's own, not this project's |
-| `protocol_pre_init()` — USB driver start | **The least proven thing in the list.** `tools/check-firmware-image.py` verifies what fails silently about it — endpoint memory alignment, its 4 MB window, bus reachability — but the driver has never run |
-
-A fault or hang in any of those is unrecoverable, and as established above a power cycle does
-not help. Everything this project is *actually* guessing at — matrix polarity, strobe timing,
-the SPI pins, the LED driver — initialises after the Escape check, which is the point of
-putting it where it is.
-
-Moving the check into `board_init()`, which `halInit()` calls at its end, would close
-`chSysInit()` and the USB bring-up out of that window. It is deliberately not done: there is no
-kernel at that point, so `wait_us()` is unusable and the matrix read would need its own delay
-primitive. Adding never-executed code to the earliest and most fragile part of boot, in order
-to guard a later part of boot, trades a narrow failure for a broader one.
+One more hang mattered and has been removed. `lpcEepromWrite`'s completion poll was unbounded,
+which quietly defeated the read-back guard around it: a flag that never arrives would hang the
+recovery path itself rather than reporting that the write failed. It is now bounded, and the
+function returns `false` instead of spinning.
 
 ## The unknown
 

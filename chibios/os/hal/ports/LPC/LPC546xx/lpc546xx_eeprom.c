@@ -66,6 +66,17 @@
 #define EEPROM_AUTOPROG_WORD                1U
 
 /**
+ * @brief   Upper bound on the completion poll, in iterations.
+ *
+ * @details A safety bound, not a timing specification. A word program takes a
+ *          few milliseconds; this is several times longer than that at any clock
+ *          this part runs, so it cannot trip on a write that is merely slow. It
+ *          exists only so that a completion flag which never arrives ends the
+ *          loop instead of the boot.
+ */
+#define EEPROM_PROG_SPINS                   1000000U
+
+/**
  * @brief   The array itself.
  */
 #define EEPROM_ARRAY                                                        \
@@ -117,9 +128,20 @@ uint32_t lpcEepromRead(uint32_t word) {
  *          either before the kernel is up or on the way to a reset, where there
  *          is nothing left to yield to.
  *
+ *          The poll is **bounded**, which is the whole reason this returns a
+ *          value. The stock firmware's equivalent spins forever on the same
+ *          flag, and it can afford to -- it is one of many things that driver
+ *          does. Here it is the recovery path: a caller programs the operating
+ *          mode word and resets into the bootloader, and that caller wants to
+ *          know when the write did not happen so it can avoid resetting into a
+ *          loop. A spin that never ends reports nothing and simply hangs,
+ *          throwing away the answer.
+ *
  * @param[in] word      index into the array, not a byte offset
  * @param[in] value     the word to program
- * @return              @p false if @p word is out of range, otherwise @p true
+ * @return              @p true once the hardware reports the program complete;
+ *                      @p false if @p word is out of range or the completion
+ *                      flag never arrived
  */
 bool lpcEepromWrite(uint32_t word, uint32_t value) {
 
@@ -134,10 +156,13 @@ bool lpcEepromWrite(uint32_t word, uint32_t value) {
 
   EEPROM_ARRAY[word] = value;
 
-  while ((EEPROM->INTSTAT & EEPROM_INTSTAT_END_OF_PROG_MASK) == 0U) {
+  for (uint32_t spins = EEPROM_PROG_SPINS; spins > 0U; spins--) {
+    if ((EEPROM->INTSTAT & EEPROM_INTSTAT_END_OF_PROG_MASK) != 0U) {
+      return true;
+    }
   }
 
-  return true;
+  return false;
 }
 
 /** @} */
