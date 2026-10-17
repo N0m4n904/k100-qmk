@@ -302,6 +302,66 @@ fn write_image(device: &Device, image: &[u8], plan: &Plan) -> Result<()> {
     Ok(())
 }
 
+/// Reads the firmware file back out of the keyboard and compares it.
+///
+/// Read-only, and the cheapest way to answer a question that otherwise needs
+/// guesswork: is the image in flash the image that was sent? Every status byte
+/// during a write says a report was *accepted*, and none of them says the bytes
+/// landed where they should. If the chunking is wrong the CRC in flash will not
+/// match the header, the bootloader's own validation fails, and it refuses to
+/// start an image that this tool reported writing successfully.
+///
+/// `DESCRIBE_BUFFER` gives the length, then `READ_BUFFER` walks the buffer the
+/// same way the write side walks it, with no offset in the request.
+pub fn read_firmware(device: &Device, expected: &[u8]) -> Result<()> {
+    let opened = device.open_file(FIRMWARE_HANDLE, protocol::FILE_ID_FIRMWARE)?;
+    if opened.status() != protocol::Status::Success {
+        bail!("opening the firmware file returned {:?}", opened.status());
+    }
+
+    let result = read_back(device, expected);
+    let unbound = device.unbind_buffers(FIRMWARE_HANDLE);
+    let outcome = result;
+    unbound.context("unbinding the firmware buffer after reading")?;
+    outcome
+}
+
+fn read_back(device: &Device, expected: &[u8]) -> Result<()> {
+    let described = device.exchange(&Request::describe_buffer(FIRMWARE_HANDLE))?;
+    println!("  describe-buffer status {:?}, payload {:02x?}",
+             described.status(), described.payload().get(..8).unwrap_or(described.payload()));
+
+    let mut read = Vec::with_capacity(expected.len());
+    while read.len() < expected.len() {
+        let response = device.exchange(&Request::read_buffer(FIRMWARE_HANDLE))?;
+        if response.status() != protocol::Status::Success {
+            bail!("read-buffer returned {:?} after {} bytes",
+                  response.status(), read.len());
+        }
+
+        let chunk = response.payload();
+        if chunk.is_empty() {
+            bail!("read-buffer returned no data after {} bytes", read.len());
+        }
+
+        let wanted = (expected.len() - read.len()).min(chunk.len());
+        read.extend_from_slice(&chunk[..wanted]);
+    }
+
+    match read.iter().zip(expected).position(|(a, b)| a != b) {
+        None => {
+            println!("  {} bytes read back identical to the image that was sent",
+                     read.len());
+            Ok(())
+        }
+        Some(at) => bail!(
+            "flash differs from the image sent, first at offset {at:#x}: \
+             flash has {:#04x}, the image has {:#04x}",
+            read[at], expected[at]
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

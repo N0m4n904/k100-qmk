@@ -46,6 +46,13 @@ enum Action {
     /// reaching behind the desk. Changes no firmware and no setting.
     Reset,
 
+    /// Read the firmware back out of the keyboard and compare it with a local
+    /// image. Read-only: it opens the firmware file but writes nothing.
+    ReadFirmware {
+        /// The image that was written, to compare against.
+        path: std::path::PathBuf,
+    },
+
     /// Put the keyboard into bootloader mode. Reversible with `exit-bootloader`.
     EnterBootloader {
         /// The product id to act on, and the only device that will be opened.
@@ -93,6 +100,7 @@ fn main() -> Result<()> {
         Action::VerifyImage { path } => verify_image(&path),
         Action::Files => files(),
         Action::Reset => reset(),
+        Action::ReadFirmware { path } => read_firmware(&path),
         Action::EnterBootloader { device } => enter_bootloader(device),
         Action::ExitBootloader => exit_bootloader(),
         Action::Flash { path, commit, device } => flash(&path, commit, device),
@@ -303,6 +311,32 @@ fn files() -> Result<()> {
         }
         Ok(())
     })
+}
+
+/// Reads the firmware back and checks it against what was written.
+///
+/// The question it answers is whether a write that reported success actually put
+/// the right bytes in flash. Nothing else can tell us: a status byte per report
+/// says the report was accepted, not that the image is intact.
+fn read_firmware(path: &std::path::Path) -> Result<()> {
+    let expected = std::fs::read(path)
+        .with_context(|| format!("reading {}", path.display()))?;
+
+    let device = open()?;
+    let mode = device.operating_mode()?;
+    println!("{}", device.description());
+    println!("  operating mode {mode:?}");
+    println!("  comparing {} bytes against {}", expected.len(), path.display());
+
+    /* The bootloader already accepts file commands -- writing firmware from it is
+       the normal path -- and it has no host-controlled mode to switch into, so
+       asking for one re-enumerates the device and loses the connection. Only the
+       application needs the handshake. */
+    if WRITABLE_MODES.contains(&mode) {
+        roundtrip::read_firmware(&device, &expected)
+    } else {
+        device.with_host_control(|| roundtrip::read_firmware(&device, &expected))
+    }
 }
 
 /// Re-enumerates the keyboard and reports whether that revived it.

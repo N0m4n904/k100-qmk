@@ -77,6 +77,45 @@
 #    define K100_USB_WATCHDOG_MS 10000
 #endif
 
+/*
+ * Reporting a few bits of register state by how long the keyboard stays away.
+ *
+ * Bringing USB up on this board is being done without a debug probe, and a
+ * controller that never connects produces no observable at all: the host logs
+ * nothing, so every hypothesis costs a whole flash cycle to test and returns one
+ * bit. This is the way out of that. The firmware already decides when to hand
+ * itself back to the bootloader, so the *delay* before it does is a channel the
+ * host can read by watching the bus, and a few bits at a time is enough to tell
+ * which of several guesses is true.
+ *
+ * Enable it by defining K100_USB_DIAGNOSTIC. It is off by default because it
+ * deliberately makes recovery slower, and because a firmware that works has
+ * nothing to report.
+ */
+#ifdef K100_USB_DIAGNOSTIC
+/* Reported on the watchdog path: 3 s plus 2 s per unit of the code. */
+#    define DIAGNOSTIC_BASE_MS 3000
+#    define DIAGNOSTIC_STEP_MS 2000
+
+/* Reported unconditionally, before anything else runs, purely to answer "did
+   this firmware execute at all". Long enough that it cannot be confused with
+   the two or three seconds a bootloader reboot takes. With the Escape check
+   skipped as well, a keyboard that disappears for at least this long has
+   certainly run our reset handler, our clock setup and our kernel. */
+#    define DIAGNOSTIC_MARKER_MS 20000
+
+/* The earliest marker there is. QMK calls early_hardware_init_pre() from
+   __early_init, which crt0 reaches before it fills the stacks, copies .data,
+   clears .bss or runs a line of the HAL -- so a delay here distinguishes the two
+   remaining explanations for a keyboard that never appears:
+   the bootloader is refusing to branch to this image at all, or it branches and
+   the image dies before QMK's first hook. A busy loop because there is no kernel
+   and no initialised RAM; the count is approximate because the clock is still
+   whatever the bootloader left running, which is the point -- it only has to be
+   unmistakably long. */
+#    define DIAGNOSTIC_EARLY_LOOPS 150000000UL
+#endif
+
 bool k100_enter_bootloader(void) {
     if (!lpcEepromWrite(EEPROM_WORD_OPERATING_MODE, OPERATING_MODE_BOOTLOADER)) {
         return false;
@@ -158,7 +197,7 @@ void mcu_reset(void) {
  * It fails safe in the direction that matters: anything other than exactly this
  * pattern means "not held", and the keyboard boots normally.
  */
-static bool escape_held(void) {
+__attribute__((unused)) static bool escape_held(void) {
     const uint32_t escape = 1UL << ESCAPE_COL;
     const uint32_t senses = ((1UL << MATRIX_COLS) - 1UL) & ~(1UL << ESCAPE_ROW_UNUSED_COL);
     const uint32_t others = senses & ~escape;
@@ -183,6 +222,30 @@ static bool escape_held(void) {
     return true;
 }
 
+#ifdef K100_USB_DIAGNOSTIC
+void early_hardware_init_pre(void) {
+    for (volatile uint32_t spin = 0; spin < DIAGNOSTIC_EARLY_LOOPS; spin++) {
+    }
+}
+
+/**
+ * The three bits of DEVCMDSTAT that say why a device is not on the bus.
+ *
+ * DEV_EN is the controller enabled at all, DCON is the D+ pull-up the host
+ * actually sees, and VBUS_DEBOUNCED is whether the controller believes the
+ * cable is powered -- a high-speed controller that does not see VBUS will not
+ * connect however correctly everything else is set up, and this part offers a
+ * FORCE_VBUS override for boards that do not wire the sense line.
+ */
+static uint8_t usb_diagnostic_code(void) {
+    const uint32_t status = USBHSD->DEVCMDSTAT;
+
+    return (uint8_t)(((status & USBHSD_DEVCMDSTAT_DEV_EN_MASK) ? 1U : 0U) |
+                     ((status & USBHSD_DEVCMDSTAT_DCON_MASK) ? 2U : 0U) |
+                     ((status & USBHSD_DEVCMDSTAT_VBUS_DEBOUNCED_MASK) ? 4U : 0U));
+}
+#endif
+
 void keyboard_pre_init_kb(void) {
     /*
      * Deliberately here rather than in one of QMK's earlier hooks. Programming
@@ -195,9 +258,15 @@ void keyboard_pre_init_kb(void) {
      * are initialised after this, and those are the parts most likely to hang
      * on hardware this project has not fully mapped.
      */
+#ifdef K100_USB_DIAGNOSTIC
+    /* The marker first, so nothing downstream can prevent it being observed,
+       and no Escape check, so it cannot cut the measurement short. */
+    wait_ms(DIAGNOSTIC_MARKER_MS);
+#else
     if (escape_held()) {
         (void)k100_enter_bootloader();
     }
+#endif
 
     keyboard_pre_init_user();
 }
@@ -239,6 +308,11 @@ void housekeeping_task_kb(void) {
          * loop would be a busy wait on something that is not going to change.
          * Latch instead and let the keyboard run as it is.
          */
+#ifdef K100_USB_DIAGNOSTIC
+        /* Stay away for a length of time that encodes the register state, so
+           whoever is watching the bus can read it off. */
+        wait_ms(DIAGNOSTIC_BASE_MS + (DIAGNOSTIC_STEP_MS * usb_diagnostic_code()));
+#endif
         if (!k100_enter_bootloader()) {
             usb_was_ready = true;
         }

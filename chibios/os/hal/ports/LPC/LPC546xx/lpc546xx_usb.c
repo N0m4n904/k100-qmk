@@ -59,10 +59,21 @@ void lpc_usb_clock_init(void) {
      sequence is careful to avoid. */
   SYSCON->AHBCLKCTRLCLR[2] = SYSCON_AHBCLKCTRL_USB1D_MASK;
 
-  /* The high-speed PHY needs its own PLL as well as the transceiver, and both
-     are powered here rather than in lpc_usb_power_on(): the clock has to be
-     running before the controller's gate is enabled below, and the HAL calls
-     this first. PDRUNCFG bits are power *down* enables, so clearing powers up. */
+  /* VD5 first, and this is the one that matters: it is the *supply* for both
+     USB PHYs, and without it the transceiver has no power at all. A device that
+     never powers its PHY never pulls up D+, so the host sees an empty port --
+     no descriptor read, no error, nothing in the kernel log. That was this
+     port's symptom for three flash cycles.
+
+     This is the step NXP performs in POWER_SetUsbPhy(), which ships only inside
+     their binary power library and so looked unreachable. It is not: the domain
+     is a documented PDRUNCFG bit, described in NXP's own device header as
+     "PDEN_VD5 - Power control both USB0 PHY and USB1 PHY". */
+  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_VD5_MASK;
+  chSysPolledDelayX(US2RTC(LPC_SYS_FREQUENCY, 50U));
+
+  /* Then the transceiver and its PLL inside that domain, and the endpoint SRAM.
+     PDRUNCFG bits are power *down* enables, so clearing powers up. */
   SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
                            SYSCON_PDRUNCFG_PDEN_USB1_PLL_MASK |
                            SYSCON_PDRUNCFG_PDEN_USB_RAM_MASK;
@@ -102,7 +113,8 @@ void lpc_usb_power_on(void) {
      but stopped USB does not present itself on the bus; on this part the clock
      cannot be brought up without the PHY, so the split does not survive and
      this is what is left of it. */
-  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
+  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_VD5_MASK |
+                           SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
                            SYSCON_PDRUNCFG_PDEN_USB1_PLL_MASK;
 }
 

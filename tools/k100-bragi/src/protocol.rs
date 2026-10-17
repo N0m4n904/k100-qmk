@@ -351,6 +351,15 @@ impl Request {
         Self::new(Command::DescribeBuffer, vec![handle])
     }
 
+    /// Reads the next slice of an open buffer: `[handle]`.
+    ///
+    /// From `readBuffer` in the updater bundle, which is
+    /// `sendCommand(READ_BUFFER, 0, [bufferIndex])` and carries no offset -- the
+    /// device walks the buffer itself, exactly as the write side does.
+    pub fn read_buffer(handle: u8) -> Self {
+        Self::new(Command::ReadBuffer, vec![handle])
+    }
+
     /// `08 05 <count> <handle>`
     pub fn unbind_buffers(handle: u8) -> Self {
         Self::new(Command::UnbindBuffers, vec![1, handle])

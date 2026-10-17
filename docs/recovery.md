@@ -382,57 +382,81 @@ which quietly defeated the read-back guard around it: a flag that never arrives 
 recovery path itself rather than reporting that the write failed. It is now bounded, and the
 function returns `false` instead of spinning.
 
-## The firmware runs, and recovered itself — measured
+## The bootloader refuses our image — and an earlier claim here was wrong
 
-Custom firmware was written to the keyboard and the bus watched while it booted. The device
-left the bus, stayed off it for about nine seconds, and then the **bootloader** came back:
+**Correction.** An earlier version of this document, and the commit that added it,
+claimed the custom firmware ran and recovered itself via its USB watchdog. That
+was wrong, and the mistake is worth recording because it was a reasonable-looking
+inference from a badly controlled experiment.
 
-```
-15:08:45  bcdDevice 000a     bootloader, before the write
-15:08:48  ABSENT             reset into the new firmware
-15:08:57  bcdDevice 000a     bootloader again
-```
+The reasoning was: the keyboard disappeared for about nine seconds and came back
+as the bootloader, nine seconds is the watchdog's ten, therefore the firmware ran
+and the watchdog fired. The flaw is that **the flash had been performed from
+bootloader mode**, which leaves the EEPROM mode word set to `BOOTLOADER`. On the
+reset that follows an apply, the bootloader reads that word and stays put. The
+application was never started at all, and the nine seconds was the apply's own
+flash work plus a bootloader reboot.
 
-Nine seconds is the USB watchdog's ten. Nothing else in the system takes that long, and the
-only code that can put the keyboard back into the bootloader is this firmware's own. So the
-gap is a measurement of how far boot got, and it got all the way:
+What settles it is a marker: a long delay placed in `early_hardware_init_pre`,
+which QMK calls from `__early_init` before `crt0` has filled the stacks, copied
+`.data` or cleared `.bss` — the earliest point any of this project's code runs.
+With the delay set to tens of seconds, the keyboard still returned in two. **Not
+one instruction of this firmware has ever executed.**
 
-- the bootloader branched to the entry in the container header;
-- `crt0` ran, installed `VTOR`, and `__cpu_init` clocked SRAM1 to SRAM3 before the 160 KB of
-  `ram0` was zeroed;
-- `halInit()` configured the clocks — the one step in the unprotected window that had never
-  executed — and `palInit()` and `chSysInit()` followed;
-- the Escape check ran and correctly decided Escape was not held;
-- USB was started, and did not enumerate;
-- **the main loop turned**, since `housekeeping_task_kb` is what counts the ten seconds;
-- the EEPROM mode word was programmed and `NVIC_SystemReset` taken.
+### The oracle that makes this tractable
 
-That last point is the one worth dwelling on: **the recovery path is no longer theoretical.**
-The EEPROM write, the read-back, the reset and the bootloader's reading of the mode word have
-all now happened on hardware, unattended, in exactly the situation they exist for.
+The operating mode after an apply is a clean accept/reject verdict, and reading it
+costs nothing:
 
-What does not work is USB enumeration. That is now the whole of the problem, and it is a
-problem with the keyboard reachable and reflashable rather than a brick.
+| After `flash … --commit` | Meaning |
+| --- | --- |
+| `SelfOperated` | the bootloader accepted the image and started it |
+| `Bootloader` | it programmed the image, and refused to run it |
 
-### The first attempt also found a real bug
+Corsair's own `0.35.288`, written by this same tool from this same bootloader
+mode, comes back `SelfOperated` and boots immediately — no `exit-bootloader`
+needed. So the write path, the chunking, the apply and its checksum are all
+sound. The bootloader is validating the image and declining ours.
 
-Before this, the same image returned to the bootloader after about *three* seconds rather than
-nine — two boot cycles rather than one plus a timeout. The cause was the Escape check asking
-only whether Escape differed from the *majority* of its row. A reading that is simply wrong
-scatters bits arbitrarily, and Escape lands on the minority side of that about half the time,
-so the check fired on a keyboard nobody was touching. It now requires every other populated
-sense in the row to agree unanimously, across four consecutive samples, which a garbage read
-fails on the first one.
+### What has been ruled out
 
-It is worth noting what that near-miss looked like: firmware that silently put itself into the
-bootloader on every boot, indistinguishable from firmware that would not run at all.
+Each of these was tested against the oracle, one variable at a time:
 
-### Writing from the bootloader uses 64-byte reports, and that works too
+| Hypothesis | Result |
+| --- | --- |
+| Version `0.99.0` is unacceptable | **No** — `0.35.289` is also refused |
+| The build date and time strings | **No** — copying Corsair's exactly changes nothing |
+| The image is too short (23 KB against 150 KB) | **No** — padded to exactly their length, still refused |
+| The payload starts with 980 zero bytes, so the slot looks blank | **No** — a real Thumb trampoline there changes nothing |
 
-The second write went out as **392 chunks** where the first, from host-controlled mode, took
-24. Same image, same code: the report size comes from the endpoint descriptor, which is 64
-bytes in the bootloader and 1024 in the application. Both paths are now exercised against
-hardware.
+The trampoline was kept regardless: it costs nothing, it makes the first word
+plainly non-blank, and it means that a bootloader which branched to the payload
+start rather than to the header's entry would still reach the right place.
+
+What remains is the **entry point** or the **payload content**. The header is
+otherwise byte-identical in structure to an image that works.
+
+### Next, in order
+
+1. **Verify the write is byte-exact**, by opening file id 3 and reading it back
+   through `READ_BUFFER`. This is read-only and therefore free. If the image in
+   flash differs from the image sent, its CRC fails the bootloader's own check and
+   that alone explains the refusal — and it would explain why a 150 KB image
+   survives where a 23 KB one does not, since the two use different chunk counts
+   and a different final partial chunk.
+2. **Bisect the payload** against the oracle, if the write proves exact.
+3. The trailing twelve bytes of both official images are three Thumb function
+   pointers — `0x0001002d`, `0x00010051` and one that moves between versions.
+   The first two are the first two functions in the image, so this is the
+   linker's `.init_array` rather than anything the bootloader reads. Recorded so
+   nobody else spends time on it.
+
+**A caution for whoever continues this.** Rejection is the safe outcome: the
+keyboard stays in the bootloader, reachable and reflashable. An image that is
+*accepted* and then crashes is the dangerous one, because the bootloader will
+hand control to it on every reset and this firmware's escape hatches only help
+once it reaches `keyboard_pre_init_kb`. Do not flash a variant whose code is
+knowingly wrong just to see whether the bootloader likes it.
 
 ## Reading the result of a custom flash
 

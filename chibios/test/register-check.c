@@ -75,8 +75,17 @@ void lpc546xx_register_check(void) {
   SYSCON->AHBCLKCTRLSET[2] = SYSCON_AHBCLKCTRL_USB1D_MASK |
                              SYSCON_AHBCLKCTRL_USB1RAM_MASK;
   SYSCON->FROCTRL |= SYSCON_FROCTRL_USBCLKADJ_MASK;
-  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
+  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_VD5_MASK |
+                           SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
+                           SYSCON_PDRUNCFG_PDEN_USB1_PLL_MASK |
                            SYSCON_PDRUNCFG_PDEN_USB_RAM_MASK;
+
+  /* VD5 is the supply for both USB PHYs, and powering it is what NXP's binary
+     power library does in POWER_SetUsbPhy(). Pinned because the whole of USB
+     depends on this one bit being the right one, and the name says so only in
+     the header's field description. */
+  _Static_assert(SYSCON_PDRUNCFG_PDEN_VD5_SHIFT == 28U,
+                 "PDEN_VD5 has moved; it is the USB PHY supply domain");
 }
 
 

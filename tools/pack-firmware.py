@@ -25,6 +25,7 @@ import re
 import struct
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -47,6 +48,18 @@ VECTOR_TABLE_OFFSET = 0x400
 
 #: Flash available past Corsair's bootloader.
 APPLICATION_SIZE = 448 * 1024
+
+#: The trampoline, as Thumb machine code. See trampoline() for what it does and
+#: why the header's entry point aims here. Disassembled by --check rather than
+#: trusted, because the bootloader branches to it.
+TRAMPOLINE_CODE = bytes((0x10, 0xB5,    # push {r4, lr}
+                         0x01, 0x48,    # ldr  r0, [pc, #4]
+                         0x00, 0x47,    # bx   r0
+                         0x00, 0xBF))   # nop
+TRAMPOLINE_NOP = (0x00, 0xBF)
+
+#: Offset of the trampoline's entry, relative to the start of the image.
+TRAMPOLINE_ENTRY_OFFSET = HEADER_SIZE
 
 
 def verify(images: list[Path]) -> int:
@@ -116,22 +129,43 @@ def check(path: Path) -> bool:
                     f"entry 0x{container.entry:08X} lands inside the image, at "
                     f"offset 0x{entry_offset:X}"))
 
-    # The bootloader branches to the header's entry. The vector table carries its
-    # own idea of the reset handler. If those two disagree the image has two
-    # answers to where it starts, and only one of them is used.
-    #
-    # Only an image linked by LPC546xx_app_at_64k.ld has a table there, so this
-    # pair is skipped otherwise; it does not apply to Corsair's own images, whose
-    # code starts well before 0x400.
-    table_offset = VECTOR_TABLE_OFFSET
-    if table_offset + 8 <= len(image):
-        stack, reset = struct.unpack_from("<II", image, table_offset)
-        results.append((container.entry == reset,
-                        f"header entry 0x{container.entry:08X} agrees with the vector "
-                        f"table's reset handler 0x{reset:08X}"))
-        results.append((0x20000000 <= stack < 0x20028000,
-                        f"vector table's initial stack pointer 0x{stack:08X} is in "
-                        f"reachable SRAM"))
+    # The bootloader branches to the header's entry. Where that is a trampoline,
+    # the thing to check is that the trampoline is real code that jumps to the
+    # vector table's reset handler -- a wrong jump here is branched to by the
+    # bootloader and is not recoverable, so it is disassembled rather than
+    # trusted.
+    trampoline_entry = APPLICATION_BASE + TRAMPOLINE_ENTRY_OFFSET + 1
+    if container.entry == trampoline_entry and len(image) > HEADER_SIZE + 12:
+        code = image[HEADER_SIZE:HEADER_SIZE + len(TRAMPOLINE_CODE)]
+        target = int.from_bytes(
+            image[HEADER_SIZE + len(TRAMPOLINE_CODE):HEADER_SIZE + len(TRAMPOLINE_CODE) + 4],
+            "little")
+
+        results.append((code == TRAMPOLINE_CODE,
+                        f"trampoline code at 0x{trampoline_entry & ~1:08X} is the "
+                        f"expected {len(TRAMPOLINE_CODE)} bytes"))
+        results.append((disassembles_as(code, ("push", "ldr", "bx", "nop")),
+                        "trampoline disassembles as push / ldr / bx / nop"))
+
+        table = VECTOR_TABLE_OFFSET
+        if table + 8 <= len(image):
+            stack, reset = struct.unpack_from("<II", image, table)
+            results.append((target == reset,
+                            f"trampoline jumps to 0x{target:08X}, the vector "
+                            f"table's reset handler 0x{reset:08X}"))
+            results.append((0x20000000 <= stack < 0x20028000,
+                            f"vector table's initial stack pointer 0x{stack:08X} "
+                            f"is in reachable SRAM"))
+    else:
+        table = VECTOR_TABLE_OFFSET
+        if table + 8 <= len(image):
+            stack, reset = struct.unpack_from("<II", image, table)
+            results.append((container.entry == reset,
+                            f"header entry 0x{container.entry:08X} agrees with the "
+                            f"vector table's reset handler 0x{reset:08X}"))
+            results.append((0x20000000 <= stack < 0x20028000,
+                            f"vector table's initial stack pointer 0x{stack:08X} is "
+                            f"in reachable SRAM"))
 
     for passed, text in results:
         print(f"  {'ok  ' if passed else 'FAIL'}  {text}")
@@ -146,6 +180,68 @@ def check(path: Path) -> bool:
           f"and self-consistent.")
     print("It does not mean the firmware runs: nothing in it has ever executed.")
     return True
+
+
+def disassembles_as(code: bytes, mnemonics: tuple[str, ...]) -> bool:
+    """Does this machine code disassemble to these instructions, in order?
+
+    Used on the trampoline, because hand-encoded Thumb that the bootloader
+    branches to is not something to take on trust.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".bin") as raw:
+        raw.write(code)
+        raw.flush()
+        try:
+            listing = subprocess.run(
+                ["arm-none-eabi-objdump", "-D", "-b", "binary", "-m", "arm",
+                 "-M", "force-thumb", raw.name],
+                capture_output=True, text=True, check=True).stdout
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+
+    found = [line.split("\t")[2].split()[0]
+             for line in listing.splitlines()
+             if line.count("\t") >= 2 and line.strip().startswith(("0:", "2:", "4:", "6:"))]
+    return tuple(found) == mnemonics
+
+
+def trampoline(length: int, entry: int) -> bytes:
+    """The bytes between the header and the code: a real jump to the entry.
+
+    An image linked with its vector table on a 1 KB boundary leaves a gap after
+    the 0x2c header, and the obvious thing to put there is zeros. This puts
+    working code there instead, and the header's entry points at it rather than
+    straight at the reset handler. Three reasons, in increasing order of how much
+    they are guesses:
+
+    - the first word is then plainly not blank, which is what a "is anything
+      programmed here" check would look at;
+    - a bootloader that branches to the start of the payload rather than to the
+      entry named in the header still arrives at the right place;
+    - the first instruction is a `push`, which is how the entry point of every
+      published Corsair image begins. Whether the bootloader cares is unknown;
+      matching it costs two bytes.
+
+        push {r4, lr}        ; prologue, never returned from
+        ldr  r0, [pc, #4]    ; the literal below
+        bx   r0
+        nop                  ; aligns the literal
+        .word entry
+
+    The remainder is filled with Thumb nops so that nothing in the gap reads as
+    erased or blank flash.
+
+    The encoding is checked by `--check`, which disassembles it. A wrong jump here
+    would be branched to by the bootloader and would be unrecoverable, so it is
+    not hand-verified.
+    """
+    if length == 0:
+        return b""
+    if length < len(TRAMPOLINE_CODE) + 4:
+        raise SystemExit(f"{length} bytes is too little for a trampoline")
+
+    body = TRAMPOLINE_CODE + entry.to_bytes(4, "little")
+    return body + bytes(TRAMPOLINE_NOP) * ((length - len(body)) // 2)
 
 
 def entry_from_elf(elf: Path) -> int:
@@ -266,15 +362,21 @@ def main(argv: list[str]) -> int:
               f"see LPC546xx_app_at_64k.ld", file=sys.stderr)
         return 1
 
-    padding = bytes(gap - HEADER_SIZE)
-    payload = padding + code
+    payload = trampoline(gap - HEADER_SIZE, entry) + code
+
+    # With a trampoline present, the header names it rather than the reset
+    # handler: it is the thing the bootloader should branch to, and it jumps on
+    # to `entry` itself. Without one -- an image linked straight after the header
+    # -- there is nothing in between and the header names the entry directly.
+    header_entry = (APPLICATION_BASE + TRAMPOLINE_ENTRY_OFFSET + 1
+                    if gap > HEADER_SIZE else entry)
 
     _, minor, patch = (int(p) for p in args.version.split("."))
     now = datetime.now(timezone.utc)
 
     container = Container(
         payload=payload,
-        entry=entry,
+        entry=header_entry,
         product_id=args.pid,
         build_date=now.strftime("%b %d %Y"),
         build_time=now.strftime("%H:%M:%S"),
@@ -285,16 +387,21 @@ def main(argv: list[str]) -> int:
 
     low = APPLICATION_BASE + HEADER_SIZE
     high = APPLICATION_BASE + APPLICATION_SIZE
-    if not low <= (entry & ~1) < high:
-        print(f"refusing: entry 0x{entry:08X} is outside the application region "
-              f"0x{low:05X}..0x{high:05X}", file=sys.stderr)
-        return 1
+    for name, address in (("entry", entry), ("header entry", header_entry)):
+        if not low <= (address & ~1) < high:
+            print(f"refusing: {name} 0x{address:08X} is outside the application "
+                  f"region 0x{low:05X}..0x{high:05X}", file=sys.stderr)
+            return 1
 
     args.out.write_bytes(container.pack())
     print(f"wrote {args.out}")
     print(f"  {container.describe()}")
-    print(f"  header 0x00..0x{HEADER_SIZE:02X}, then {len(padding)} bytes of padding, "
-          f"then {len(code)} bytes of code at 0x{load:08X}")
+    print(f"  header 0x00..0x{HEADER_SIZE:02X}, then a {gap - HEADER_SIZE}-byte "
+          f"trampoline at 0x{header_entry & ~1:08X}, then {len(code)} bytes of "
+          f"code at 0x{load:08X}")
+    if header_entry != entry:
+        print(f"  the bootloader is sent to the trampoline, which jumps to "
+              f"0x{entry:08X}")
     if args.elf:
         print(f"  entry and load address both read from {args.elf.name}")
     return 0
