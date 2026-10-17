@@ -44,6 +44,12 @@
  * table is found correctly once the application runs; what has to be right for
  * it to run at all is the link address and the entry point in the header.
  *
+ * That is verified in the linked image rather than assumed, because getting it
+ * wrong would send every interrupt into the bootloader's handlers: CRT0_VTOR_INIT
+ * defaults to TRUE, and the third thing crt0 does is store _vectors into
+ * SCB->VTOR. In a build linked by this script those literals read 0x00010400 and
+ * 0xE000ED08.
+ *
  * ram0 is the main SRAM: three contiguous 32 KB banks plus one of 64 KB, which
  * the bus matrix presents as one 160 KB region.
  *
