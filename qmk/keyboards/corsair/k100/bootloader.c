@@ -98,6 +98,30 @@
 #    define DIAGNOSTIC_BASE_MS 3000
 #    define DIAGNOSTIC_STEP_MS 2000
 
+/*
+ * Stage markers, for finding how far boot gets.
+ *
+ * Each stage holds the keyboard off the bus for a different, deliberately
+ * ill-matched number of seconds, so the total absence identifies which ones ran
+ * without needing one flash per stage: 3 alone means boot died after board_init,
+ * 15 means it also cleared keyboard_pre_init_kb, 45 means it got all the way
+ * past USB and matrix initialisation. Ratios rather than precise times, because
+ * the clock before halInit() is whatever the bootloader left running.
+ *
+ * The wait feeds the watchdog itself. Without that the marker is cut short by
+ * the very reset it is trying to locate -- which is how an earlier version of
+ * this diagnostic reported that the firmware never ran at all.
+ */
+#    define DIAGNOSTIC_STAGE_LATE_S     0U
+#    define DIAGNOSTIC_STAGE_BOARD_S    0U
+/* Wide apart on purpose. Earlier values a few seconds apart were lost in the
+   noise: the apply before a reset and the bootloader's own boot each vary by
+   seconds, and a marker's length depends on whichever clock is running when it
+   executes. Totals of roughly 13, 33 and 73 seconds cannot be confused. */
+#    define DIAGNOSTIC_STAGE_MATRIX_S   0U
+#    define DIAGNOSTIC_STAGE_PREINIT_S  0U
+#    define DIAGNOSTIC_STAGE_POSTINIT_S 0U
+
 /* Reported unconditionally, before anything else runs, purely to answer "did
    this firmware execute at all". Long enough that it cannot be confused with
    the two or three seconds a bootloader reboot takes. With the Escape check
@@ -244,45 +268,47 @@ static bool escape_held(void) {
  * mode word untouched -- which is reachable and reflashable. Feeding it from an
  * interrupt would keep a hung keyboard alive and useless instead.
  */
+#ifdef K100_USB_DIAGNOSTIC
+/**
+ * Holds the keyboard off the bus for roughly this many seconds, feeding the
+ * watchdog throughout so the delay is not cut short by it.
+ *
+ * A busy loop rather than wait_ms(), because the earliest callers run before the
+ * kernel exists. The iteration count is approximate by design.
+ */
+static void diagnostic_mark(uint32_t seconds) {
+    for (uint32_t tenth = 0U; tenth < seconds * 10U; tenth++) {
+        lpcWwdtFeed();
+        for (volatile uint32_t spin = 0U; spin < 1000000U; spin++) {
+        }
+    }
+}
+#endif
+
 void early_hardware_init_pre(void) {
     lpcWwdtFeed();
 }
 
+#ifdef K100_USB_DIAGNOSTIC
+/*
+ * ChibiOS's own weak hook, called by crt0 after the stacks are filled, .data is
+ * copied, .bss is cleared and the whole of ram0 is zeroed -- and before main().
+ * That makes it the one place a marker can separate "RAM initialisation" from
+ * "halInit()", which is otherwise a single opaque stretch between the hook that
+ * demonstrably runs and the one that does not.
+ */
+void __late_init(void) {
+    diagnostic_mark(DIAGNOSTIC_STAGE_LATE_S);
+}
+#endif
+
 void board_init(void) {
     lpcWwdtFeed();
+#ifdef K100_USB_DIAGNOSTIC
+    diagnostic_mark(DIAGNOSTIC_STAGE_BOARD_S);
+#endif
 }
 
-/*
- * A periodic feed, from the moment the kernel can provide one.
- *
- * The explicit feeds at each boot hook are not enough on their own, because the
- * longest unattended stretch of boot falls *between* two of them: QMK starts the
- * USB driver in protocol_pre_init(), after keyboard_pre_init_kb() and before the
- * first housekeeping call, and that driver contains several unbounded waits. A
- * watchdog with a period of a second or so reaches the end of its count in the
- * middle of it.
- *
- * The callback runs from the systick interrupt, which is what makes it cover a
- * stretch of straight-line code that never returns to the main loop.
- *
- * The cost is honest and worth stating: a watchdog fed from an interrupt no
- * longer rescues firmware that wedges with interrupts still running. That was a
- * pleasant side effect rather than a design, and the two deliberate routes back
- * -- Escape at power-on and the USB watchdog -- are unaffected.
- */
-static virtual_timer_t wwdt_timer;
-
-#define WWDT_FEED_INTERVAL TIME_MS2I(100)
-
-static void wwdt_feed_tick(virtual_timer_t *vtp, void *arg) {
-    (void)arg;
-
-    lpcWwdtFeed();
-
-    chSysLockFromISR();
-    chVTSetI(vtp, WWDT_FEED_INTERVAL, wwdt_feed_tick, NULL);
-    chSysUnlockFromISR();
-}
 
 #ifdef K100_USB_DIAGNOSTIC
 /**
@@ -317,11 +343,9 @@ void keyboard_pre_init_kb(void) {
      */
     lpcWwdtFeed();
 
-    /* Armed here because this is the last hook before QMK starts USB, and that
-       is the stretch an explicit feed cannot cover. */
-    if (lpcWwdtIsRunning()) {
-        chVTSet(&wwdt_timer, WWDT_FEED_INTERVAL, wwdt_feed_tick, NULL);
-    }
+#ifdef K100_USB_DIAGNOSTIC
+    diagnostic_mark(DIAGNOSTIC_STAGE_PREINIT_S);
+#endif
 
     if (escape_held()) {
         (void)k100_enter_bootloader();
@@ -329,6 +353,22 @@ void keyboard_pre_init_kb(void) {
 
     keyboard_pre_init_user();
 }
+
+#ifdef K100_USB_DIAGNOSTIC
+/*
+ * QMK's earliest overridable hook after chSysInit(). keyboard_setup() calls it
+ * before keyboard_pre_init_quantum(), which makes it the one place a marker can
+ * separate "the kernel started" from "the kernel did not".
+ */
+void matrix_setup(void) {
+    diagnostic_mark(DIAGNOSTIC_STAGE_MATRIX_S);
+}
+
+void keyboard_post_init_kb(void) {
+    diagnostic_mark(DIAGNOSTIC_STAGE_POSTINIT_S);
+    keyboard_post_init_user();
+}
+#endif
 
 void housekeeping_task_kb(void) {
     static uint32_t first_task_at = 0;

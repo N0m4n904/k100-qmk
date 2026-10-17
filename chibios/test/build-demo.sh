@@ -98,6 +98,18 @@ unpack "$work/cache/contrib.tar.gz" "$contrib"
 echo "applying the shared USB driver patch"
 git -C "$contrib" apply --whitespace=nowarn \
     "$repo/patches/0001-usb-family-seam.patch"
+git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/patches/0003-bound-usb-controller-waits.patch"
+git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/patches/0004-usb-reset-before-irq.patch"
+
+# And the DWT one, to ChibiOS proper. The demo does not need it -- it defaults
+# to leaving the counter enabled -- but applying it here is what keeps the patch
+# from silently rotting against a newer ChibiOS.
+echo "applying the optional-DWT patch"
+git -C "$chibios" init -q . 2>/dev/null || true
+git -C "$chibios" apply --whitespace=nowarn \
+    "$repo/patches/0002-optional-dwt-enable.patch"
 
 # Beside LPC11Uxx.h, which is where ChibiOS-Contrib already keeps an NXP device
 # header. This is the path a build that cannot fetch anything has to take -- so

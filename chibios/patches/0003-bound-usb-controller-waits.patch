@@ -1,0 +1,83 @@
+diff --git a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+index b1f1bec..f288879 100644
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+@@ -105,6 +105,18 @@ struct usb_eplist {
+ #define EPLIST_ENTRY_TOGGLE_RESET             (1U << 28U)
+ #define EPLIST_ENTRY_RFTV                     (1U << 27U)
+ #define EPLIST_ENTRY_EPTYPE                   (1U << 26U)
++/**
++ * @brief   Upper bound on a wait for the controller to clear EPSKIP.
++ *
++ * @details The hardware clears a skip request once the endpoint is no longer
++ *          active, which it will do promptly in every state it is supposed to
++ *          be in. An unbounded wait is still wrong: a controller that is not
++ *          clocked, not powered, or simply does not have the endpoint the caller
++ *          thinks it has never clears the bit, and the driver then hangs inside
++ *          usbStart() with nothing yet in place to report it.
++ */
++#define USB_EPSKIP_SPINS                    1000000U
++
+ /*===========================================================================*/
+ /* Driver local functions.                                                   */
+ /*===========================================================================*/
+@@ -460,7 +472,8 @@ void usb_lld_disable_endpoints(USBDriver *usbp) {
+     return;
+   LPC_USB->EPSKIP = 0xFFFFFFFF;
+   LPC_USB->INTEN &= (~USB_INT_EP_ALL_INT) | USB_INT_EP(0) | USB_INT_EP(1);
+-  while (LPC_USB->EPSKIP) {}
++  { uint32_t spins = USB_EPSKIP_SPINS;
++    while ((LPC_USB->EPSKIP != 0U) && (spins-- > 0U)) {} }
+   for (int i = 1; i < 5; ++i) // 4 EPs needs to be disabled, EP0 can't
+   {
+     USB_EPLIST->entry[i * 4] &= ~EP_STATUS_ACTIVE;
+@@ -535,7 +548,8 @@ usbepstatus_t usb_lld_get_status_in(USBDriver *usbp, usbep_t ep) {
+ void usb_lld_read_setup(USBDriver *usbp, usbep_t ep, uint8_t *buf) {
+   if (usbp == &USBD1) {
+     if (ep == 0) {
+-      while(usbp->setup_buffer == 0){}
++      { uint32_t spins = USB_EPSKIP_SPINS;
++        while ((usbp->setup_buffer == 0) && (spins-- > 0U)) {} }
+       /* Check/Clear STALL on both EP0 IN and OUT when SETUP is received. */
+       USB_EPLIST->entry[0] &= ~(EPLIST_ENTRY_STALL | EPLIST_ENTRY_ACTIVE); // EP0OUT
+       USB_EPLIST->entry[2] &= ~(EPLIST_ENTRY_STALL | EPLIST_ENTRY_ACTIVE); // EP0IN
+@@ -602,7 +616,8 @@ void usb_lld_stall_out(USBDriver *usbp, usbep_t ep) {
+   if (USB_EPLIST->entry[ep * 4] & EPLIST_ENTRY_ACTIVE) {
+     LPC_USB->EPSKIP = skip_flag;
+   }
+-  while(LPC_USB->EPSKIP & skip_flag) {} // Wait for not active
++  { uint32_t spins = USB_EPSKIP_SPINS;  // Wait for not active, but not forever
++    while (((LPC_USB->EPSKIP & skip_flag) != 0U) && (spins-- > 0U)) {} }
+   USB_EPLIST->entry[ep*4] |= EPLIST_ENTRY_STALL;
+ }
+ 
+@@ -621,7 +636,8 @@ void usb_lld_stall_in(USBDriver *usbp, usbep_t ep) {
+   if (USB_EPLIST->entry[ep * 4 + 2] & EPLIST_ENTRY_ACTIVE) {
+     LPC_USB->EPSKIP = skip_flag;
+   }
+-  while(LPC_USB->EPSKIP & skip_flag) {} // Wait for not active
++  { uint32_t spins = USB_EPSKIP_SPINS;  // Wait for not active, but not forever
++    while (((LPC_USB->EPSKIP & skip_flag) != 0U) && (spins-- > 0U)) {} }
+   USB_EPLIST->entry[ep * 4 + 2] |= EPLIST_ENTRY_STALL;
+ }
+ 
+@@ -640,7 +656,8 @@ void usb_lld_clear_out(USBDriver *usbp, usbep_t ep) {
+   if (USB_EPLIST->entry[ep * 4] & EPLIST_ENTRY_ACTIVE) {
+     LPC_USB->EPSKIP = skip_flag;
+   }
+-  while(LPC_USB->EPSKIP & skip_flag) {} // Wait for not active
++  { uint32_t spins = USB_EPSKIP_SPINS;  // Wait for not active, but not forever
++    while (((LPC_USB->EPSKIP & skip_flag) != 0U) && (spins-- > 0U)) {} }
+   USB_EPLIST->entry[ep*4] &= ~EPLIST_ENTRY_STALL;
+ }
+ 
+@@ -659,7 +676,8 @@ void usb_lld_clear_in(USBDriver *usbp, usbep_t ep) {
+   if (USB_EPLIST->entry[ep * 4 + 2] & EPLIST_ENTRY_ACTIVE) {
+     LPC_USB->EPSKIP = skip_flag;
+   }
+-  while(LPC_USB->EPSKIP & skip_flag) {} // Wait for not active
++  { uint32_t spins = USB_EPSKIP_SPINS;  // Wait for not active, but not forever
++    while (((LPC_USB->EPSKIP & skip_flag) != 0U) && (spins-- > 0U)) {} }
+   USB_EPLIST->entry[ep * 4 + 2] &= ~EPLIST_ENTRY_STALL;
+ }
+ 

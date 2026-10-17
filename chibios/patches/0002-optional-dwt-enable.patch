@@ -1,0 +1,40 @@
+diff --git a/os/common/ports/ARMv7-M/chcore.c b/os/common/ports/ARMv7-M/chcore.c
+index 91b84fb..c847b92 100644
+--- a/os/common/ports/ARMv7-M/chcore.c
++++ b/os/common/ports/ARMv7-M/chcore.c
+@@ -32,6 +32,21 @@
+ /* Module local definitions.                                                 */
+ /*===========================================================================*/
+ 
++/**
++ * @brief   Enables the DWT cycle counter during port initialisation.
++ * @details Set to @p FALSE on a part whose debug block is not accessible to
++ *          software. Some devices ship with debug access disabled, and on those
++ *          the read-modify-write of @p DWT->CTRL below faults. It does so inside
++ *          @p chSysInit(), before the kernel exists to report anything, so the
++ *          symptom is a system that silently never starts.
++ * @note    @p TRUE is the historical behaviour and remains the default.
++ *          Disabling this costs @p chSysGetRealtimeCounterX(), and so also
++ *          @p chSysPolledDelayX().
++ */
++#if !defined(CORTEX_ENABLE_DWT) || defined(__DOXYGEN__)
++#define CORTEX_ENABLE_DWT                   TRUE
++#endif
++
+ /*===========================================================================*/
+ /* Module exported variables.                                                */
+ /*===========================================================================*/
+@@ -261,11 +276,13 @@ void port_init(os_instance_t *oip) {
+   NVIC_SetPriorityGrouping(CORTEX_PRIGROUP_INIT);
+ 
+   /* DWT cycle counter enable, note, the M7 requires DWT unlocking.*/
++#if CORTEX_ENABLE_DWT == TRUE
+   CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+ #if CORTEX_MODEL == 7
+   DWT->LAR = 0xC5ACCE55U;
+ #endif
+   DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
++#endif
+ 
+   /* Initialization of the system vectors used by the port.*/
+ #if CORTEX_SIMPLIFIED_PRIORITY == FALSE

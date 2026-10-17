@@ -41,7 +41,7 @@ and the two rules that keep a mistake survivable.
 | Recovery path | **Proven on hardware.** An official image was written, applied and verified. |
 | Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |
 | QMK layout, keymap, LED map, VIA | **Done** for OPX ISO DE, generated from ckb-next's data. |
-| ChibiOS LPC546xx port | **Runs on the keyboard.** Survives boot; something between `halInit` and the main loop still faults. |
+| ChibiOS LPC546xx port | **Runs on the keyboard** as far as QMK's pre-init. Fails in USB driver start-up. |
 | Key matrix pins | **Found** by disassembly. Sense polarity and settling time are untested guesses. |
 | RGB driver chips and protocol | **Derived from firmware**: IS31FL3743B on SPI3, framing and registers known. |
 | RGB bus pins | **Unknown** — configured by the bootloader, not the application. No lighting yet. |

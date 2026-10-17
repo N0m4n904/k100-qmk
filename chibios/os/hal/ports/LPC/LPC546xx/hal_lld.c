@@ -56,13 +56,30 @@
  *          once the new ratio is live. Returning before it clears would run the
  *          next configuration step against an unsettled clock.
  *
+ * @note    The wait is **bounded**, and that is not defensive dressing. A
+ *          divider only acknowledges when its source clock is actually running,
+ *          so a register written for a branch of the clock tree that is not yet
+ *          fed never clears its flag. An unbounded wait there hangs inside
+ *          @p halInit(), before there is a kernel, a console or a USB device to
+ *          say so -- on a part whose bootloader leaves a watchdog armed, the
+ *          only external symptom is a reset a second later, which is
+ *          indistinguishable from a dozen other faults.
+ *
+ *          Giving up and carrying on is the better failure: the divider keeps
+ *          its previous ratio, which was by definition a working one, and
+ *          everything downstream still gets a chance to run.
+ *
  * @param[out] reg      the divider register
  * @param[in] value     the raw divider value
  */
 static void lpc_set_divider(volatile uint32_t *reg, uint32_t value) {
+  /* Generous: the flag clears within a few clocks of either domain, so this is
+     orders of magnitude longer than a working divider needs. */
+  uint32_t spins = 1000000U;
 
   *reg = value;
-  while ((*reg & SYSCON_AHBCLKDIV_REQFLAG_MASK) != 0U) {
+  while (((*reg & SYSCON_AHBCLKDIV_REQFLAG_MASK) != 0U) && (spins > 0U)) {
+    spins--;
   }
 }
 
@@ -85,10 +102,23 @@ static void lpc_set_divider(volatile uint32_t *reg, uint32_t value) {
  */
 void lpc_clock_init(void) {
 
-  /* Flash wait states first. Raising the core clock before the flash can keep
-     up would fetch garbage; lowering it afterwards is harmless. */
+  /* Flash wait states, in two steps, and the order is the whole point.
+     Instruction fetches have to keep working throughout a clock change, and the
+     requirement runs in opposite directions depending on which way the clock is
+     going: raising it needs the wait states raised first, lowering it needs them
+     lowered afterwards. An application cannot satisfy both by writing the final
+     value once, because it does not know what frequency it inherited -- a
+     bootloader may well have left the core far faster than this configuration
+     asks for.
+
+     So: go to the slowest setting, which is safe at any frequency, change the
+     clock, and only then drop to the value this configuration actually wants.
+     Writing the target value up front is correct if and only if the clock is
+     about to rise, and on a part behind a bootloader that is a coin toss. When
+     it loses, flash returns garbage and the core faults inside halInit(), long
+     before anything exists that could report it. */
   SYSCON->FLASHCFG = (SYSCON->FLASHCFG & ~SYSCON_FLASHCFG_FLASHTIM_MASK) |
-                     SYSCON_FLASHCFG_FLASHTIM(LPC_FLASHCFG_WAITSTATES);
+                     SYSCON_FLASHCFG_FLASHTIM(LPC_FLASHCFG_WAITSTATES_MAX);
 
   /* The FRO is powered at reset and the boot ROM has already loaded its trim,
      but ask for it explicitly so a warm start from a low-power mode behaves the
@@ -117,6 +147,11 @@ void lpc_clock_init(void) {
   SYSCON->USB1CLKSEL = SYSCON_USB1CLKSEL_SEL(LPC_USB1CLKSEL);
   lpc_set_divider(&SYSCON->USB1CLKDIV, SYSCON_USB1CLKDIV_DIV(LPC_USB1CLKDIV));
 #endif
+
+  /* The clock is now what this configuration asked for, so the flash can be
+     given the wait states that match it. */
+  SYSCON->FLASHCFG = (SYSCON->FLASHCFG & ~SYSCON_FLASHCFG_FLASHTIM_MASK) |
+                     SYSCON_FLASHCFG_FLASHTIM(LPC_FLASHCFG_WAITSTATES);
 
   /* The IOCON and GPIO clock gates belong to the PAL driver and are enabled in
      _pal_lld_init(), which halInit() reaches immediately after this. Gating a

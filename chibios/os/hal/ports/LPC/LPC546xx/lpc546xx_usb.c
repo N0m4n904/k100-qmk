@@ -93,8 +93,7 @@ void lpc_usb_clock_init(void) {
   /* VD5 first, and this is the one that matters: it is the *supply* for both
      USB PHYs, and without it the transceiver has no power at all. A device that
      never powers its PHY never pulls up D+, so the host sees an empty port --
-     no descriptor read, no error, nothing in the kernel log. That was this
-     port's symptom for three flash cycles.
+     no descriptor read, no error, nothing in the kernel log.
 
      This is the step NXP performs in POWER_SetUsbPhy(), which ships only inside
      their binary power library and so looked unreachable. It is not: the domain
@@ -103,16 +102,31 @@ void lpc_usb_clock_init(void) {
   SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_VD5_MASK;
   usb_rough_delay(50U);
 
-  /* Then the transceiver and its PLL inside that domain, and the endpoint SRAM.
-     PDRUNCFG bits are power *down* enables, so clearing powers up. */
-  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
-                           SYSCON_PDRUNCFG_PDEN_USB1_PLL_MASK |
-                           SYSCON_PDRUNCFG_PDEN_USB_RAM_MASK;
+  /* Then the transceiver and its PLL -- and note the register index. These two
+     are in PDRUNCFG**1**, while VD5 above is in PDRUNCFG0, and NXP's header
+     names every bit SYSCON_PDRUNCFG_PDEN_* without saying which of the two it
+     belongs to. The bit numbers collide meaningfully: bits 0 and 1 of
+     PDRUNCFG0 are not the USB PHY and PLL, and bit 16 is RAM3 rather than
+     anything to do with USB. Writing these to register 0, as an earlier version
+     did, powers up two unrelated blocks and leaves the PHY and its PLL switched
+     off -- which looks exactly like a working driver whose device never appears
+     on the bus.
 
-  SYSCON->FROCTRL |= SYSCON_FROCTRL_USBCLKADJ_MASK;
+     The authority is NXP's own power driver:
+         kPDRUNCFG_PD_VD5      = MAKE_PD_BITS(PDRCFG0, 28U)
+         kPDRUNCFG_PD_USB1_PHY = MAKE_PD_BITS(PDRCFG1,  0U)
+         kPDRUNCFG_PD_USB_PLL  = MAKE_PD_BITS(PDRCFG1,  1U)
 
-  /* NXP waits at least 50 us here for the PHY and its PLL. A polled delay
-     because this runs before the kernel is started. */
+     This is the third place in this part where a bit name does not say which of
+     several identical registers it belongs to; AHBCLKCTRL in hal_pal_lld.c and
+     lpc546xx_wwdt.c's neighbours are the others. Treat every
+     SYSCON_<REG>_<FIELD> macro as needing an index from somewhere else.
+
+     The endpoint SRAM needs no power bit of its own: NXP's USB enable does not
+     touch one, only the USB1RAM clock gate below. */
+  SYSCON->PDRUNCFGCLR[1] = SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
+                           SYSCON_PDRUNCFG_PDEN_USB1_PLL_MASK;
+
   usb_rough_delay(100U);
 
   SYSCON->AHBCLKCTRLSET[2] = SYSCON_AHBCLKCTRL_USB1D_MASK |
@@ -144,8 +158,8 @@ void lpc_usb_power_on(void) {
      but stopped USB does not present itself on the bus; on this part the clock
      cannot be brought up without the PHY, so the split does not survive and
      this is what is left of it. */
-  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_VD5_MASK |
-                           SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
+  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_VD5_MASK;
+  SYSCON->PDRUNCFGCLR[1] = SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
                            SYSCON_PDRUNCFG_PDEN_USB1_PLL_MASK;
 }
 

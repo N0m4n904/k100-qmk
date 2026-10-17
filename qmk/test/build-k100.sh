@@ -90,9 +90,21 @@ echo "applying patches"
 git -C "$contrib" init -q .
 git -C "$contrib" apply --whitespace=nowarn \
     "$repo/chibios/patches/0001-usb-family-seam.patch"
+git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/chibios/patches/0003-bound-usb-controller-waits.patch"
+git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/chibios/patches/0004-usb-reset-before-irq.patch"
 git -C "$qmk" init -q .
 git -C "$qmk" apply --whitespace=nowarn \
     "$repo/qmk/patches/0001-mcu-selection-lpc546xx.patch"
+
+# ChibiOS proper, not Contrib: port_init() enables the DWT cycle counter
+# unconditionally, and this keyboard's debug block is not accessible to
+# software, so that write faults inside chSysInit(). See the keyboard's
+# chconf.h, which is what turns it off.
+git -C "$qmk/lib/chibios" init -q .
+git -C "$qmk/lib/chibios" apply --whitespace=nowarn \
+    "$repo/chibios/patches/0002-optional-dwt-enable.patch"
 
 echo "placing the LPC546xx port into ChibiOS-Contrib"
 cp -r "$repo/chibios/os/hal/ports/LPC/LPC546xx" "$contrib/os/hal/ports/LPC/"

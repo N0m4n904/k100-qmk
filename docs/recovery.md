@@ -448,21 +448,83 @@ longer rescues firmware that wedges with interrupts still running. That was a
 pleasant side effect rather than a design, and the two deliberate routes back —
 Escape at power-on and the USB watchdog — are unaffected.
 
-### Still not working, and what is known about it
+### Boot, stage by stage, and the six faults between them
 
-The firmware survives boot and still does not enumerate. One more hang was found
-and fixed along the way, and it was self-inflicted: `lpc_usb_clock_init()` used
-`chSysPolledDelayX` for the PHY settling delay, and that counts cycles with the
-DWT, which ChibiOS only enables in `chSysInit()`. The clock setup is reached from
-`usb_lld_init()`, which `halInit()` calls *before* `chSysInit()` — so the counter
-was frozen and the delay never finished. It is a plain loop now.
+The firmware now reaches QMK's `keyboard_pre_init_kb`. Getting there meant finding
+six separate faults, each of which produced the *same* external symptom — the
+keyboard away for a few seconds and back in bootloader mode — because the
+inherited watchdog resets the chip within about a second and a half of anything
+going wrong.
 
-That did not fix enumeration either, so at least one fault or hang remains
-between `halInit()` and the main loop. The diagnostic facility in `bootloader.c`
-is the tool for it: enable `K100_USB_DIAGNOSTIC` and the firmware reports
-`DEVCMDSTAT`'s `DEV_EN`, `DCON` and `VBUS_DEBOUNCED` bits as the length of its
-absence from the bus. It has not yet reported, which is itself the finding — the
-firmware is not reaching the point that reports.
+The method that worked: hold the keyboard off the bus for a measurable number of
+seconds at successive boot stages, **feeding the watchdog throughout**, and read
+how far it got from the total absence. `K100_USB_DIAGNOSTIC` in `bootloader.c`
+carries it. Markers tens of seconds apart are necessary; a few seconds apart is
+lost in the variation of the apply and the bootloader's own boot.
+
+| Stage | Hook | Verdict |
+| --- | --- | --- |
+| before RAM init | `early_hardware_init_pre` | reached |
+| after RAM init, before `main` | `__late_init` | reached |
+| end of `halInit` | `board_init` | reached, **after four fixes** |
+| after `chSysInit` | `matrix_setup` | reached |
+| before QMK starts USB | `keyboard_pre_init_kb` | reached, **after one more fix** |
+| after USB and matrix init | `keyboard_post_init_kb` | **not reached** |
+
+What had to be fixed to get that far:
+
+1. **The inherited watchdog was never fed.** Covered above; it is also what made
+   every other fault look identical.
+2. **`chSysPolledDelayX` before `chSysInit`.** Used for the USB PHY settling
+   delay. It counts cycles with the DWT, which ChibiOS only enables in
+   `chSysInit()` — and the USB clock setup is reached from `halInit()`, earlier.
+   The counter is frozen, so the delay never ends. Replaced with a plain loop.
+3. **The DWT is not accessible at all on this part.** ChibiOS's `port_init()`
+   enables the cycle counter unconditionally, and the read-modify-write of
+   `DWT->CTRL` faults — Corsair ships this chip with debug access disabled. This
+   is what stopped `chSysInit()` dead. Fixed by
+   `chibios/patches/0002-optional-dwt-enable.patch` and `CORTEX_ENABLE_DWT FALSE`
+   in the keyboard's `chconf.h`. Located by performing exactly those two writes
+   inside `board_init`, with a marker on each side of them.
+4. **Flash wait states were set for the target clock before the clock changed.**
+   This was the one that unblocked `halInit`. The bootloader hands over with the
+   core at roughly 180 MHz and this configuration drops it to 48; setting 48 MHz
+   wait states while still running at 180 means instruction fetches return
+   garbage. The requirement reverses depending on which way the clock is going,
+   and an application cannot satisfy both by writing the final value once,
+   because it does not know what it inherited. `lpc_clock_init()` now goes to the
+   slowest setting, changes the clock, and only then drops to the target.
+5. **A periodic watchdog feed on a virtual timer crashed when armed**, and was
+   never needed: the stretch it was meant to cover is microseconds against a
+   watchdog period of about a second and a half. Removed. Its callback also had a
+   nested `chSysLockFromISR()`, since ChibiOS calls a timer callback with the
+   kernel already locked.
+6. **The USB PHY and its PLL were powered in the wrong register.** They are
+   `PDRUNCFG1` bits 0 and 1; `VD5` is `PDRUNCFG0` bit 28. NXP's header names
+   every bit `SYSCON_PDRUNCFG_PDEN_*` with no register index, and the collision
+   is not harmless — bits 0 and 1 of `PDRUNCFG0` are unrelated blocks, and bit 16
+   is `RAM3` rather than anything to do with USB. **This is the third instance of
+   that trap on this part**, after `AHBCLKCTRL`; treat every
+   `SYSCON_<REG>_<FIELD>` macro as needing an index from somewhere else, and get
+   it from NXP's clock and power drivers, which do carry it.
+
+### Where it still fails
+
+Inside `protocol_pre_init()` — QMK starting the USB driver. Two defects were
+found and fixed there without resolving it, and both are worth keeping:
+
+- the driver's five unbounded waits on the controller now time out
+  (`0003-bound-usb-controller-waits.patch`);
+- it enabled the USB interrupt *before* `usb_lld_reset()` installed the endpoint
+  table, leaving a window in which the handler dereferences a null `epc[ep]`
+  (`0004-usb-reset-before-irq.patch`).
+
+Eliminated by direct probe: the USB endpoint SRAM at `0x40100000` is reachable
+and reads back correctly, tested by writing and reading a word from `board_init`.
+So it is neither the memory nor its clock.
+
+What is left to examine is `usb_lld_reset()` itself and the handler. The method
+is unchanged and it works: put a marker on each side of the thing in question.
 
 ## Reading the result of a custom flash
 

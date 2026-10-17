@@ -278,6 +278,15 @@
  * the number is set in SYSCON->FLASHCFG. These thresholds follow NXP's own
  * clock driver; see hal_lld.c.
  */
+
+/**
+ * @brief   Wait states that are safe at any frequency this part supports.
+ *
+ * @details The setting for the slowest clock, used while the clock is being
+ *          changed and the current frequency is not known. Too many wait states
+ *          only costs speed; too few returns garbage from flash.
+ */
+#define LPC_FLASHCFG_WAITSTATES_MAX 8U
 #if LPC_SYSCLK <= 12000000U
 #define LPC_FLASHCFG_WAITSTATES     0U
 #elif LPC_SYSCLK <= 24000000U

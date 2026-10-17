@@ -75,10 +75,18 @@ void lpc546xx_register_check(void) {
   SYSCON->AHBCLKCTRLSET[2] = SYSCON_AHBCLKCTRL_USB1D_MASK |
                              SYSCON_AHBCLKCTRL_USB1RAM_MASK;
   SYSCON->FROCTRL |= SYSCON_FROCTRL_USBCLKADJ_MASK;
-  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_VD5_MASK |
-                           SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
-                           SYSCON_PDRUNCFG_PDEN_USB1_PLL_MASK |
-                           SYSCON_PDRUNCFG_PDEN_USB_RAM_MASK;
+  /* VD5 is in PDRUNCFG0; the PHY and its PLL are in PDRUNCFG1. NXP's bit names
+     do not carry the register index, and the collision is not harmless -- bits
+     0 and 1 of PDRUNCFG0 are unrelated blocks. From their power driver:
+     kPDRUNCFG_PD_VD5 = PDRCFG0 bit 28, kPDRUNCFG_PD_USB1_PHY = PDRCFG1 bit 0,
+     kPDRUNCFG_PD_USB_PLL = PDRCFG1 bit 1. */
+  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_VD5_MASK;
+  SYSCON->PDRUNCFGCLR[1] = SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK |
+                           SYSCON_PDRUNCFG_PDEN_USB1_PLL_MASK;
+
+  _Static_assert(SYSCON_PDRUNCFG_PDEN_USB1_PHY_SHIFT == 0U &&
+                 SYSCON_PDRUNCFG_PDEN_USB1_PLL_SHIFT == 1U,
+                 "the USB PHY and PLL power bits have moved within PDRUNCFG1");
 
   /* The inherited watchdog, from lpc546xx_wwdt.c. Feeding is the only option:
      NXP's WDEN description says that once set and fed the timer runs
