@@ -41,12 +41,12 @@ and the two rules that keep a mistake survivable.
 | Recovery path | **Proven on hardware.** An official image was written, applied and verified. |
 | Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |
 | QMK layout, keymap, LED map, VIA | **Done** for OPX ISO DE, generated from ckb-next's data. |
-| ChibiOS LPC546xx port | Builds and links. **Has never executed**: the stock bootloader refuses to start the image. |
+| ChibiOS LPC546xx port | **Runs on the keyboard.** Survives boot; something between `halInit` and the main loop still faults. |
 | Key matrix pins | **Found** by disassembly. Sense polarity and settling time are untested guesses. |
 | RGB driver chips and protocol | **Derived from firmware**: IS31FL3743B on SPI3, framing and registers known. |
 | RGB bus pins | **Unknown** — configured by the bootloader, not the application. No lighting yet. |
-| Route back to the bootloader | Implemented, three ways; **untested**, since the firmware has not run. |
-| Working firmware | **No.** Writing and recovery are solved; the bootloader will not start a custom image yet. |
+| Route back to the bootloader | Implemented, three ways; not yet exercised by the firmware itself. |
+| Working firmware | **No.** It boots and is reflashable; USB does not enumerate yet. |
 
 Start with [`NOTES.md`](NOTES.md) for the research and
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for the plan.

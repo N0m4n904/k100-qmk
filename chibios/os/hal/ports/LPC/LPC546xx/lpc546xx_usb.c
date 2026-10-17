@@ -28,6 +28,37 @@
 #if (HAL_USE_USB == TRUE) || defined(__DOXYGEN__)
 
 /*===========================================================================*/
+/* Driver local functions.                                                   */
+/*===========================================================================*/
+
+/**
+ * @brief   A short busy wait that works before the kernel is started.
+ *
+ * @details Deliberately not @p chSysPolledDelayX, which is the obvious choice
+ *          and is wrong here. That counts cycles with the DWT, and ChibiOS only
+ *          enables the DWT in @p port_init() from @p chSysInit() -- while this
+ *          driver's clock setup is reached from @p usb_lld_init(), which
+ *          @p halInit() calls *before* @p chSysInit(). The cycle counter is
+ *          still frozen at that point, so the delay never finishes and boot
+ *          hangs in @p halInit with no sign of why.
+ *
+ *          A plain loop instead. The count is approximate -- the compiler is
+ *          free to schedule it however it likes -- and that is acceptable
+ *          because the requirement is a floor, not a period: NXP asks for "at
+ *          least 50 us" after powering the PHY.
+ *
+ * @param[in] microseconds  the minimum to wait for
+ */
+static void usb_rough_delay(uint32_t microseconds) {
+  /* Four cycles an iteration is a deliberate underestimate, so the loop runs
+     for longer than asked rather than shorter. */
+  const uint32_t iterations = (LPC_SYS_FREQUENCY / 4000000U) * microseconds;
+
+  for (volatile uint32_t spin = 0U; spin < iterations; spin++) {
+  }
+}
+
+/*===========================================================================*/
 /* Driver exported functions.                                                */
 /*===========================================================================*/
 
@@ -70,7 +101,7 @@ void lpc_usb_clock_init(void) {
      is a documented PDRUNCFG bit, described in NXP's own device header as
      "PDEN_VD5 - Power control both USB0 PHY and USB1 PHY". */
   SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_VD5_MASK;
-  chSysPolledDelayX(US2RTC(LPC_SYS_FREQUENCY, 50U));
+  usb_rough_delay(50U);
 
   /* Then the transceiver and its PLL inside that domain, and the endpoint SRAM.
      PDRUNCFG bits are power *down* enables, so clearing powers up. */
@@ -82,7 +113,7 @@ void lpc_usb_clock_init(void) {
 
   /* NXP waits at least 50 us here for the PHY and its PLL. A polled delay
      because this runs before the kernel is started. */
-  chSysPolledDelayX(US2RTC(LPC_SYS_FREQUENCY, 100U));
+  usb_rough_delay(100U);
 
   SYSCON->AHBCLKCTRLSET[2] = SYSCON_AHBCLKCTRL_USB1D_MASK |
                              SYSCON_AHBCLKCTRL_USB1RAM_MASK;

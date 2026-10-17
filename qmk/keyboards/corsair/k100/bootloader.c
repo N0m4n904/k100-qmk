@@ -33,6 +33,7 @@
 #include "usb_device_state.h"
 
 #include "lpc546xx_eeprom.h"
+#include "lpc546xx_wwdt.h"
 #include "k100.h"
 
 /*
@@ -113,7 +114,8 @@
    and no initialised RAM; the count is approximate because the clock is still
    whatever the bootloader left running, which is the point -- it only has to be
    unmistakably long. */
-#    define DIAGNOSTIC_EARLY_LOOPS 150000000UL
+#    define DIAGNOSTIC_EARLY_LOOPS 2000000UL
+#    define DIAGNOSTIC_EARLY_OUTER 120UL
 #endif
 
 bool k100_enter_bootloader(void) {
@@ -197,7 +199,7 @@ void mcu_reset(void) {
  * It fails safe in the direction that matters: anything other than exactly this
  * pattern means "not held", and the keyboard boots normally.
  */
-__attribute__((unused)) static bool escape_held(void) {
+static bool escape_held(void) {
     const uint32_t escape = 1UL << ESCAPE_COL;
     const uint32_t senses = ((1UL << MATRIX_COLS) - 1UL) & ~(1UL << ESCAPE_ROW_UNUSED_COL);
     const uint32_t others = senses & ~escape;
@@ -222,12 +224,67 @@ __attribute__((unused)) static bool escape_held(void) {
     return true;
 }
 
-#ifdef K100_USB_DIAGNOSTIC
+/*
+ * Feeding the watchdog the bootloader left running.
+ *
+ * Corsair's bootloader starts the windowed watchdog before it hands control to
+ * an application, and on this part that cannot be undone: NXP's WDEN
+ * description says the timer runs permanently once set and fed. So every stage
+ * of this firmware's boot has to feed it, and so does the main loop.
+ *
+ * This was the bug that made the firmware look like it was being rejected. It
+ * ran, got about a second and a half, and was reset -- which from the host is
+ * indistinguishable from a bootloader that refuses to start the image, since the
+ * keyboard reappears almost at once and still in bootloader mode.
+ *
+ * Deliberately *not* fed from the systick hook, though that would be less
+ * code. Feeding only from the main loop leaves the watchdog as a free recovery
+ * path: firmware that wedges somewhere with interrupts still running stops
+ * feeding, the watchdog resets the chip, and the bootloader comes back with the
+ * mode word untouched -- which is reachable and reflashable. Feeding it from an
+ * interrupt would keep a hung keyboard alive and useless instead.
+ */
 void early_hardware_init_pre(void) {
-    for (volatile uint32_t spin = 0; spin < DIAGNOSTIC_EARLY_LOOPS; spin++) {
-    }
+    lpcWwdtFeed();
 }
 
+void board_init(void) {
+    lpcWwdtFeed();
+}
+
+/*
+ * A periodic feed, from the moment the kernel can provide one.
+ *
+ * The explicit feeds at each boot hook are not enough on their own, because the
+ * longest unattended stretch of boot falls *between* two of them: QMK starts the
+ * USB driver in protocol_pre_init(), after keyboard_pre_init_kb() and before the
+ * first housekeeping call, and that driver contains several unbounded waits. A
+ * watchdog with a period of a second or so reaches the end of its count in the
+ * middle of it.
+ *
+ * The callback runs from the systick interrupt, which is what makes it cover a
+ * stretch of straight-line code that never returns to the main loop.
+ *
+ * The cost is honest and worth stating: a watchdog fed from an interrupt no
+ * longer rescues firmware that wedges with interrupts still running. That was a
+ * pleasant side effect rather than a design, and the two deliberate routes back
+ * -- Escape at power-on and the USB watchdog -- are unaffected.
+ */
+static virtual_timer_t wwdt_timer;
+
+#define WWDT_FEED_INTERVAL TIME_MS2I(100)
+
+static void wwdt_feed_tick(virtual_timer_t *vtp, void *arg) {
+    (void)arg;
+
+    lpcWwdtFeed();
+
+    chSysLockFromISR();
+    chVTSetI(vtp, WWDT_FEED_INTERVAL, wwdt_feed_tick, NULL);
+    chSysUnlockFromISR();
+}
+
+#ifdef K100_USB_DIAGNOSTIC
 /**
  * The three bits of DEVCMDSTAT that say why a device is not on the bus.
  *
@@ -258,15 +315,17 @@ void keyboard_pre_init_kb(void) {
      * are initialised after this, and those are the parts most likely to hang
      * on hardware this project has not fully mapped.
      */
-#ifdef K100_USB_DIAGNOSTIC
-    /* The marker first, so nothing downstream can prevent it being observed,
-       and no Escape check, so it cannot cut the measurement short. */
-    wait_ms(DIAGNOSTIC_MARKER_MS);
-#else
+    lpcWwdtFeed();
+
+    /* Armed here because this is the last hook before QMK starts USB, and that
+       is the stretch an explicit feed cannot cover. */
+    if (lpcWwdtIsRunning()) {
+        chVTSet(&wwdt_timer, WWDT_FEED_INTERVAL, wwdt_feed_tick, NULL);
+    }
+
     if (escape_held()) {
         (void)k100_enter_bootloader();
     }
-#endif
 
     keyboard_pre_init_user();
 }
@@ -274,6 +333,9 @@ void keyboard_pre_init_kb(void) {
 void housekeeping_task_kb(void) {
     static uint32_t first_task_at = 0;
     static bool     usb_was_ready = false;
+
+    /* Every iteration, and before anything that might return early. */
+    lpcWwdtFeed();
 
     if (usb_was_ready) {
         housekeeping_task_user();

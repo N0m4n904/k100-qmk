@@ -80,6 +80,16 @@ void lpc546xx_register_check(void) {
                            SYSCON_PDRUNCFG_PDEN_USB1_PLL_MASK |
                            SYSCON_PDRUNCFG_PDEN_USB_RAM_MASK;
 
+  /* The inherited watchdog, from lpc546xx_wwdt.c. Feeding is the only option:
+     NXP's WDEN description says that once set and fed the timer runs
+     permanently, so an application handed one by a bootloader cannot switch it
+     off. The guard on WDEN matters in the other direction too -- the feed is
+     what commits WDEN, so feeding an idle watchdog starts one. */
+  if ((WWDT->MOD & WWDT_MOD_WDEN_MASK) != 0U) {
+    WWDT->FEED = 0xAAU;
+    WWDT->FEED = 0x55U;
+  }
+
   /* VD5 is the supply for both USB PHYs, and powering it is what NXP's binary
      power library does in POWER_SetUsbPhy(). Pinned because the whole of USB
      depends on this one bit being the right one, and the name says so only in

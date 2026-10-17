@@ -382,81 +382,87 @@ which quietly defeated the read-back guard around it: a flag that never arrives 
 recovery path itself rather than reporting that the write failed. It is now bounded, and the
 function returns `false` instead of spinning.
 
-## The bootloader refuses our image — and an earlier claim here was wrong
+## The firmware does run. It was the inherited watchdog.
 
-**Correction.** An earlier version of this document, and the commit that added it,
-claimed the custom firmware ran and recovered itself via its USB watchdog. That
-was wrong, and the mistake is worth recording because it was a reasonable-looking
-inference from a badly controlled experiment.
+**Corsair's bootloader starts the windowed watchdog before it hands control to an
+application, and on this part that cannot be undone.** NXP's description of
+`WDEN` is explicit: "once this bit is set to one and a watchdog feed is
+performed, the watchdog timer will run permanently". So an application handed one
+has no option but to feed it, for as long as it runs. This firmware did not, and
+was reset about a second and a half into every boot.
 
-The reasoning was: the keyboard disappeared for about nine seconds and came back
-as the bootloader, nine seconds is the watchdog's ten, therefore the firmware ran
-and the watchdog fired. The flaw is that **the flash had been performed from
-bootloader mode**, which leaves the EEPROM mode word set to `BOOTLOADER`. On the
-reset that follows an apply, the bootloader reads that word and stays put. The
-application was never started at all, and the nine seconds was the apply's own
-flash work plus a bootloader reboot.
+### Why it looked like a rejection for so long
 
-What settles it is a marker: a long delay placed in `early_hardware_init_pre`,
-which QMK calls from `__early_init` before `crt0` has filled the stacks, copied
-`.data` or cleared `.bss` — the earliest point any of this project's code runs.
-With the delay set to tens of seconds, the keyboard still returned in two. **Not
-one instruction of this firmware has ever executed.**
+The failure mode is unusually good at lying. Firmware that does not feed an
+inherited watchdog starts, runs briefly, and is reset. From the host that is
+indistinguishable from a bootloader declining to start the image: the keyboard
+reappears almost at once, still in bootloader mode, apparently never having run.
 
-### The oracle that makes this tractable
+Worse, the obvious test agrees with the wrong answer. A long marker delay placed
+at the earliest point any of this code runs still produced a short absence,
+because the reset cut the marker short too. That was read as proof the firmware
+never executed, and it was written into this document as such — twice.
 
-The operating mode after an apply is a clean accept/reject verdict, and reading it
-costs nothing:
+What broke the deadlock was feeding the watchdog *while* marking time. The same
+marker then ran to completion: **23 seconds of absence against the 2 seconds
+every unfed attempt produced.** The firmware had been running the whole time.
 
-| After `flash … --commit` | Meaning |
+The lesson worth keeping: a short absence proves nothing. It is equally
+consistent with "never started" and with "started and killed", and only an
+observation that survives the killing can tell them apart.
+
+### What this cost, in wrong conclusions
+
+Both of these were written here as fact and were not:
+
+- that the firmware ran and its USB watchdog recovered it. It did not run that
+  far; the nine seconds was an apply plus a bootloader reboot.
+- that the bootloader was rejecting the image, and the search was for which field
+  it disliked. Four hypotheses were tested and eliminated against that premise —
+  version, build stamp, image length, and a payload starting with zeros — and all
+  four were answering a question that was not being asked.
+
+One good thing came out of that search, and it is worth keeping: an image
+identical to Corsair's except for its version, **checksummed by this project
+rather than by Corsair, boots.** So there is no signature. The container's CRC is
+the only integrity check, custom firmware is permitted by this bootloader, and
+`read-firmware` separately confirmed the written image is byte-exact in flash.
+
+### How the watchdog is now serviced
+
+Feeding is not a one-liner, because the longest unattended stretch of boot falls
+between two of QMK's hooks: it starts the USB driver in `protocol_pre_init()`,
+after `keyboard_pre_init_kb()` and before the first housekeeping call, and that
+driver contains several unbounded waits. So:
+
+| Where | Why |
 | --- | --- |
-| `SelfOperated` | the bootloader accepted the image and started it |
-| `Bootloader` | it programmed the image, and refused to run it |
+| `early_hardware_init_pre()` | before `crt0` has even initialised RAM |
+| `board_init()` | after `halInit()` configures the clocks |
+| `keyboard_pre_init_kb()` | before QMK starts USB |
+| a ChibiOS virtual timer, every 100 ms | covers USB bring-up and anything else that does not return to the main loop |
+| `housekeeping_task_kb()` | every iteration thereafter |
 
-Corsair's own `0.35.288`, written by this same tool from this same bootloader
-mode, comes back `SelfOperated` and boots immediately — no `exit-bootloader`
-needed. So the write path, the chunking, the apply and its checksum are all
-sound. The bootloader is validating the image and declining ours.
+The virtual timer has a cost worth stating: a watchdog fed from an interrupt no
+longer rescues firmware that wedges with interrupts still running. That was a
+pleasant side effect rather than a design, and the two deliberate routes back —
+Escape at power-on and the USB watchdog — are unaffected.
 
-### What has been ruled out
+### Still not working, and what is known about it
 
-Each of these was tested against the oracle, one variable at a time:
+The firmware survives boot and still does not enumerate. One more hang was found
+and fixed along the way, and it was self-inflicted: `lpc_usb_clock_init()` used
+`chSysPolledDelayX` for the PHY settling delay, and that counts cycles with the
+DWT, which ChibiOS only enables in `chSysInit()`. The clock setup is reached from
+`usb_lld_init()`, which `halInit()` calls *before* `chSysInit()` — so the counter
+was frozen and the delay never finished. It is a plain loop now.
 
-| Hypothesis | Result |
-| --- | --- |
-| Version `0.99.0` is unacceptable | **No** — `0.35.289` is also refused |
-| The build date and time strings | **No** — copying Corsair's exactly changes nothing |
-| The image is too short (23 KB against 150 KB) | **No** — padded to exactly their length, still refused |
-| The payload starts with 980 zero bytes, so the slot looks blank | **No** — a real Thumb trampoline there changes nothing |
-
-The trampoline was kept regardless: it costs nothing, it makes the first word
-plainly non-blank, and it means that a bootloader which branched to the payload
-start rather than to the header's entry would still reach the right place.
-
-What remains is the **entry point** or the **payload content**. The header is
-otherwise byte-identical in structure to an image that works.
-
-### Next, in order
-
-1. **Verify the write is byte-exact**, by opening file id 3 and reading it back
-   through `READ_BUFFER`. This is read-only and therefore free. If the image in
-   flash differs from the image sent, its CRC fails the bootloader's own check and
-   that alone explains the refusal — and it would explain why a 150 KB image
-   survives where a 23 KB one does not, since the two use different chunk counts
-   and a different final partial chunk.
-2. **Bisect the payload** against the oracle, if the write proves exact.
-3. The trailing twelve bytes of both official images are three Thumb function
-   pointers — `0x0001002d`, `0x00010051` and one that moves between versions.
-   The first two are the first two functions in the image, so this is the
-   linker's `.init_array` rather than anything the bootloader reads. Recorded so
-   nobody else spends time on it.
-
-**A caution for whoever continues this.** Rejection is the safe outcome: the
-keyboard stays in the bootloader, reachable and reflashable. An image that is
-*accepted* and then crashes is the dangerous one, because the bootloader will
-hand control to it on every reset and this firmware's escape hatches only help
-once it reaches `keyboard_pre_init_kb`. Do not flash a variant whose code is
-knowingly wrong just to see whether the bootloader likes it.
+That did not fix enumeration either, so at least one fault or hang remains
+between `halInit()` and the main loop. The diagnostic facility in `bootloader.c`
+is the tool for it: enable `K100_USB_DIAGNOSTIC` and the firmware reports
+`DEVCMDSTAT`'s `DEV_EN`, `DCON` and `VBUS_DEBOUNCED` bits as the length of its
+absence from the bus. It has not yet reported, which is itself the finding — the
+firmware is not reaching the point that reports.
 
 ## Reading the result of a custom flash
 

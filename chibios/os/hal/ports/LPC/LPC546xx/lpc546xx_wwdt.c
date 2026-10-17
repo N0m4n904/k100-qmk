@@ -1,0 +1,102 @@
+/*
+    ChibiOS - Copyright (C) 2026 k100-qmk contributors
+    SPDX-License-Identifier: Apache-2.0
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+*/
+
+/**
+ * @file    LPC546xx/lpc546xx_wwdt.c
+ * @brief   LPC546xx windowed watchdog, for an application that inherits one.
+ *
+ * @details Nothing here starts a watchdog. This exists for the opposite
+ *          situation: an application handed control by a bootloader that has
+ *          already started one, which must then keep it fed or be reset.
+ *
+ *          It cannot be handed back. NXP's description of @p WDEN is explicit --
+ *          "once this bit is set to one and a watchdog feed is performed, the
+ *          watchdog timer will run permanently" -- so an application in this
+ *          position has no option but to feed it, for as long as it runs.
+ *
+ *          Discovering this the hard way is worth recording, because the failure
+ *          is so misleading. Firmware that does not feed an inherited watchdog
+ *          starts, runs for a second or two, and is reset. From the host that
+ *          looks exactly like a bootloader refusing to start the image: the
+ *          keyboard reappears almost immediately, still in bootloader mode,
+ *          having apparently never run. A marker delay placed early in boot
+ *          reports the same thing, because the reset cuts the marker short too.
+ *          The only way to tell the two apart is to feed the watchdog *while*
+ *          marking time, at which point the marker completes and the firmware is
+ *          revealed to have been running the whole while.
+ *
+ * @addtogroup LPC546xx_WWDT
+ * @{
+ */
+
+#include "hal.h"
+
+#include "lpc546xx_wwdt.h"
+
+/*===========================================================================*/
+/* Driver local definitions.                                                 */
+/*===========================================================================*/
+
+/**
+ * @name    The feed sequence
+ * @details Two writes, in this order and with nothing between them, reload the
+ *          timer from @p TC. Any other value, or a single write, is ignored.
+ * @{
+ */
+#define WWDT_FEED_FIRST                     0xAAU
+#define WWDT_FEED_SECOND                    0x55U
+/** @} */
+
+/*===========================================================================*/
+/* Driver exported functions.                                                */
+/*===========================================================================*/
+
+/**
+ * @brief   Is a watchdog running that this application has to service?
+ *
+ * @return              @p true when @p WDEN is set.
+ *
+ * @notapi
+ */
+bool lpcWwdtIsRunning(void) {
+
+  return (WWDT->MOD & WWDT_MOD_WDEN_MASK) != 0U;
+}
+
+/**
+ * @brief   Reloads the watchdog, if one is running.
+ *
+ * @details Guarded on @p WDEN rather than fed unconditionally, and that
+ *          distinction matters in the one direction nobody wants: on this part
+ *          it is the *feed* that commits @p WDEN and @p WDRESET, so feeding a
+ *          watchdog that is merely configured and not yet running is how you
+ *          start one. A caller that does not know whether it inherited a
+ *          watchdog is exactly the caller who must not do that.
+ *
+ * @notapi
+ */
+void lpcWwdtFeed(void) {
+
+  if (!lpcWwdtIsRunning()) {
+    return;
+  }
+
+  WWDT->FEED = WWDT_FEED_FIRST;
+  WWDT->FEED = WWDT_FEED_SECOND;
+}
+
+/** @} */
