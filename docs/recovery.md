@@ -386,7 +386,7 @@ particular would spin forever if the endpoint memory were not where the driver t
 Those are exactly the hangs the Escape route has to survive, and it does, because it has
 already run by then.
 
-### What nearly cost the keyboard, and the rule that came out of it
+### The near miss, and the rule that came out of it
 
 The firmware reached a state no tool in this project could reach: running
 normally, never enumerating, and feeding its watchdog. Invisible and immortal.
@@ -428,6 +428,48 @@ write that has not.
 A corollary worth keeping: **never flash an image whose only way back is
 untested.** Prove `k100_enter_bootloader()` on hardware, from a firmware that is
 otherwise known good, before relying on it again.
+
+### The loss
+
+The corollary above was written, committed, and then violated within the hour. The keyboard
+did not survive it. This section is the record, because a recovery document that only lists
+near misses teaches nothing.
+
+The build that ended it was an attempt to test `k100_enter_bootloader()` on hardware — the
+right experiment. It was arranged the wrong way round:
+
+```
+bl lpcWwdtFeed
+mark 0 s
+mark 10 s
+bl k100_enter_bootloader        ← the untested call
+mark 40 s
+bl k100_matrix_configure_pins   ← the held-key check, ~50 s into boot
+```
+
+The call faulted on the powered-down EEPROM array instead of returning, so the held-key check
+below it was never reached. One unproven mechanism, placed in front of the backup, removed
+both ways back at once. The keyboard has not enumerated since.
+
+**The experiment was fine; its placement was not.** Testing a recovery mechanism by making the
+boot path depend on it means a failure costs the thing the mechanism was for. It belonged
+*after* the held-key check, or in a build that still enumerated so that a failure cost nothing.
+
+Three further facts were established afterwards, each by measurement rather than argument, and
+each closing off a hoped-for escape:
+
+- **The firmware never reaches USB.** The host's kernel log contains no enumeration attempt of
+  any kind after the flash — not even a failed descriptor read. Since the EEPROM write loop is
+  bounded at a million spins and would *return* if it merely failed, the access must fault.
+- **There is no hardware-held bootloader entry.** Escape and the topmost macro key were each
+  held through a verified power cycle for a full minute, with every vendor ID on the host
+  watched at 20 ms resolution. The power cycle itself was timestamped by a USB stick in the
+  keyboard's passthrough port, so a null result means the test ran rather than that it did not.
+  Nothing enumerated.
+- **The passthrough port is not a way in.** A stick in it reaches the host directly; the MCU is
+  not in that path.
+
+What remains is [`docs/handover.md`](handover.md), for someone with a programmer.
 
 ### The window none of them covers
 

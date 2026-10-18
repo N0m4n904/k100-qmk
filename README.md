@@ -7,13 +7,19 @@ its stock firmware.
 
 ## ⚠️ Work in progress — read this before running anything
 
-**This project is unfinished, unproven, and may never work.** Nothing here has been run on a
-keyboard. There is no working firmware, and there may never be.
+**This project is unfinished, and it has already destroyed one keyboard.** There is no working
+firmware, and there may never be.
 
 **Using anything in this repository is entirely at your own risk.**
 
 Specifically, you should understand before you start:
 
+- **This has already bricked a K100.** Not hypothetically. A custom image was flashed whose
+  route back to the bootloader had never been observed working, and which called that route
+  *before* the held-key escape hatch. The call faulted, both ways back were lost together, and
+  the keyboard has not enumerated since. It cannot be recovered without opening the case and
+  attaching a programmer. The post-mortem is in [`docs/recovery.md`](docs/recovery.md) and the
+  instructions for recovering such a keyboard are in [`docs/handover.md`](docs/handover.md).
 - **You can permanently destroy your keyboard.** The K100's MCU can ship with read-out
   protection and debug access disabled, in which case a failed firmware write leaves no way
   to recover it. This is not a theoretical risk; it is documented for this chip family.
@@ -38,15 +44,17 @@ and the two rules that keep a mistake survivable.
 | --- | --- |
 | Firmware container format | **Proven.** The writer rebuilds both official images byte for byte. |
 | Firmware distribution | **Understood and verified.** Official images download and validate. |
-| Recovery path | **Proven on hardware.** An official image was written, applied and verified. |
+| Reflashing a *healthy* keyboard | **Proven on hardware.** An official image was written, applied and verified, many times. |
+| Recovery from firmware that will not boot | **Not proven, and it failed.** The firmware's own route back to the bootloader has never once been seen to work, and relying on it cost a keyboard. |
 | Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |
 | QMK layout, keymap, LED map, VIA | **Done** for OPX ISO DE, generated from ckb-next's data. |
-| ChibiOS LPC546xx port | **Runs on the keyboard** as far as QMK's pre-init. Fails in USB driver start-up. |
+| ChibiOS LPC546xx port | **Runs on the keyboard** as far as QMK's pre-init. Three boot-stopping defects found and fixed (DWT, realtime counter, system timer); none of the fixes has run on hardware. |
 | Key matrix pins | **Found** by disassembly. Sense polarity and settling time are untested guesses. |
 | RGB driver chips and protocol | **Derived from firmware**: IS31FL3743B on SPI3, framing and registers known. |
 | RGB bus pins | **Unknown** — configured by the bootloader, not the application. No lighting yet. |
-| Route back to the bootloader | Implemented, three ways; not yet exercised by the firmware itself. |
-| Working firmware | **No.** It boots and is reflashable; USB does not enumerate yet. |
+| Route back to the bootloader | Implemented three ways, all three funnelling through one EEPROM write that **has never succeeded on hardware**. Treat as non-functional. |
+| Working firmware | **No.** It has never completed a boot or enumerated. |
+| Test hardware | **None.** The only unit was bricked; nothing can be verified on real hardware. |
 
 Start with [`NOTES.md`](NOTES.md) for the research and
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for the plan.
