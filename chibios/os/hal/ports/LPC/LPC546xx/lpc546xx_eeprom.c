@@ -77,6 +77,14 @@
 #define EEPROM_PROG_SPINS                   1000000U
 
 /**
+ * @brief   Spins waited after powering the cell up, before addressing it.
+ * @details Generous rather than calculated: the part asks for of the order of
+ *          a hundred microseconds, this is milliseconds at any clock the port
+ *          runs at, and it happens once on a path that is already resetting.
+ */
+#define EEPROM_WAKE_SPINS                   20000U
+
+/**
  * @brief   The array itself.
  */
 #define EEPROM_ARRAY                                                        \
@@ -96,6 +104,23 @@
 void lpcEepromStart(void) {
 
   SYSCON->AHBCLKCTRLSET[0] = SYSCON_AHBCLKCTRL_EEPROM_MASK;
+
+  /* Wake the cell. It powers itself down, and a programming cycle started
+     while it is down does nothing at all: the write is lost, END_OF_PROG never
+     asserts, and the only symptom is that lpcEepromWrite() spins out its bound
+     and reports failure.
+
+     That was not a hypothetical. Both of this firmware's routes back to the
+     bootloader go through one EEPROM write, this register was never touched,
+     and so neither route had ever worked -- which is how the keyboard twice
+     ended up running, invisible on the bus and unable to hand itself back. */
+  EEPROM->PWRDWN = 0U;
+
+  /* The cell needs time to come up before it is addressed, and this runs on a
+     recovery path where a few milliseconds cost nothing. Deliberately a plain
+     loop: this is reachable before the kernel is started. */
+  for (volatile uint32_t spin = 0U; spin < EEPROM_WAKE_SPINS; spin++) {
+  }
 
   /* Round to nearest, as the stock firmware does: it compares the remainder
      against half the target before incrementing. A divider one step too large
