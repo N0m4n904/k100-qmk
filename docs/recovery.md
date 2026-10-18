@@ -365,6 +365,41 @@ particular would spin forever if the endpoint memory were not where the driver t
 Those are exactly the hangs the Escape route has to survive, and it does, because it has
 already run by then.
 
+### What nearly cost the keyboard, and the rule that came out of it
+
+The firmware reached a state no tool in this project could reach: running
+normally, never enumerating, and feeding its watchdog. Invisible and immortal.
+The keyboard was dark, absent from the host's entire USB tree, and stayed that
+way — it came back only because a power cycle happened to land in the bootloader.
+
+Three things combined, and each looked reasonable on its own:
+
+1. **Both software routes back called the same function.** The Escape check and
+   the ten-second "USB never came up" timeout both go through
+   `k100_enter_bootloader()`, which writes the EEPROM mode word. One failure
+   took out both routes at once. That write had never been seen to succeed on
+   hardware: every mode change this project has relied on was performed by
+   Corsair's bootloader, not by our code.
+2. **The fallback latched instead of resetting.** When the write failed, the old
+   code set `usb_was_ready` and let the keyboard keep running, reasoning that
+   this beat a reboot loop. For a keyboard whose only remaining lifeline is the
+   watchdog, it is far worse.
+3. **Fixing a bug removed the safety net.** Every failed experiment until then
+   had been rescued by the watchdog, because the firmware died before feeding
+   it. The moment the system-timer fix let the firmware actually run, it started
+   feeding — and the net disappeared precisely when the firmware got better.
+
+**The rule:** the last line of defence must not be the mechanism that has never
+been proven. `housekeeping_task_kb()` now stops feeding the watchdog when
+`k100_enter_bootloader()` fails, which reaches the bootloader through something
+this project has repeatedly observed working — an application that dies soon
+after handover makes the bootloader stay put — rather than through the EEPROM
+write that has not.
+
+A corollary worth keeping: **never flash an image whose only way back is
+untested.** Prove `k100_enter_bootloader()` on hardware, from a firmware that is
+otherwise known good, before relying on it again.
+
 ### The window none of them covers
 
 | Stage | Unbounded waits in it | Confidence |

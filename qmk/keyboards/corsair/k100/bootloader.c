@@ -766,9 +766,16 @@ void keyboard_post_init_kb(void) {
 void housekeeping_task_kb(void) {
     static uint32_t first_task_at = 0;
     static bool     usb_was_ready = false;
+    static bool     starve_watchdog = false;
 
-    /* Every iteration, and before anything that might return early. */
-    lpcWwdtFeed();
+    /*
+     * Every iteration, and before anything that might return early -- unless
+     * the firmware has given up on becoming usable, in which case the surest
+     * thing it can do is stop feeding and let the watchdog have it.
+     */
+    if (!starve_watchdog) {
+        lpcWwdtFeed();
+    }
 
 #ifdef K100_USB_DIAGNOSTIC
     /* Once, not every iteration: this one reports that the loop was reached, and
@@ -809,9 +816,25 @@ void housekeeping_task_kb(void) {
          * the bootloader rather than leaving it enumerating as nothing, which
          * is the state no tool in this project can recover from.
          *
-         * If that fails the EEPROM write did not take, and trying again every
-         * loop would be a busy wait on something that is not going to change.
-         * Latch instead and let the keyboard run as it is.
+         * If that fails, stop feeding the watchdog.
+         *
+         * An earlier version latched here and let the keyboard keep running,
+         * on the reasoning that this beat a reboot loop. It does not, and the
+         * difference is the whole safety margin of this project. A firmware
+         * that runs, never enumerates and keeps its watchdog fed is invisible
+         * and immortal: no tool here can reach it, and the one thing that had
+         * been rescuing every failed experiment -- the watchdog reset -- is
+         * exactly what the feeding prevents. That state was reached once, and
+         * the keyboard only came back because a power cycle happened to land
+         * in the bootloader.
+         *
+         * Starving it instead reaches the bootloader through the mechanism this
+         * project has actually observed working: an application that dies soon
+         * after handover makes the bootloader stay in bootloader mode. The
+         * EEPROM write above has never once been seen to succeed on hardware,
+         * so it must not be the only way back -- and because both the Escape
+         * check and this timeout call it, a single failure took both routes
+         * out together.
          */
 #ifdef K100_USB_DIAGNOSTIC
         /* Stay away for a length of time that encodes the register state, so
@@ -819,7 +842,7 @@ void housekeeping_task_kb(void) {
         wait_ms(DIAGNOSTIC_BASE_MS + (DIAGNOSTIC_STEP_MS * usb_diagnostic_code()));
 #endif
         if (!k100_enter_bootloader()) {
-            usb_was_ready = true;
+            starve_watchdog = true;
         }
     }
 
