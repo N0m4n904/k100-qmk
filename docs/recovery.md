@@ -268,8 +268,8 @@ the two, and Bragi exposes no way to read an EEPROM word back to find out. Both 
 the same two practical consequences, which is why it is not worth guessing between them:
 
 - **A power cycle always returns to the application.** It is not a rescue. A keyboard running
-  firmware that hangs cannot be recovered by unplugging it, and the "hold Escape at power-on"
-  route works because the *firmware* checks Escape, not because the bootloader does.
+  firmware that hangs cannot be recovered by unplugging it, and the held-key route works
+  because the *firmware* reads the key, not because the bootloader does.
 - **Our route matches the one path known to work.** The firmware here writes the same word and
   then calls `NVIC_SystemReset`, which is a soft reset — exactly what the stock application
   does. Whichever of the two readings is true, this is the sequence that has been observed to
@@ -328,7 +328,28 @@ not reached a configured state by the time it fires, writes the EEPROM word and 
 firmware that never becomes usable then puts itself back in the bootloader without anyone
 touching the keyboard.
 
-### Where the Escape check sits, and what it therefore covers
+### Which key, and why it is not a particular one
+
+**Hold any single key on the top row** while the keyboard powers up — Escape, G1, any of the
+function keys, Print Screen. One key, not two.
+
+Naming one key was the first design and it is the wrong one. The strobe and sense assignment
+this firmware uses was decoded out of Corsair's firmware image rather than measured on the
+board, and on the top row the macro key `G1` sits at column 0 with Escape next to it at column
+1. An off-by-one anywhere in that decoding would move the escape hatch one key sideways
+without changing anything observable: the person holding Escape sees a keyboard that does not
+come back, which is indistinguishable from firmware that never ran. Since the whole point of
+this route is to survive the parts of the project that are still guesses, it must not itself
+rest on one of them.
+
+So `recovery_key_held()` asks a question that does not name a column: is exactly one sense on
+row 0 reading differently from all the others? That is true for a single held key under either
+switch polarity, either pull direction, and any permutation of the columns. It is also a
+*stricter* garbage filter than the named-column version — a scrambled reading now has to
+produce exactly one odd bit out of seventeen, four samples running, rather than merely put one
+particular bit in the minority.
+
+### Where the key check sits, and what it therefore covers
 
 All three routes run *inside* the firmware, so the question is how much of boot happens before
 the earliest of them. The answer is less than it looks, because `keyboard_pre_init_kb` is not

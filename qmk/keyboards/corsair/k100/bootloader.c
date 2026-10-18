@@ -21,9 +21,9 @@
  * Three routes are provided, because each one depends on a different part of
  * this firmware being right:
  *
- *   QK_BOOT             needs USB and the matrix          an ordinary reflash
- *   Escape at power-on  needs the matrix read only        USB broken
- *   USB watchdog        needs neither                     firmware unusable
+ *   QK_BOOT               needs USB and the matrix        an ordinary reflash
+ *   A top-row key held    needs the matrix read only      USB broken
+ *   USB watchdog          needs neither                   firmware unusable
  *
  * The last two matter most for a first flash, because they survive this project
  * being wrong about the things it is still guessing at.
@@ -49,23 +49,25 @@
 #define OPERATING_MODE_BOOTLOADER  3U
 
 /*
- * Where Escape sits in the matrix, from the generated layout: row 0, column 1.
+ * The strobe the recovery key is looked for on: row 0, the top row.
+ *
+ * Any single key on it will do, and that is deliberate -- see
+ * recovery_key_held() for why no particular column is named here.
  */
-#define ESCAPE_ROW 0U
-#define ESCAPE_COL 1U
+#define RECOVERY_ROW 0U
 
 /*
  * Row 0 has no key on sense 14, from the generated layout. It is left out of the
  * unanimity test below, because a sense with nothing attached to it cannot be
  * expected to follow the ones that have.
  */
-#define ESCAPE_ROW_UNUSED_COL 14U
+#define RECOVERY_ROW_UNUSED_COL 14U
 
 /*
  * How many agreeing samples it takes. Each costs one strobe and the settling
  * wait, so a handful is microseconds and rules out a single bad read.
  */
-#define ESCAPE_SAMPLES 4U
+#define RECOVERY_SAMPLES 4U
 
 /*
  * How long to wait for USB before concluding this firmware is unusable.
@@ -330,58 +332,81 @@ void mcu_reset(void) {
 }
 
 /**
- * Is Escape held, whichever way round the optical switches conduct?
+ * The one sense in a reading that disagrees with all the others, if there is
+ * exactly one.
  *
- * The polarity of an OPX switch is still a hypothesis in this project --
- * MATRIX_SENSE_ACTIVE_LOW is one define with a long comment above it -- and an
- * escape hatch that depends on an untested guess is not an escape hatch. So
- * this does not ask "does Escape read low". It asks whether Escape disagrees
- * with the rest of its row.
+ * Which level means "pressed" is not known: the polarity of an OPX switch is
+ * still a hypothesis in this project, MATRIX_SENSE_ACTIVE_LOW is one define with
+ * a long comment above it, and an escape hatch that depends on an untested guess
+ * is not an escape hatch. So this does not ask which senses read low. It asks
+ * which one is the odd one out, which is the same answer under either polarity
+ * and either pull direction.
  *
- * Row 0 carries a key on every sense but one, so with nothing held they all read
- * the same level and Escape agrees with them. Holding Escape alone makes it the
- * one that differs, under either polarity and either pull direction.
+ * Returns the single disagreeing bit, or zero if the reading is unanimous or
+ * more than one sense differs.
+ */
+static uint32_t lone_disagreeing_sense(uint32_t reading, uint32_t senses) {
+    const uint32_t low = senses & ~reading;
+
+    if (__builtin_popcount(reading) == 1) {
+        return reading;
+    }
+    if (__builtin_popcount(low) == 1) {
+        return low;
+    }
+    return 0UL;
+}
+
+/**
+ * Is a single key on the top row held?
+ *
+ * Any one of them, and not a named column. Naming one was the obvious design and
+ * it is the wrong one, because it makes the only escape hatch in this firmware
+ * depend on the one table that is hardest to check: the strobe and sense
+ * assignment decoded out of Corsair's firmware image. Escape and the topmost
+ * macro key G1 are physically adjacent and sit at columns 1 and 0 of the same
+ * row, so an off-by-one anywhere in that decoding silently moves the escape
+ * hatch to the key next door -- and the person holding Escape has no way to tell
+ * that from firmware which simply does not run. Accepting whichever single key
+ * is held removes the dependency altogether.
  *
  * **Every other populated sense has to agree.** An earlier version asked only
- * whether Escape differed from the *majority*, which is far too weak: a reading
- * that is simply wrong -- the wrong pins, a strobe that drives nothing, a bus
- * left floating -- scatters bits arbitrarily, and Escape lands on the minority
- * side of that about half the time. The check then fires on a keyboard nobody
- * touched, and since it fires before USB, the result is a keyboard that boots
- * into the bootloader and looks for all the world like firmware that will not
- * run. Requiring unanimity among the other sixteen costs nothing when a key
- * really is held and rejects a garbage read immediately.
+ * whether the chosen column differed from the *majority*, which is far too weak:
+ * a reading that is simply wrong -- the wrong pins, a strobe that drives nothing,
+ * a bus left floating -- scatters bits arbitrarily, and any given sense lands on
+ * the minority side of that about half the time. The check then fires on a
+ * keyboard nobody touched, and since it fires before USB, the result is a
+ * keyboard that boots into the bootloader and looks for all the world like
+ * firmware that will not run. Requiring that exactly one of the seventeen
+ * differs costs nothing when a key really is held and rejects a garbage read
+ * immediately -- more firmly than the named-column version did, since a garbage
+ * read now has to produce a single odd bit rather than merely put one particular
+ * bit in the minority.
  *
  * Column 14 is excluded because row 0 has no key on it. With pull-ups it reads
  * high regardless, so under the polarity where a released key reads *low* it
  * would disagree with every real sense and veto the check forever.
  *
- * Sampling several times and demanding the same answer each time guards against
- * a single bad read, which costs microseconds here.
+ * Sampling several times and demanding the *same* key each time guards against a
+ * single bad read, which costs microseconds here.
  *
- * It fails safe in the direction that matters: anything other than exactly this
- * pattern means "not held", and the keyboard boots normally.
+ * It fails safe in the direction that matters: anything other than one steady
+ * odd sense means "not held", and the keyboard boots normally.
  */
-static bool escape_held(void) {
-    const uint32_t escape = 1UL << ESCAPE_COL;
-    const uint32_t senses = ((1UL << MATRIX_COLS) - 1UL) & ~(1UL << ESCAPE_ROW_UNUSED_COL);
-    const uint32_t others = senses & ~escape;
+static bool recovery_key_held(void) {
+    const uint32_t senses = ((1UL << MATRIX_COLS) - 1UL) & ~(1UL << RECOVERY_ROW_UNUSED_COL);
+    uint32_t       held   = 0UL;
 
     k100_matrix_configure_pins();
 
-    for (uint8_t sample = 0; sample < ESCAPE_SAMPLES; sample++) {
-        const uint32_t reading = k100_matrix_sample_row(ESCAPE_ROW) & senses;
+    for (uint8_t sample = 0; sample < RECOVERY_SAMPLES; sample++) {
+        const uint32_t reading = k100_matrix_sample_row(RECOVERY_ROW) & senses;
+        const uint32_t odd     = lone_disagreeing_sense(reading, senses);
 
-        /* Unanimous among the others, and Escape the opposite of them. The two
-           acceptable readings are "others all high, Escape low" and its
-           inverse; anything else is not a held key. */
-        const bool all_high = (reading & others) == others;
-        const bool all_low  = (reading & others) == 0UL;
-        const bool escape_high = (reading & escape) != 0UL;
-
-        if (!((all_high && !escape_high) || (all_low && escape_high))) {
+        if (odd == 0UL || (sample > 0U && odd != held)) {
             return false;
         }
+        held = odd;
     }
 
     return true;
@@ -691,9 +716,10 @@ void keyboard_pre_init_kb(void) {
     lpcWwdtFeed();
 
     /*
-     * The Escape check comes first -- before every marker, every diagnostic and
-     * anything else that could stall -- and that ordering is not a stylistic
-     * preference, it is the lesson from losing a keyboard to this file.
+     * The recovery-key check comes first -- before every marker, every
+     * diagnostic and anything else that could stall -- and that ordering is not
+     * a stylistic preference, it is the lesson from losing a keyboard to this
+     * file.
      *
      * This is the only lever a person has on firmware that is already running.
      * Everything else this project can do needs the keyboard to be answering on
@@ -705,7 +731,7 @@ void keyboard_pre_init_kb(void) {
      * So: nothing goes above this line. Anything added to this function belongs
      * below it, however briefly it claims to run.
      */
-    if (escape_held()) {
+    if (recovery_key_held()) {
         (void)k100_enter_bootloader();
     }
 
