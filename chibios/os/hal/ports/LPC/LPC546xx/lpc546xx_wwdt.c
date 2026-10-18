@@ -99,4 +99,44 @@ void lpcWwdtFeed(void) {
   WWDT->FEED = WWDT_FEED_SECOND;
 }
 
+/**
+ * @brief   Lengthens an inherited watchdog to its maximum timeout.
+ *
+ * @details Separate from feeding, and far more restricted. @p WDEN cannot be
+ *          cleared once set, but the timeout constant behind it is ordinary
+ *          state, and NXP gates writes to it with @p WDPROTECT: clear, and
+ *          @p TC takes any value; set, and it may only be raised inside the
+ *          feed window. This refuses rather than guesses when protection is on.
+ *
+ *          The reason to want it is diagnosis. An application that inherits a
+ *          watchdog it did not configure cannot tell a hang from a stretch of
+ *          work that simply takes longer than the previous owner allowed for --
+ *          both end as a reset in the same place, and both look from outside
+ *          like firmware that will not start. Raising the timeout separates
+ *          them: what was only slow runs to completion, and what was hung still
+ *          hangs.
+ *
+ * @return              Whether the timeout was raised.
+ *
+ * @notapi
+ */
+bool lpcWwdtStretch(void) {
+
+  if (!lpcWwdtIsRunning()) {
+    return false;
+  }
+
+  if ((WWDT->MOD & WWDT_MOD_WDPROTECT_MASK) != 0U) {
+    return false;
+  }
+
+  WWDT->TC = WWDT_TC_COUNT_MASK;
+
+  /* The counter reloads from TC on a feed, not on the write above, so without
+     this the new timeout does not take effect until something else feeds. */
+  lpcWwdtFeed();
+
+  return true;
+}
+
 /** @} */

@@ -146,8 +146,32 @@
 #    define DIAGNOSTIC_STAGE_LATE_S           0U
 #    define DIAGNOSTIC_STAGE_BOARD_S          0U
 #    define DIAGNOSTIC_STAGE_MATRIX_S         0U
-#    define DIAGNOSTIC_STAGE_PREINIT_S        0U
-#    define DIAGNOSTIC_STAGE_POSTINIT_S       0U
+#    define DIAGNOSTIC_STAGE_PREINIT_S       0U
+#    define DIAGNOSTIC_STAGE_ESCAPE_DONE_S   0U
+#    define DIAGNOSTIC_STAGE_SLEEP_OK_S      0U
+/*
+ * Inside keyboard_init(), which is where boot actually fails.
+ *
+ * Two weak hooks fall in the right places: matrix_init_kb() at the end of
+ * matrix_init(), and led_init_ports(), which runs after quantum_init() and
+ * host_init(). Overriding the latter costs nothing here -- this keyboard has no
+ * backlight pins and rgb_matrix is off, so QMK's version is empty.
+ */
+#    define DIAGNOSTIC_STAGE_MATRIX_INIT_S    0U
+#    define DIAGNOSTIC_STAGE_LED_PORTS_S      0U
+
+/*
+ * Inside USB initialisation, which is where boot fails.
+ *
+ * QMK's ordering is what points here: keyboard_setup() -- holding the Escape
+ * check, which completes -- runs before protocol_pre_init(), and keyboard_init()
+ * runs after it. So a boot that clears the Escape check and never reaches
+ * matrix_init_kb() is a boot that died starting USB.
+ */
+#    define DIAGNOSTIC_STAGE_USB_STOP_S       0U
+#    define DIAGNOSTIC_STAGE_USB_POWER_S      0U
+
+#    define DIAGNOSTIC_STAGE_POSTINIT_S      0U
 #    define DIAGNOSTIC_STAGE_HOUSEKEEPING_S   0U
 #    define DIAGNOSTIC_STAGE_SCAN_S           0U
 
@@ -157,6 +181,61 @@
  * prefix sums above are being read, because anything non-zero here shifts all of
  * them.
  */
+/* Marked by the second boot only, to prove the boot counter retains. */
+#    define DIAGNOSTIC_BOOT2_PROBE_S          0U
+
+/*
+ * Marked by *every* boot, to count how many times a failed image is started.
+ *
+ * This is the number every other reading is divided by, and it had never been
+ * measured. A total of absence only names a boot stage once it is known whether
+ * the markers in it ran once or several times, and the bootloader restarting an
+ * image it cannot run multiplies them. Unguarded on purpose: the whole quantity
+ * being measured is how often this runs.
+ *
+ * It sits in early_hardware_init_pre(), so it is timed by whatever clock the
+ * bootloader handed over -- which is not the clock the other markers assume.
+ * Calibrated against the boot-counter probe, where 30 nominal seconds there
+ * measured about 27 real ones, so 10 nominal is roughly 9 real per boot.
+ */
+#    define DIAGNOSTIC_BOOTCOUNT_PROBE_S      0U
+
+/*
+ * Inner loop iterations per tenth of a second, at the clock halInit() sets.
+ *
+ * Measured, because guessing it wrong silently rescales every reading. With a
+ * million here, a marker asking for 30 s produced 68.5 s of absence, so one
+ * iteration costs about ten core cycles at 48 MHz rather than the five the
+ * round number assumed. That factor of 2.28 is not a tidiness problem: it made
+ * markers of 10 + 20 + 40 look like a total of 70 when the third had not run at
+ * all, which put the failure three stages later than it really is.
+ *
+ * Markers that run before halInit() are still not in seconds -- the bootloader
+ * hands over at roughly 180 MHz, and the same loop there measured 3.7 times
+ * faster, which is the independent confirmation of that figure.
+ */
+#    define DIAGNOSTIC_SPINS_PER_TENTH   440000U
+
+/* Marked only if the part refuses to lengthen the inherited watchdog. */
+#    define DIAGNOSTIC_WATCHDOG_REFUSED_S    12U
+
+/*
+ * Seconds per fault class, reported if the core takes a fault.
+ *
+ * Worth catching separately from everything else, because a fault does not look
+ * like a fault from outside. All four fault vectors in this image point at
+ * ChibiOS's unhandled-exception stub, which is an infinite loop, so the core
+ * spins there until the watchdog resets it -- the same few seconds of absence
+ * that a hang, a stall or a refused image produce. It also explains a reading
+ * that otherwise has no explanation: that every instruction between the last
+ * stage known to run and the first one known not to is bounded.
+ *
+ * The class is encoded in the length so one flash answers both questions:
+ * roughly 15 s for a hard fault, 30 for a memory-management fault, 45 for a bus
+ * fault and 60 for a usage fault, against about 8 s for no fault at all.
+ */
+#    define DIAGNOSTIC_FAULT_STEP_S          15U
+
 #    define DIAGNOSTIC_STAGE_RIT_LIVE_S       0U
 #    define DIAGNOSTIC_STAGE_RIT_DEAD_S       0U
 
@@ -308,18 +387,65 @@ static bool escape_held(void) {
  */
 #ifdef K100_USB_DIAGNOSTIC
 /**
+ * State that outlives a reset, so one boot can report on the previous one.
+ *
+ * Placed by hand at the base of SRAMX. The linker script keeps ram1 out of every
+ * REGION_ALIAS, so nothing is linked there and crt0 -- which zeroes the whole of
+ * ram0 -- never touches it. SRAMX is core-coupled and has no clock gate of its
+ * own (NXP gates SRAM1, SRAM2 and SRAM3 only), so it is readable as soon as the
+ * core is running.
+ *
+ * It is read from early_hardware_init_pre(), which crt0 reaches before it copies
+ * .data or clears .bss, so the read happens before anything could overwrite it
+ * even if that reasoning about ram1 were wrong. If the area turns out not to
+ * retain at all, the magic never matches, every boot looks like the first, and
+ * the markers behave exactly as they did before this existed -- the failure mode
+ * is the old behaviour rather than a wrong answer.
+ */
+#    define DIAGNOSTIC_SURVIVOR_ADDRESS 0x04000000U
+#    define DIAGNOSTIC_SURVIVOR_MAGIC   0x4B313030UL /* "K100" */
+
+typedef struct {
+    uint32_t magic;
+    uint32_t boots;
+} diagnostic_survivor_t;
+
+#    define DIAGNOSTIC_SURVIVOR \
+        (*(volatile diagnostic_survivor_t *)DIAGNOSTIC_SURVIVOR_ADDRESS)
+
+/**
  * Holds the keyboard off the bus for roughly this many seconds, feeding the
  * watchdog throughout so the delay is not cut short by it.
+ *
+ * Every boot marks. That is safe because the bootloader starts a firmware it
+ * cannot run exactly once -- measured, not assumed: a build with a single
+ * unguarded 10 s mark in early_hardware_init_pre() was absent for 14.31 s
+ * against a no-marker baseline of 8.15 s, and one mark there is worth about
+ * 6.1 s, so it ran once.
+ *
+ * It is worth saying why there is no first-boot guard, because there was one and
+ * it did active harm. The worry it answered was real -- if the bootloader
+ * retried, every marker would run again on each attempt and a total of 76 s
+ * would read equally well as 70 s once or 30 s two and a half times. But the
+ * guard counted boots in memory that survives a *reflash* as well as a reset, so
+ * the count carried over from the previous experiment, the second flash in a row
+ * never saw a count of one, and every marker silently vanished. A measurement
+ * that fails by reporting the baseline is worse than no measurement, and the
+ * retry count it guarded against turned out to be one.
  *
  * A busy loop rather than wait_ms(), because the earliest callers run before the
  * kernel exists. The iteration count is approximate by design.
  */
-static void diagnostic_mark(uint32_t seconds) {
+static void diagnostic_mark_always(uint32_t seconds) {
     for (uint32_t tenth = 0U; tenth < seconds * 10U; tenth++) {
         lpcWwdtFeed();
-        for (volatile uint32_t spin = 0U; spin < 1000000U; spin++) {
+        for (volatile uint32_t spin = 0U; spin < DIAGNOSTIC_SPINS_PER_TENTH; spin++) {
         }
     }
+}
+
+static void diagnostic_mark(uint32_t seconds) {
+    diagnostic_mark_always(seconds);
 }
 
 /**
@@ -358,8 +484,109 @@ void k100_diagnostic_mark_first_scan(void) {
 }
 #endif
 
+#ifdef K100_USB_DIAGNOSTIC
+/**
+ * Reports a fault by its length, then lets the watchdog end the boot.
+ *
+ * Only the first boot reports, for the same reason the stage markers do: the
+ * bootloader retries, and a signal that repeats is a signal that cannot be read.
+ */
+static void diagnostic_fault(uint32_t class) {
+    if (DIAGNOSTIC_SURVIVOR.boots == 1U) {
+        diagnostic_mark_always(class * DIAGNOSTIC_FAULT_STEP_S);
+    }
+
+    /* Deliberately not recovering. The watchdog resets the part and the
+       bootloader comes back reflashable, which is the state to be left in. */
+    for (;;) {
+    }
+}
+
+void HardFault_Handler(void) {
+    diagnostic_fault(1U);
+}
+
+void MemManage_Handler(void) {
+    diagnostic_fault(2U);
+}
+
+void BusFault_Handler(void) {
+    diagnostic_fault(3U);
+}
+
+void UsageFault_Handler(void) {
+    diagnostic_fault(4U);
+}
+#endif
+
+#ifdef K100_USB_DIAGNOSTIC
+/*
+ * The stretch that no keyboard-side hook can see into.
+ *
+ * keyboard_post_init_kb() is reached and the first matrix_scan_custom() is not,
+ * and matrix_scan_custom() is the first statement of matrix_scan(), which
+ * keyboard_task() reaches in three instructions because matrix_can_read()
+ * compiles to `movs r0, #1`. So the stop is in one of four places, and all four
+ * are calls in QMK's main() with nothing overridable between them. Requires
+ * qmk/patches/0002-main-loop-checkpoints.patch.
+ *
+ * Lengths are chosen so the total names the furthest point reached: 5, then 15,
+ * then 35, then 75 seconds.
+ */
+void main_checkpoint(uint8_t stage) {
+    static const uint8_t seconds[] = {0U, 80U, 0U, 0U, 0U};
+
+    if (stage < (sizeof seconds / sizeof seconds[0])) {
+        diagnostic_mark(seconds[stage]);
+    }
+}
+#endif
+
+#ifdef K100_USB_DIAGNOSTIC
+void matrix_init_kb(void) {
+    diagnostic_mark(DIAGNOSTIC_STAGE_MATRIX_INIT_S);
+    matrix_init_user();
+}
+
+void led_init_ports(void) {
+    diagnostic_mark(DIAGNOSTIC_STAGE_LED_PORTS_S);
+}
+#endif
+
 void early_hardware_init_pre(void) {
     lpcWwdtFeed();
+
+#ifdef K100_USB_DIAGNOSTIC
+    /* Before crt0 has copied .data or cleared .bss, which is the whole point:
+       this is the last moment the previous boot's RAM is still readable. */
+    if (DIAGNOSTIC_SURVIVOR.magic != DIAGNOSTIC_SURVIVOR_MAGIC) {
+        DIAGNOSTIC_SURVIVOR.magic = DIAGNOSTIC_SURVIVOR_MAGIC;
+        DIAGNOSTIC_SURVIVOR.boots = 0U;
+    }
+    DIAGNOSTIC_SURVIVOR.boots++;
+
+    /* Checks the counter above rather than the firmware: a mark that only the
+       second boot makes is one the keyboard cannot produce unless this area
+       really did survive the reset. Without it the stage markers are not
+       trustworthy, because a total of 76 s reads the same whether the markers
+       ran once as intended or several times across retries -- which is the
+       confound the counter exists to remove, and so is exactly the thing that
+       cannot be assumed to work. */
+    if (DIAGNOSTIC_SURVIVOR.boots == 2U) {
+        diagnostic_mark_always(DIAGNOSTIC_BOOT2_PROBE_S);
+    }
+
+    diagnostic_mark_always(DIAGNOSTIC_BOOTCOUNT_PROBE_S);
+
+#    ifdef K100_DIAGNOSTIC_STRETCH_WATCHDOG
+    /* Separates "hung" from "slower than the inherited watchdog allows". A
+       distinctive mark if the part refuses, so a refusal is not read as a
+       result. */
+    if (!lpcWwdtStretch()) {
+        diagnostic_mark_always(DIAGNOSTIC_WATCHDOG_REFUSED_S);
+    }
+#    endif
+#endif
 }
 
 #ifdef K100_USB_DIAGNOSTIC
@@ -393,8 +620,19 @@ void board_init(void) {
  * known to run -- halInit() completes.
  */
 void lpcUsbTrace(unsigned stage) {
+    /* Stage 1 is the clock and power setup, reached from halInit() and so
+       already known to run. Stage 2 is the transceiver, reached from usbStart()
+       inside protocol_pre_init() -- which is the call boot now fails in. */
     if (stage == 2U) {
-        diagnostic_mark(10U);
+        diagnostic_mark(DIAGNOSTIC_STAGE_USB_POWER_S);
+    }
+
+    /* Stage 3 is lpc_usb_power_off(), which usbStop() reaches. init_usb_driver()
+       calls usbStop() before usbStart(), so this splits the window that is left:
+       the endpoint setup and usbDisconnectBus() come before it, the 50 ms wait
+       and usbStart() after. */
+    if (stage == 3U) {
+        diagnostic_mark(DIAGNOSTIC_STAGE_USB_STOP_S);
     }
 }
 
@@ -438,6 +676,34 @@ void keyboard_pre_init_kb(void) {
         (void)k100_enter_bootloader();
     }
 
+#ifdef K100_USB_DIAGNOSTIC
+    /* The Escape check is the first thing in boot to read the matrix, and the
+       first to call wait_us(). Marking on the far side of it separates it from
+       the rest of keyboard_init(). */
+    diagnostic_mark(DIAGNOSTIC_STAGE_ESCAPE_DONE_S);
+
+    /*
+     * Does a kernel sleep ever return?
+     *
+     * Nothing in boot sleeps until USB initialisation does, and that is exactly
+     * where boot stops. Everything working up to here -- including wait_us() in
+     * the Escape check -- runs off the RIT and never involves the scheduler, so
+     * the system timer has not been exercised once.
+     *
+     * It is the right shape for the fault that is left. ChibiOS runs tickless
+     * here (CH_CFG_ST_TIMEDELTA is 2), so a sleep programmes the timer's
+     * comparator and blocks until it fires; if the timer never fires the thread
+     * is simply never woken. That is a hang with no fault, no unbounded loop in
+     * any source file, and no dependence on USB at all -- which is every
+     * symptom observed.
+     *
+     * One millisecond, because the question is whether it returns, not when.
+     */
+    chThdSleepMilliseconds(1);
+
+    diagnostic_mark(DIAGNOSTIC_STAGE_SLEEP_OK_S);
+#endif
+
     keyboard_pre_init_user();
 }
 
@@ -452,7 +718,47 @@ void matrix_setup(void) {
 }
 
 void keyboard_post_init_kb(void) {
+#ifdef K100_DIAGNOSTIC_MASK_USB_IRQ
+    /*
+     * Masks the USB interrupt, as a test of one specific explanation for the
+     * stop between here and the first matrix scan.
+     *
+     * Everything in that stretch is bounded when read on its own, and the core
+     * is not faulting -- a build that caught all four fault classes reported
+     * none. What is left is usb_event_queue_task(), whose drain loop exits only
+     * when the queue is momentarily empty. A controller that never enumerates
+     * and keeps signalling can refill it from the interrupt as fast as the loop
+     * empties it, and then the loop does not end. That also explains why the
+     * marker in this very function completes: nothing drains the queue while a
+     * marker is running, so the spin only begins once the main loop does.
+     *
+     * With the interrupt masked the queue cannot be refilled. If the main loop
+     * then runs, that is the mechanism.
+     */
+    nvicDisableVector(LPC_USB_IRQ_NUMBER);
+#endif
+
     diagnostic_mark(DIAGNOSTIC_STAGE_POSTINIT_S);
+
+#ifdef K100_DIAGNOSTIC_SILENCE_IRQ_AT_POSTINIT
+    /*
+     * Tests whether an interrupt is what loses the return out of
+     * keyboard_init().
+     *
+     * The marker above completes, and the next instrumented point -- the one
+     * immediately after keyboard_init() returns -- does not. Between them are
+     * keyboard_post_init_user(), which is `bx lr`, and two pops. Straight-line
+     * code like that cannot hang, so something must be corrupting the return
+     * path, and the only other thing executing is interrupt handlers: this
+     * firmware spends the marker's whole duration spinning with them enabled,
+     * driving a USB controller that never enumerates.
+     *
+     * With them masked from here on, the return path runs alone. If the next
+     * point is then reached, an interrupt handler is responsible.
+     */
+    __disable_irq();
+#endif
+
     keyboard_post_init_user();
 }
 #endif

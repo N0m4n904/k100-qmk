@@ -44,4 +44,39 @@
  */
 #define PORT_USE_EXTERNAL_RT_COUNTER
 
+/*
+ * Periodic system tick, not tickless.
+ *
+ * QMK defaults to CH_CFG_ST_TIMEDELTA 2, which asks ChibiOS for a free-running
+ * timer with a comparator. The shared LPC system-timer driver cannot provide
+ * one: it is SysTick, a 24-bit *down*-counter with no compare register. Its
+ * free-running entry points reflect that -- st_lld_get_counter() returns
+ * SysTick->VAL, which counts downwards and wraps at LOAD rather than increasing
+ * monotonically, and st_lld_set_alarm() writes that same current-count register
+ * as though it were a comparator.
+ *
+ * The driver knows it cannot do this and tries to say so, but its guard reads
+ *
+ *     #if OSAL_ST_MODE_PERIODIC == OSAL_ST_MODE_FREERUNNING
+ *
+ * which compares two distinct constants, 1 and 2, and is therefore never true.
+ * So the #error never fires, the build succeeds, and what you get is a kernel
+ * whose clock does not advance: every chThdSleep() blocks for ever.
+ *
+ * That is worth spelling out because of how it presents. Nothing faults, no
+ * loop in any source file is unbounded, and the firmware runs perfectly until
+ * the first sleep -- which, in a QMK boot, is inside init_usb_driver(). For
+ * several days that made this look like a USB bug. wait_us() kept working
+ * throughout, because it polls the RIT and never involves the scheduler.
+ *
+ * Periodic mode uses SysTick the way SysTick works, and the driver supports it.
+ * chibios/patches/0008-systick-freerunning-guard.patch fixes the guard so the
+ * next person is told instead of having to find this.
+ */
+#define CH_CFG_ST_TIMEDELTA 0
+
+/* 100 us, which is the usual choice for a periodic tick. QMK converts through
+   TIME_MS2I and friends, so it does not care what this is. */
+#define CH_CFG_ST_FREQUENCY 10000
+
 #include_next <chconf.h>

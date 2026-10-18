@@ -98,9 +98,13 @@ git -C "$contrib" apply --whitespace=nowarn \
     "$repo/chibios/patches/0005-eplist-size-from-controller.patch"
 git -C "$contrib" apply --whitespace=nowarn \
     "$repo/chibios/patches/0006-eplist-buffer-base.patch"
+git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/chibios/patches/0008-systick-freerunning-guard.patch"
 git -C "$qmk" init -q .
 git -C "$qmk" apply --whitespace=nowarn \
     "$repo/qmk/patches/0001-mcu-selection-lpc546xx.patch"
+git -C "$qmk" apply --whitespace=nowarn \
+    "$repo/qmk/patches/0002-main-loop-checkpoints.patch"
 
 # ChibiOS proper, not Contrib: port_init() enables the DWT cycle counter
 # unconditionally, and this keyboard's debug block is not accessible to

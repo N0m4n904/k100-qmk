@@ -198,6 +198,8 @@ void lpc_usb_power_on(void) {
  * @notapi
  */
 void lpc_usb_power_off(void) {
+
+  lpcUsbTrace(3U);
 }
 
 #endif /* HAL_USE_USB == TRUE */

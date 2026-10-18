@@ -33,6 +33,7 @@ extern "C" {
 #endif
   bool lpcWwdtIsRunning(void);
   void lpcWwdtFeed(void);
+  bool lpcWwdtStretch(void);
 #ifdef __cplusplus
 }
 #endif

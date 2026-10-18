@@ -488,6 +488,27 @@ whose markers summed to 70 s at `keyboard_post_init_kb`, and 8.15 s — the
 no-marker failure baseline — for the builds marking the first matrix scan and the
 first housekeeping call. Two independent bus recordings agreed on each.
 
+#### The confound in reading those totals
+
+A total of absence is only a sum of markers if each marker ran **once**, and on
+this keyboard that does not follow. A firmware the bootloader cannot start is
+*retried*, so every marker runs again on every attempt — the 8.15 s failure
+baseline is itself several attempts of a firmware that dies in about a second and
+a half. 76 s therefore reads equally well as 70 s of markers once, or 30 s of
+markers two and a half times, and those name different stages.
+
+Changing a marker that sits *after* the failure point cannot separate them, which
+is why two runs agreeing on 76 s proved less than it looked: the value changed
+between them, 60 s at the housekeeping call and then 80 s at the first matrix
+scan, was past the failure either way.
+
+What separates them is making the markers run on the first boot only, which needs
+something that survives a reset to count boots in — see the note on `ram1` in the
+linker script, and `DIAGNOSTIC_SURVIVOR` in the keyboard's `bootloader.c`. That
+counter is itself only trustworthy if the area really does retain, so it is
+checked directly rather than assumed: a build whose *second* boot alone pauses
+produces a pause the keyboard cannot produce any other way.
+
 What had to be fixed to get that far:
 
 1. **The inherited watchdog was never fed.** Covered above; it is also what made
@@ -553,35 +574,135 @@ What had to be fixed to get that far:
 ### Where it still fails
 
 Between `keyboard_post_init_kb()` and the first `matrix_scan_custom()`. That gap
-is small: `protocol_post_init()`, which sets one function pointer, and the part
-of the first loop pass that precedes the scan — `protocol_pre_task()` and the
-start of `keyboard_task()`.
+is tiny: `keyboard_post_init_user()`, which compiles to `bx lr`, the return
+through `keyboard_init()`, `protocol_post_init()`, which sets one function
+pointer, and the start of the first loop pass. `matrix_can_read()` compiles to
+`movs r0, #1`, so `matrix_scan_custom()` is three instructions from the top of
+`keyboard_task()`.
 
-Ruled out along the way, each by measurement rather than by reading:
+**Correction: the stage above is wrong, and the table below records how.** The
+marker lengths are not seconds. The inner loop was assumed to cost about five
+core cycles an iteration and costs roughly ten, so a marker asking for *n*
+seconds holds the bus for about 2.28n at 48 MHz. Decoded with that factor, the
+steady 76.7 s absence is `matrix_setup` plus `keyboard_pre_init_kb` only -- 30
+nominal seconds -- and `keyboard_post_init_kb` never runs at all.
 
-- **USB initialisation.** It completes; see the ordering note above.
-- **The USB endpoint SRAM** at `0x40100000` is reachable and reads back
-  correctly, tested by writing and reading a word from `board_init`.
-- **`protocol_pre_task()`'s suspend loop**, QMK's `while (USB_DRIVER.state ==
-  USB_SUSPENDED)`, which was the obvious candidate because it is the only
-  unbounded loop in the gap and because starving `housekeeping_task_kb()` stops
-  the watchdog feed. Defining `NO_USB_STARTUP_CHECK` compiles it out, and the
-  absence was 8.15 s before and 8.16 s after — so the driver is never in that
-  state here. The define stays anyway: see the reasoning in the keyboard's
-  `config.h`.
-- **The LED driver.** `rgb_matrix` is off in `keyboard.json`, so none of the
-  untested SPI path runs in the loop.
+The error was caught by a control that should have been run much earlier:
+lengthening one marker and checking the total grows by the same amount. Changing
+the post-init marker from 40 to 60 moved the total by nothing, 76.73 s to
+76.71 s, which is only possible if that marker never executes. Three further
+cycles in another recording gave 76.73, 76.72 and 76.71 -- a figure stable to
+twenty milliseconds, which is itself the clue that it is two fixed markers
+rather than a sum that includes a third.
 
-Four USB driver defects were found and fixed while the search was pointed at the
-wrong place. None of them resolved this, and all four are worth keeping: bounded
-controller waits (`0003`), the interrupt enabled before the endpoint table
-existed (`0004`), an endpoint list sized for five endpoints on a six-endpoint
-controller (`0005`), and an endpoint address treated as absolute where
-`DATABUFSTART` takes a whole base (`0006`).
+The same factor, measured against the boot-count probe, gives the clock the
+bootloader hands over at: the identical loop runs 3.7 times faster before
+`halInit()` than after, which is an independent confirmation of the ~180 MHz
+figure deduced earlier from a completely different measurement.
 
-The method is unchanged and it works: put a marker on each side of the thing in
-question, tens of seconds apart, and never time the marker with the mechanism
-under test.
+So the failure is inside `keyboard_init()`, between the Escape check and the end
+of that function, and everything below about the gap after `keyboard_init()`
+describes a stage boot never gets to.
+
+It is a **hang**, not slowness and not a fault. Both of those were tested rather
+than argued:
+
+- **Not a fault.** All four fault vectors in a stock image point at ChibiOS's
+  unhandled-exception stub, which is an infinite loop, so a fault would look
+  exactly like a hang from the bus. A build that caught hard, memory-management,
+  bus and usage faults and reported the class by marker length reported none:
+  8.21 s, the bare baseline.
+- **Not the watchdog.** `lpcWwdtStretch()` raises the inherited watchdog's
+  timeout constant to its maximum, turning roughly a second and a half of grace
+  into a couple of minutes. Boot still never reached the main loop — the
+  keyboard stayed off the bus for over 145 s, where a firmware that reaches
+  `housekeeping_task_kb()` hands itself back after ten. The build also marked a
+  distinctive length if the part refused the write, and it did not refuse.
+- **Not the USB interrupt.** Masking it at `keyboard_post_init_kb()` changed
+  nothing, 8.21 s again.
+
+Other things ruled out while looking:
+
+| Suspected | Why it is not that |
+| --- | --- |
+| `protocol_pre_task()`'s suspend loop | compiled out by `NO_USB_STARTUP_CHECK`; `protocol_pre_task` is now a single tail call, and the absence was 8.15 s before and 8.16 s after |
+| the USB event queue refilling faster than it drains | masking the interrupt makes refilling impossible, and nothing changed |
+| `usb_idle_task()` | fixed-length loops, and every send is guarded on `USB_ACTIVE` |
+| QMK's EEPROM config writes | this build uses the transient backend: `eeprom_write_block` is a `memcpy` into a 40-byte RAM buffer |
+| the LED driver | `rgb_matrix` is off in `keyboard.json`, so none of the SPI path runs in the loop |
+
+What has not yet been reconciled is an apparent contradiction between two builds.
+One, with markers summing to 70 s, reports that `keyboard_post_init_kb()` is
+reached. Another, with a marker immediately after `keyboard_init()` returns,
+reports that that point is not reached — and the code between them cannot hang.
+The difference between the builds is that the first one's markers feed the
+watchdog continuously and the second one's do not, which is the next thing to
+settle: markers that run right up to each point remove that difference.
+
+### The cause: the kernel's clock never advances
+
+`CH_CFG_ST_TIMEDELTA` is 2 in QMK's shared ChibiOS configuration, which asks for
+a **free-running** system timer with a comparator. The shared LPC system-timer
+driver cannot provide one. It is SysTick: a 24-bit *down*-counter with no
+compare register. Its free-running entry points say as much if you read them --
+`st_lld_get_counter()` returns `SysTick->VAL`, which counts downwards and wraps
+at `LOAD` instead of increasing monotonically, and `st_lld_set_alarm()` writes
+that same current-count register as though it were a comparator.
+
+The driver knows it cannot do this, and tries to refuse:
+
+```c
+#if OSAL_ST_MODE_PERIODIC == OSAL_ST_MODE_FREERUNNING
+  #error "OSAL_ST_MODE_FREERUNNING is not supported. Check CH_CFG_ST_TIMEDELTA"
+#endif
+```
+
+That compares the two mode *constants*, 1 and 2, rather than comparing the mode
+in force against one of them. It is never true, the `#error` never fires, and a
+configuration the driver cannot implement builds cleanly. What comes out is a
+kernel whose clock does not advance and in which every `chThdSleep()` blocks for
+ever.
+
+**The fix** is `CH_CFG_ST_TIMEDELTA 0` in the keyboard's `chconf.h`, which
+selects the periodic mode SysTick can actually do, with `CH_CFG_ST_FREQUENCY`
+at 10 kHz. `chibios/patches/0008-systick-freerunning-guard.patch` corrects the
+guard so the next person is told rather than having to find this.
+
+Why it presented as a USB fault for so long: nothing in a QMK boot sleeps until
+`init_usb_driver()` does, so that is where the firmware always stopped.
+`wait_us()` kept working throughout, because it polls the RIT and never involves
+the scheduler, and `escape_held()` uses it — so the matrix read before USB
+worked perfectly while everything after it did not.
+
+Proved before fixing, by putting `chThdSleepMilliseconds(1)` immediately after
+the Escape check with a marker on the far side of it: the marker never ran. That
+probe depends on nothing USB-related at all.
+
+### How the markers can lie, and what was done about it
+
+Three ways, all of which produced a wrong reading at least once:
+
+1. **Repeats.** A total of absence is a sum of markers only if each ran once.
+   That depends on how often the bootloader restarts an image it cannot run,
+   which was never measured until now. It is **once**: a build with a single
+   unguarded 10 s mark in `early_hardware_init_pre()` was absent 14.31 s against
+   a baseline of 8.15 s, and one mark there is worth about 6.1 s.
+2. **A guard that suppressed them.** The first-boot guard written to remove (1)
+   counted boots in SRAMX, which survives a *reflash* as well as a reset, so the
+   count carried over between experiments and the markers silently vanished —
+   reporting the baseline, which reads as "this stage is not reached". A
+   measurement that fails by looking like a result is the worst kind. Removed
+   once the retry count was known to be one.
+3. **Instruments that were never wired.** `CH_CFG_SYSTEM_TICK_HOOK` was used to
+   feed the watchdog from the tick; QMK sets `CH_CFG_ST_TIMEDELTA 2`, so ChibiOS
+   runs tickless and that hook is never called. The build succeeded and the test
+   was inert. It was caught by looking for the feed sequence in the image and
+   finding only one, inside `lpcWwdtFeed` itself.
+
+The lesson each time is the same: check that the instrument can produce the
+signal before believing an absence of it. The image checks in
+`tools/check-firmware-image.py` are built the same way, requiring a positive
+control alongside each absence.
 
 ## Reading the result of a custom flash
 

@@ -1,0 +1,17 @@
+diff --git a/os/hal/ports/LPC/LLD/STM/hal_st_lld.h b/os/hal/ports/LPC/LLD/STM/hal_st_lld.h
+--- a/os/hal/ports/LPC/LLD/STM/hal_st_lld.h
++++ b/os/hal/ports/LPC/LLD/STM/hal_st_lld.h
+@@ -53,7 +53,12 @@
+ /* Derived constants and error checks.                                       */
+ /*===========================================================================*/
+ 
+-#if OSAL_ST_MODE_PERIODIC == OSAL_ST_MODE_FREERUNNING
++/* The comparison this guard has to make is between the mode in force and the
++   free-running constant. Comparing the two mode *constants* to each other, as
++   this did, is always false, so the guard never fired and a configuration the
++   driver cannot implement built cleanly instead -- producing a kernel whose
++   clock never advances and whose every sleep blocks for ever. */
++#if OSAL_ST_MODE == OSAL_ST_MODE_FREERUNNING
+   #error "OSAL_ST_MODE_FREERUNNING is not supported. Check CH_CFG_ST_TIMEDELTA"
+ #endif
+ 

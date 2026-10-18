@@ -1,0 +1,39 @@
+diff --git a/quantum/main.c b/quantum/main.c
+--- a/quantum/main.c
++++ b/quantum/main.c
+@@ -34,6 +34,18 @@
+  *
+  * FIXME: Needs doc
+  */
++/**
++ * Hook for locating a keyboard that stops between these calls.
++ *
++ * Weak and empty, so a keyboard that does not define it pays nothing. It exists
++ * because the calls below are the only code on some boards between the last
++ * overridable hook of keyboard_init() and the first of the main loop, which
++ * leaves a stretch no keyboard-side instrumentation can see into.
++ */
++__attribute__((weak)) void main_checkpoint(uint8_t stage) {
++    (void)stage;
++}
++
+ int main(void) __attribute__((weak));
+ int main(void) {
+     platform_setup();
+@@ -42,12 +54,16 @@
+ 
+     protocol_pre_init();
+     keyboard_init();
++    main_checkpoint(1);
+     protocol_post_init();
++    main_checkpoint(2);
+ 
+     /* Main loop */
+     while (true) {
+         protocol_pre_task();
++        main_checkpoint(3);
+         protocol_keyboard_task();
++        main_checkpoint(4);
+         protocol_post_task();
+ 
+ #ifdef RAW_ENABLE

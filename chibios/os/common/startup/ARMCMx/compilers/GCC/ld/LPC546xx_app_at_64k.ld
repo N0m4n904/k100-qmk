@@ -55,12 +55,20 @@
  *
  * ram1 is SRAMX, tightly coupled to the core. It is deliberately left out of
  * every REGION_ALIAS below. SRAMX is fast for code and core data but it is not
- * reachable by every bus master -- notably not by the USB0 device controller,
- * whose endpoint list and buffers are ordinary static data. Moving .bss here
- * would therefore break USB silently rather than loudly.
+ * reachable by every bus master, so ordinary static data must not live here --
+ * moving .bss into it would break a DMA or controller access silently rather
+ * than loudly.
  *
- * ram2 is USB1's dedicated 8 KB. USB0, the full-speed controller this port
- * uses, has no RAM of its own and allocates from ram0 instead.
+ * Being unaliased has a second use. Nothing is linked here, so crt0 -- which
+ * zeroes the whole of ram0 -- leaves it alone, and it is the one place whose
+ * contents survive a reset. On a part with a watchdog that cannot be turned off
+ * and no debugger, that is how a boot reports what the previous boot was doing
+ * when it died; see K100_USB_DIAGNOSTIC in the keyboard's bootloader.c.
+ *
+ * ram2 is USB1's dedicated 8 KB, at the fixed window this part's high-speed
+ * device controller requires: USBHSD takes only the top bits of EPLISTSTART, so
+ * its endpoint list cannot live anywhere else. That is the controller the K100
+ * is wired to and the one this port drives.
  */
 
 MEMORY {
