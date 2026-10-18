@@ -149,6 +149,28 @@
 #    define DIAGNOSTIC_STAGE_PREINIT_S       0U
 #    define DIAGNOSTIC_STAGE_ESCAPE_DONE_S   0U
 #    define DIAGNOSTIC_STAGE_SLEEP_OK_S      0U
+
+/*
+ * Proving k100_enter_bootloader() on hardware.
+ *
+ * It is the single point of failure in this firmware's recovery: both the
+ * Escape check and the ten-second USB timeout go through it, and its EEPROM
+ * write has never been observed to succeed -- every mode change this project
+ * has relied on was performed by Corsair's bootloader instead. Nothing should
+ * be flashed that depends on it until it has been watched working.
+ *
+ * The call cannot report success, because success resets the part. So the
+ * first mark says the attempt was reached and the second runs only if the
+ * function *returns*, which it does only on failure. Roughly 18 s of absence
+ * means the write works; roughly 58 s means it does not.
+ *
+ * Placed before USB and before the main loop, so the test depends on neither.
+ * It also makes this image self-rescuing: if the write works the keyboard
+ * returns to its bootloader on every boot, which is the safest thing that can
+ * be installed on it.
+ */
+#    define DIAGNOSTIC_STAGE_ENTRY_TRY_S    10U
+#    define DIAGNOSTIC_STAGE_ENTRY_FAILED_S 40U
 /*
  * Inside keyboard_init(), which is where boot actually fails.
  *
@@ -668,18 +690,42 @@ void keyboard_pre_init_kb(void) {
      */
     lpcWwdtFeed();
 
-#ifdef K100_USB_DIAGNOSTIC
-    diagnostic_mark(DIAGNOSTIC_STAGE_PREINIT_S);
-#endif
-
+    /*
+     * The Escape check comes first -- before every marker, every diagnostic and
+     * anything else that could stall -- and that ordering is not a stylistic
+     * preference, it is the lesson from losing a keyboard to this file.
+     *
+     * This is the only lever a person has on firmware that is already running.
+     * Everything else this project can do needs the keyboard to be answering on
+     * USB, so once it stops doing that, a held key is the entire recovery story.
+     * A build that put two diagnostic delays and a failing EEPROM write ahead of
+     * this check moved it roughly fifty seconds into boot and then never reached
+     * it at all, and the keyboard could not be recovered by any software means.
+     *
+     * So: nothing goes above this line. Anything added to this function belongs
+     * below it, however briefly it claims to run.
+     */
     if (escape_held()) {
         (void)k100_enter_bootloader();
     }
 
 #ifdef K100_USB_DIAGNOSTIC
-    /* The Escape check is the first thing in boot to read the matrix, and the
-       first to call wait_us(). Marking on the far side of it separates it from
-       the rest of keyboard_init(). */
+    diagnostic_mark(DIAGNOSTIC_STAGE_PREINIT_S);
+#endif
+
+#ifdef K100_DIAGNOSTIC_PROVE_BOOTLOADER_ENTRY
+    diagnostic_mark(DIAGNOSTIC_STAGE_ENTRY_TRY_S);
+
+    /* Returns only on failure; success resets the part from inside the call. */
+    if (!k100_enter_bootloader()) {
+        diagnostic_mark(DIAGNOSTIC_STAGE_ENTRY_FAILED_S);
+    }
+#endif
+
+#ifdef K100_USB_DIAGNOSTIC
+    /* The Escape check above is the first thing in boot to read the matrix, and
+       the first to call wait_us(). Marking below it separates it from the rest
+       of keyboard_init(). */
     diagnostic_mark(DIAGNOSTIC_STAGE_ESCAPE_DONE_S);
 
     /*

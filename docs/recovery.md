@@ -389,6 +389,14 @@ Three things combined, and each looked reasonable on its own:
    it. The moment the system-timer fix let the firmware actually run, it started
    feeding — and the net disappeared precisely when the firmware got better.
 
+**A second rule, learned the hard way after the first one failed:** the Escape
+check must be the *first* thing `keyboard_pre_init_kb()` does. It is the only
+lever a person has on firmware that is already running — everything else this
+project can do needs the keyboard to be answering on USB. A build that put two
+diagnostic delays and a failing EEPROM write ahead of it moved the check about
+fifty seconds into boot, then stalled before reaching it, and the keyboard could
+not be recovered by any software means at all. Nothing goes above that check.
+
 **The rule:** the last line of defence must not be the mechanism that has never
 been proven. `housekeeping_task_kb()` now stops feeding the watchdog when
 `k100_enter_bootloader()` fails, which reaches the bootloader through something
