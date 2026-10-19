@@ -326,19 +326,80 @@ assumed. Nothing in the clock tree, the power domains, the pins, the peripheral
 resets, SYSCON as a whole, or the driver's register programming accounts for
 it.
 
-## The best remaining lead
+## Watching the firmware that works
 
-Everything reachable from outside the part has now been measured and excluded,
-so the next move is to watch Corsair's own firmware do it. Their application is
-available as a file and disassembles cleanly, and the part can be stopped
-anywhere with a breakpoint, so their USB bring-up can be stepped through and
-every register they touch recorded in order -- including any write to an
-address that appears in no header, as `POWER_SetUsbPhy` turned out to do.
+A hardware breakpoint reaches flash, which is the half of the address space
+this core's breakpoint unit can match, so Corsair's own firmware can be stopped
+at a chosen instruction. Two readings settle things this document previously
+had wrong.
 
-That is a different kind of work from this document: not comparing two end
-states, but recording one firmware's sequence as it happens. It needs the
-keyboard, a breakpoint in Corsair's code rather than in this project's, and
-patience.
+**At their application's entry point, `0x00012568`:**
 
-The `DEVCMDSTAT` read-modify-write above should be fixed regardless. It is a
-defect whether or not it is this one.
+```
+DEVCMDSTAT  0x00400800     VBUS_DEBOUNCED clear
+PDRUNCFG1   0x20000085     bit 0 set -- the transceiver is powered DOWN
+```
+
+The bootloader hands over with the transceiver off, and `DEVCMDSTAT` reads
+exactly what this firmware starts from. So the handover state is the same for
+both, and running from SRAM is a faithful harness rather than a special case.
+A comment in `lpc546xx_usb.c` claiming the domain was live at handover has been
+corrected; it was reasoning, and it was wrong.
+
+**At `0x0002534c`, after they configure and before they set `DEV_EN`:**
+
+```
+DEVCMDSTAT  0x10400000     DEV_EN clear, DCON clear, VBUS_DEBOUNCED SET
+```
+
+So the transceiver reports bus power before the controller is enabled at all.
+`VBUS_DEBOUNCED` depends on neither `DEV_EN` nor `DCON` — only on the
+transceiver being alive. Whatever this firmware fails to do, it fails before
+that point.
+
+## Their bring-up, and the order this port had backwards
+
+From `0x00022940`:
+
+```
+FROCTRL        clear 0x7d008000, set 0x41000000    HSPDCLK and USBCLKADJ
+               delay
+AHBCLKCTRLSET2 = 0x20                              USB1D
+AHBCLKCTRLSET2 = 0x40                              USB1RAM
+PDRUNCFGCLR1   = 0x01                              transceiver -- last
+```
+
+**The clock gates go on first and the transceiver's power comes last.** NXP's
+`CLOCK_EnableUsbhs0DeviceClock` ends the same way. This port had it the other
+way round, powering the transceiver and then clocking the controller, which is
+the order neither reference uses. That is now fixed.
+
+**It did not fix USB.** `DEVCMDSTAT` still reads `0x00410880` with no frames.
+The order was wrong and is worth having right; it was not what stopped it.
+
+### USBCLKADJ: tried, harmful, reverted
+
+Setting `FROCTRL.USBCLKADJ`, which NXP's FRO path does, made the oscillator
+trim itself towards USB traffic that never arrives: `FREQTRIM` fell from `0xaf`
+to `0x00` within seconds. That is the trim for the oscillator the whole part
+runs from. It brought no benefit, so it is not set.
+
+It does not persist: a normal boot restores `FROCTRL` to `0x40af178a`, checked
+on the keyboard afterwards, which still enumerates at 480 Mbit/s.
+
+## Where it stands
+
+The transceiver does not report bus power, with its supply up and ready, its
+clock running, the gates enabled in the order both references use, and the
+power applied last. Measured and excluded so far: the clock source, every
+voltage domain, the power-up order, the pins, the peripheral resets, all 512
+words of SYSCON, `LPM_SUP`, `FORCE_VBUS`, `FORCE_NEEDCLK` and the driver's
+register programming.
+
+The next thing to do is narrow the gap between `0x00012568`, where their
+transceiver is off, and `0x0002534c`, where it reports bus power. Breakpoints
+reach both; bisecting between them finds the instruction that wakes it. That is
+a mechanical search and it will end somewhere definite.
+
+The `DEVCMDSTAT` read-modify-write noted above should be fixed regardless. It
+is a defect whether or not it is this one.
