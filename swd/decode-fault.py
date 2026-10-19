@@ -66,12 +66,19 @@ class Session:
     scb: list[int]
 
 
+# OpenOCD prints a register two ways: "(15) pc (/32): 0x..." when dumping them
+# all, and "pc (/32): 0x..." when asked for one by name. It also spells the
+# program status register xpsr here and xPSR elsewhere. Accept all of it --
+# matching only one form would silently find no registers and report nothing.
+REGISTER = re.compile(r"^(?:\(\d+\)\s+)?(\S+)\s+\(/\d+\):\s+(0x[0-9a-fA-F]+)",
+                      re.MULTILINE)
+
+
 def parse(text: str) -> Session:
     """Pulls OpenOCD's `reg` and `mdw` output out of a session log."""
     registers = {
-        m.group(1): int(m.group(2), 16)
-        for m in re.finditer(r"^\(\d+\)\s+(\S+)\s+\(/\d+\):\s+(0x[0-9a-fA-F]+)",
-                             text, re.MULTILINE)
+        m.group(1).lower(): int(m.group(2), 16)
+        for m in REGISTER.finditer(text)
     }
 
     scb: list[int] = []
@@ -98,15 +105,15 @@ def main() -> int:
     mem, bus, usage = cfsr & 0xFF, cfsr >> 8 & 0xFF, cfsr >> 16 & 0xFFFF
 
     print("core")
-    for name in ("pc", "lr", "sp", "msp", "psp", "xPSR"):
+    for name in ("pc", "lr", "sp", "msp", "psp", "xpsr"):
         if name in session.registers:
             print(f"  {name:<5} 0x{session.registers[name]:08x}")
 
     # The exception number the core thinks it is in. 0 is thread mode; 3 is
     # HardFault, and anything non-zero means a handler is running, which on a
     # keyboard that should be idling is itself the finding.
-    if "xPSR" in session.registers:
-        exception = session.registers["xPSR"] & 0x1FF
+    if "xpsr" in session.registers:
+        exception = session.registers["xpsr"] & 0x1FF
         where = {0: "thread mode, no exception active",
                  2: "NMI", 3: "HardFault", 4: "MemManage",
                  5: "BusFault", 6: "UsageFault"}.get(exception,

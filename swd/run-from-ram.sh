@@ -126,8 +126,16 @@ run=(
     -c "cortex_m vector_catch hard_err bus_err mm_err state_err chk_err nocp_err"
     -c "resume"
     -c "catch {wait_halt $(( WATCH * 1000 ))}"
+    # Whether it faulted or is simply still going, stopping it here and reading
+    # the program counter says where it actually is. "Still running" on its own
+    # does not distinguish a working main loop from a spin that never ends, and
+    # those need opposite things done about them.
+    -c "catch {halt}"
     -c "targets"
-    -c "reg"
+    -c "reg pc"
+    -c "reg lr"
+    -c "reg sp"
+    -c "reg xPSR"
     -c "mdw 0xE000ED24 7"
 )
 [[ $start == no ]] && run=(-c "echo {left halted at the reset vector}")
@@ -160,10 +168,10 @@ echo
 if [[ $start == no ]]; then
     echo "Loaded and halted at the reset vector. Nothing has executed yet."
 elif [[ $log =~ timed\ out\ while\ waiting\ for\ target\ halted ]]; then
-    echo "Still running after ${WATCH}s without taking a fault."
-    echo "Whatever stops this firmware, it is not a fault -- look for a wait"
-    echo "that never finishes. It is still running now, so the host's USB tree"
-    echo "is worth a look."
+    echo "Ran for ${WATCH}s without taking a fault, and was then stopped."
+    echo "Whatever holds this firmware up, it is not a fault. Where it was:"
+    echo
+    printf '%s\n' "$log" | python3 -I "$here/decode-fault.py"
 else
     echo "It faulted. The core was caught before its own handler ran:"
     echo
