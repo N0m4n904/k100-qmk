@@ -4,7 +4,7 @@
 # Asks the part's own flash controller to identify itself. Read-only: it erases
 # nothing and writes nothing.
 #
-#   sudo recovery/flash-info.sh
+#   sudo swd/flash-info.sh
 #
 # Worth running before any erase, because it exercises the whole path an erase
 # would use -- the IAP entry point, the working area in SRAM, the sector map --
@@ -17,7 +17,7 @@
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=recovery/swd-session.sh
+# shellcheck source=swd/swd-session.sh
 source "$here/swd-session.sh"
 
 while (( $# )); do

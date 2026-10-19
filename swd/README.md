@@ -68,7 +68,7 @@ dump works straight through the loop.
 ## Step 1a — survey the header
 
 ```sh
-sudo recovery/identify-header.sh 24
+sudo swd/identify-header.sh 24
 ```
 
 Probe wire from Pi GPIO24 to `J1` pin 1, run it, write the verdict down, move
@@ -103,7 +103,7 @@ output therefore cannot hold a level through a restart; a resistor soldered to
 the board does not care that one happened.
 
 ```sh
-sudo recovery/identify-header.sh --watch 45 24
+sudo swd/identify-header.sh --watch 45 24
 ```
 
 Forty-five seconds covers four restarts. Run it on pins 2, 3, 4 and 5.
@@ -118,7 +118,7 @@ rather than after.
 ## Step 2 — find SWDIO and SWCLK
 
 ```sh
-sudo recovery/find-swd.sh 24 25 23 22
+sudo swd/find-swd.sh 24 25 23 22
 ```
 
 Wire the pins that came back **safe** to those GPIOs, in any order, and this
@@ -135,7 +135,7 @@ only possibility a wire cannot fix.
 ## Step 3 — dump the flash
 
 ```sh
-sudo recovery/dump-flash.sh
+sudo swd/dump-flash.sh
 ```
 
 The pins found in step 2 on a K100 are the defaults, so this takes no arguments
@@ -170,7 +170,7 @@ at all** — precisely the part that exists nowhere else.
 Settle it rather than assume it:
 
 ```sh
-sudo recovery/read-memory.sh 0x03000000 0x10000 rom-64k.bin
+sudo swd/read-memory.sh 0x03000000 0x10000 rom-64k.bin
 cmp rom-64k.bin k100-bootloader-64k.bin
 ```
 
@@ -198,7 +198,7 @@ timestamp all matching the image last written to the part.
 and halts it after, so the bottom of the address space is the flash's by then.
 
 ```sh
-sudo recovery/read-memory.sh --halt-late 0x00000000 0x10000 boot0-late.bin
+sudo swd/read-memory.sh --halt-late 0x00000000 0x10000 boot0-late.bin
 cmp boot0-late.bin k100-bootloader-64k.bin
 ```
 
@@ -233,9 +233,57 @@ lpc54605.cfg        the target: LPC54605J512, SWD, reset via SYSRESETREQ
 rpi4-swd.cfg        the adapter: Pi GPIOs, open-drain reset
 swd-session.sh      sourced by the rest: the pins, and one call that opens
                     a session and reports whether the core actually stopped
-identify-header.sh  classifies unknown header pins; --watch tells a pull-up
-                    from a chip output by sampling across the reset loop
-find-swd.sh         sweeps pin pairs until the debug port answers
-read-memory.sh      reads any region twice and compares before believing it
-dump-flash.sh       read-memory.sh with the flash's address and size
+
+finding the header
+  identify-header.sh  classifies unknown header pins; --watch tells a pull-up
+                      from a chip output by sampling across the reset loop
+  find-swd.sh         sweeps pin pairs until the debug port answers
+
+reading
+  read-memory.sh      reads any region twice and compares before believing it
+  dump-flash.sh       read-memory.sh with the flash's address and size
+  flash-info.sh       asks the flash controller for its part id; writes nothing
+
+writing
+  erase-sectors.sh    erases sectors and reads them back to prove it
+  write-image.sh      writes a raw binary and has the part verify it
+  reset.sh            resets and runs what was written
+
+debugging
+  fault-report.sh     halts where it is and says what faulted
+  decode-fault.py     turns the fault status registers into a sentence
 ```
+
+## Debugging firmware with it
+
+`fault-report.sh` is the one that changes how this project is worked on. A
+Cortex-M records why it faulted and, for most kinds, the address involved, so
+one command answers what was previously guessed at from how long a keyboard
+stayed off the USB bus:
+
+```
+CFSR 0x00008200  HFSR 0x40000000
+  BusFault: PRECISERR: a data access the bus refused; BFAR holds the address
+  BusFault: the address it touched was 0x40108000
+  HardFault: FORCED: a fault that escalated because its own handler was
+             disabled or it happened at too high a priority
+```
+
+It halts without resetting, because a reset clears those registers and the
+stack frame behind them. Reset first and every machine looks clean.
+
+## What a rescue route does not buy
+
+It lowers what a mistake costs. It does not lower the care a write deserves,
+and three things stay true:
+
+- The route is proven against **one** failure, on **one** unit. It assumes the
+  bootloader is intact and the part still answers. Neither an overwritten
+  bootloader nor a damaged chip has any route at all.
+- Every attempt means an opened case, wires on a board and flash cycles spent.
+- Writing below `0x10000` is refused by every script here, and the flag that
+  lifts the refusal is spelled out at a length nobody types by accident.
+
+The cautious order is therefore: read before writing, prefer somewhere that is
+not flash, make one change per observation, and keep the claim no larger than
+the measurement.

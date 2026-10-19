@@ -3,8 +3,8 @@
 #
 # Erases a range of flash sectors, and reads the range back to prove it.
 #
-#   sudo recovery/erase-sectors.sh 2 2      # just the first application sector
-#   sudo recovery/erase-sectors.sh 2 6      # enough for the stock application
+#   sudo swd/erase-sectors.sh 2 2      # just the first application sector
+#   sudo swd/erase-sectors.sh 2 6      # enough for the stock application
 #
 # Sectors are 32 KB. Sector 0 and sector 1 are Corsair's bootloader, which
 # exists on no other device and in no public archive, so this refuses to touch
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=recovery/swd-session.sh
+# shellcheck source=swd/swd-session.sh
 source "$here/swd-session.sh"
 
 SECTOR_SIZE=$(( 32 * 1024 ))

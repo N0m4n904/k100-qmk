@@ -21,7 +21,7 @@ Specifically, you should understand before you start:
   the keyboard stopped enumerating entirely — no USB at all, and no key held at power-up
   changed that. Recovering it took opening the case and wiring a programmer to the board. The
   post-mortem is in [`docs/recovery.md`](docs/recovery.md) and the procedure that got it back
-  is in [`recovery/`](recovery/README.md).
+  is in [`swd/`](swd/README.md).
 - **You can permanently destroy your keyboard.** The K100's MCU can ship with read-out
   protection and debug access disabled, in which case a failed firmware write leaves no way
   to recover it. This is not a theoretical risk; it is documented for this chip family.
@@ -48,7 +48,7 @@ and the two rules that keep a mistake survivable.
 | Firmware distribution | **Understood and verified.** Official images download and validate. |
 | Reflashing a *healthy* keyboard | **Proven on hardware.** An official image was written, applied and verified, many times. |
 | Recovery from firmware that will not boot, over USB | **Not proven, and it failed.** The firmware's own route back to the bootloader has never once been seen to work, and relying on it cost a keyboard. |
-| Recovery from firmware that will not boot, over SWD | **Proven on hardware.** A bricked K100 was dumped, erased and restored to stock with a Raspberry Pi and four jumper wires. See [`recovery/`](recovery/README.md). |
+| Recovery from firmware that will not boot, over SWD | **Proven on hardware.** A bricked K100 was dumped, erased and restored to stock with a Raspberry Pi and four jumper wires. See [`swd/`](swd/README.md). |
 | Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |
 | QMK layout, keymap, LED map, VIA | **Done** for OPX ISO DE, generated from ckb-next's data. |
 | ChibiOS LPC546xx port | **Runs on the keyboard** as far as QMK's pre-init. Three boot-stopping defects found and fixed (DWT, realtime counter, system timer); none of the fixes has run on hardware. |
@@ -84,8 +84,8 @@ The K100 Air is a different device again and none of this applies to it either.
 
 ```
 docs/          research write-ups; recovery.md is the one to read first
-recovery/      SWD recovery of a keyboard that will not boot, using a Pi and
-               nothing else; read recovery/README.md before touching the PCB
+swd/           talking to the controller over SWD with a Raspberry Pi: recovering
+               a keyboard that will not boot, and debugging one that does not yet
 tools/
   fetch-firmware.py       downloads and verifies official firmware
   k100_container.py       Corsair's firmware container, read and written

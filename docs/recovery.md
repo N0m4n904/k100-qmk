@@ -115,7 +115,7 @@ recovery mode and would matter a great deal. Read-only, and the only cost is the
 ### Layer 3 — SWD
 
 **This is the layer that actually recovered the keyboard.** See
-[`../recovery/README.md`](../recovery/README.md) for the procedure and
+[`../swd/README.md`](../swd/README.md) for the procedure and
 [`handover.md`](handover.md) for the background.
 
 No probe is needed: a Raspberry Pi's GPIOs are 3.3 V, the LPC54605 is 3.3 V, and OpenOCD will

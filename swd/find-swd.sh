@@ -9,7 +9,7 @@
 # identifies the pair with no ambiguity. A wrong pair reads back all-ones or
 # all-zeroes and OpenOCD gives up in under a second.
 #
-#   sudo recovery/find-swd.sh 22 23 24 25
+#   sudo swd/find-swd.sh 22 23 24 25
 #
 # Pass only GPIOs that identify-header.sh called SAFE. The arguments are the Pi's
 # GPIO numbers, in whatever order; the pairing is what this searches.

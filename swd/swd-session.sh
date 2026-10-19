@@ -33,6 +33,12 @@ HALT_REQUIRED=yes
 # fine, long ones should use the default.
 HALT_LATE="catch {reset run}; sleep 300; catch {halt}"
 
+# Stopping the part where it already is, without resetting it first. This is
+# the one to use when the question is what the firmware did, because a reset
+# clears the fault status registers and the stack that say what it was. Nothing
+# that wants a clean machine should use it.
+HALT_ONLY="catch {halt}"
+
 swd_session_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 # swd_run <openocd -c arguments...> -- opens the session, runs them, shuts down.
@@ -80,6 +86,10 @@ swd_parse_option() {
             ;;
         --halt-late)
             HALT=$HALT_LATE
+            swd_shift=1
+            ;;
+        --halt-only)
+            HALT=$HALT_ONLY
             swd_shift=1
             ;;
         *) swd_shift=-1 ;;

@@ -10,15 +10,15 @@
 # reads differently with the core running than halted, what a peripheral
 # register says.
 #
-#   sudo recovery/read-memory.sh 0x03000000 0x10000 rom-64k.bin
-#   sudo recovery/read-memory.sh --halt-late 0x00000000 0x10000 boot0-late.bin
+#   sudo swd/read-memory.sh 0x03000000 0x10000 rom-64k.bin
+#   sudo swd/read-memory.sh --halt-late 0x00000000 0x10000 boot0-late.bin
 #
 # Options: --swclk, --swdio, --srst, --speed, --no-halt, --halt-late.
 
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=recovery/swd-session.sh
+# shellcheck source=swd/swd-session.sh
 source "$here/swd-session.sh"
 
 ATTEMPTS=3

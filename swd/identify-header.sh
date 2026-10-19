@@ -19,8 +19,8 @@
 # Reading is passive: a Pi input presented to a 3.3 V pin neither sources nor
 # sinks anything worth the name, and the two parts run from the same voltage.
 #
-#   sudo recovery/identify-header.sh 24
-#   sudo recovery/identify-header.sh 17 27 22 23 24
+#   sudo swd/identify-header.sh 24
+#   sudo swd/identify-header.sh 17 27 22 23 24
 #
 # With one GPIO, move the probe wire to the next header pin and run it again.
 #
@@ -39,7 +39,7 @@
 #   never changes over several resets   static: a rail or a pull-up, SAFE
 #   changes at any point                the chip is driving it, LEAVE ALONE
 #
-#   sudo recovery/identify-header.sh --watch 45 24
+#   sudo swd/identify-header.sh --watch 45 24
 #
 # Pick a duration that covers several restarts; this board's loop is about
 # eleven seconds, so 45 covers four.

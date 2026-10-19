@@ -6,7 +6,7 @@ project. Everything needed is here; no other document has to be read first.
 
 **This worked.** A K100 bricked on 18 October 2026 was recovered on 19 October by the route
 below. It needed a Raspberry Pi, four jumper wires and no soldering. The step-by-step
-procedure, with the scripts, is in [`../recovery/README.md`](../recovery/README.md); this page
+procedure, with the scripts, is in [`../swd/README.md`](../swd/README.md); this page
 is the background to it.
 
 ## What the device is
@@ -59,7 +59,7 @@ One trap, found the hard way. With the core halted straight out of reset, the bo
 still mapped over the bottom `0x200` bytes, so the vector table read back from `0x00000000` is
 the ROM's and not the flash's — all of its handlers point into `0x0300xxxx`. Read the region
 again after letting the part run far enough to hand over (`--halt-late` in
-[`../recovery/read-memory.sh`](../recovery/read-memory.sh)) and splice the real `0x200` bytes
+[`../swd/read-memory.sh`](../swd/read-memory.sh)) and splice the real `0x200` bytes
 in. A complete image is one whose word at `0x1c` is the two's complement of the seven before
 it; that is NXP's boot checksum, and it is how to tell the two apart.
 
@@ -83,7 +83,7 @@ Measured on one unit, pin 1 leftmost:
 Only pins 2 and 3 were identified by what they do; the rest by level. Nothing on this header
 was driven until the Pi had measured each pin under its own pull-up and pull-down across
 several of the part's restarts, which tells a pull-up resistor on the board from an output the
-chip is driving. [`../recovery/README.md`](../recovery/README.md) has that procedure and the
+chip is driving. [`../swd/README.md`](../swd/README.md) has that procedure and the
 scripts; do it rather than trusting the table, in case the header differs between revisions.
 
 **Debug access is not disabled**, at least on this unit. The port attached first try and

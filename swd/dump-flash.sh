@@ -15,7 +15,7 @@
 # when it is used to restore a part. Two independent passes that match cannot
 # both have been corrupted the same way.
 #
-#   sudo recovery/dump-flash.sh
+#   sudo swd/dump-flash.sh
 #
 # Nothing here writes to the keyboard.
 #
