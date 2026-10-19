@@ -36,6 +36,7 @@ SPEED=100
 # state, which is off, so the part finally sits still. Wrapped in catch so that
 # a target which will not halt still gets dumped.
 HALT="catch {reset halt}"
+HALT_REQUIRED=yes
 
 FLASH_BASE=0x00000000
 FLASH_SIZE=0x80000      # 512 KB
@@ -48,14 +49,15 @@ while (( $# )); do
         --srst)  SRST=$2;  shift 2 ;;
         --out)   OUT=$2;   shift 2 ;;
         --speed) SPEED=$2; shift 2 ;;
-        --no-halt) HALT="echo {leaving the core running}"; shift ;;
+        --no-halt) HALT="echo {leaving the core running}"
+                   HALT_REQUIRED=no; shift ;;
         *) echo "unknown option: $1" >&2; exit 1 ;;
     esac
 done
 
 mkdir -p "$OUT"
 
-dump_once() {
+read_flash() {
     local target=$1
     local -a gpio=(
         -c "adapter gpio swclk -chip 0 $SWCLK"
@@ -75,16 +77,43 @@ dump_once() {
         -c "$HALT" \
         -c "targets" \
         -c "dump_image $target $FLASH_BASE $FLASH_SIZE" \
-        -c "shutdown"
+        -c "shutdown" 2>&1
+}
 
-    # OpenOCD can exit successfully having written less than was asked for, so
-    # its exit status is not the thing to believe. The length is.
-    local got
-    got=$(stat -c %s "$target")
-    (( got == FLASH_SIZE )) || {
-        echo "short read: got $got bytes, expected $((FLASH_SIZE))" >&2
-        exit 1
-    }
+# Attaching to a part that is resetting itself every few seconds is a race, and
+# it does not always come out right the first time: the examination can read
+# the ROM table where it expected the CPUID, or the halt can time out and leave
+# the core running. A read taken from a running core is not wrong in a way that
+# announces itself -- it is simply a different dump every time, which surfaces
+# much later as two passes that will not agree. So a pass that did not halt the
+# part is discarded here rather than passed on.
+dump_once() {
+    local target=$1 attempt log got
+
+    for attempt in 1 2 3; do
+        log=$(read_flash "$target" || true)
+        printf '%s\n' "$log"
+
+        if [[ $HALT_REQUIRED == yes && ! $log =~ cortex_m[[:space:]].*halted ]]; then
+            echo "attempt $attempt: the part did not halt, so this read is" \
+                 "discarded" >&2
+            continue
+        fi
+
+        # OpenOCD can exit successfully having written less than was asked for,
+        # so its exit status is not the thing to believe. The length is.
+        got=$(stat -c %s "$target" 2>/dev/null || echo 0)
+        if (( got != FLASH_SIZE )); then
+            echo "attempt $attempt: short read, got $got bytes of" \
+                 "$((FLASH_SIZE))" >&2
+            continue
+        fi
+
+        return 0
+    done
+
+    echo "gave up after $attempt attempts" >&2
+    exit 1
 }
 
 echo "pass 1 of 2"
