@@ -33,7 +33,9 @@
 #   resume              unless --no-run, which leaves it halted to step from
 #   wait, then report   what faulted and where, or that it is still running
 #
-# Options: --no-run, --watch <seconds>, --swclk, --swdio, --srst, --speed.
+# Options: --no-run, --watch <seconds>, --break <address>,
+# --peek <address>:<count>, --poke <address>:<value>,
+# --then-watch <seconds>, --swclk, --swdio, --srst, --speed.
 
 set -euo pipefail
 
@@ -66,6 +68,8 @@ SWD_PRE_CFG=(-c "set WORK_AREA_SIZE 0")
 
 breakpoints=()
 peeks=()
+pokes=()
+THEN_WATCH=4
 
 while (( $# )); do
     case ${1:-} in
@@ -81,6 +85,15 @@ while (( $# )); do
         # at a peripheral the firmware was using -- a watchdog's counter, a
         # controller's status -- without writing a script per register.
         --peek)  peeks+=("$2"); shift 2; continue ;;
+        # A word to write once the part is stopped, as address:value, applied in
+        # the order given. With --then-watch this tries a change to a running
+        # system before any of it is written into the firmware: if a setting is
+        # suspected of being the one that matters, poking it in and looking
+        # again answers that in one run instead of a build, a load and a guess.
+        --poke)  pokes+=("$2"); shift 2; continue ;;
+        # Seconds to let it run again after the pokes, before stopping it and
+        # repeating every --peek.
+        --then-watch) THEN_WATCH=$2; shift 2; continue ;;
     esac
     swd_parse_option "$@"
     (( swd_shift < 0 )) && break
@@ -172,6 +185,26 @@ run+=(
 for spec in ${peeks[@]+"${peeks[@]}"}; do
     run+=(-c "mdw ${spec%%:*} ${spec##*:}")
 done
+
+if (( ${#pokes[@]} )); then
+    run+=(-c "echo {=== applying pokes ===}")
+    for spec in "${pokes[@]}"; do
+        run+=(-c "mww ${spec%%:*} ${spec##*:}")
+    done
+    # Settling time before anything is believed: an oscillator that has just
+    # been powered needs to start, and a PLL needs to lock.
+    run+=(
+        -c "sleep 300"
+        -c "resume"
+        -c "sleep $(( THEN_WATCH * 1000 ))"
+        -c "catch {halt}"
+        -c "echo {=== after the pokes ===}"
+        -c "targets"
+    )
+    for spec in ${peeks[@]+"${peeks[@]}"}; do
+        run+=(-c "mdw ${spec%%:*} ${spec##*:}")
+    done
+fi
 [[ $start == no ]] && run=(-c "echo {left halted at the reset vector}")
 
 started=$SECONDS
