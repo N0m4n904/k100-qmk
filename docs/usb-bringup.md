@@ -121,22 +121,57 @@ USB1CLKSEL     = 2
   watchdog is not even running, and the reset that interrupts it is the
   firmware's own.
 
-## What is left
+### The pins are not it
 
-Two candidates, in the order they are worth pursuing.
+41 of the 192 `IOCON` entries differ between the two firmwares, which looked
+like a lead until the pin was identified. **`USB1_VBUS` is a dedicated pin on
+this part, not a function selectable through `IOCON`** — NXP's pin table lists
+it as a fixed function, with the note to tie it to `VDD` where it is unused. A
+firmware cannot fail to configure it, so none of those 41 entries can account
+for `VBUS_DEBOUNCED` staying clear.
 
-**The pins.** 41 of the 192 `IOCON` entries differ between the two firmwares.
-Among them Corsair drives `P0_23`–`P0_28` at function 6 and `P1_28`–`P1_31`
-with a different mode, where this port leaves all of them at the default. If
-one of those carries VBUS sense, it would account for the symptom exactly.
-Resolving them needs NXP's pin multiplexing table, which this repository does
-not have; nothing should be guessed here, because a pin driven into the wrong
-function is a hardware risk rather than a failed experiment.
+### Nor is anything else in SYSCON
 
-**The driver.** The USB driver in use is ChibiOS's LPC one, written for the
-full-speed device controller of the LPC11Uxx family, reached through
+All 512 words of SYSCON were read from both firmwares and compared. Beyond the
+clock-tree differences above, only five registers differ, and none of them is a
+USB control:
+
+| offset | register | Corsair | this firmware | |
+| --- | --- | --- | --- | --- |
+| `0x000` | `CTRL` | `0x00000002` | `0x00000000` | undocumented in the header |
+| `0x04c` | `ASYNCAPBCTRL` | `0x00000001` | `0x00000000` | the asynchronous APB bridge |
+| `0x428` | `USB1CLKSTAT` | `0x00000001` | `0x00000003` | **read-only status** |
+| `0x680` | `STARTER[0]` | `0x20000000` | `0x00000000` | wake-up start logic |
+| `0x684` | `STARTER[1]` | `0x00010000` | `0x00000000` | wake-up start logic |
+
+`USB1CLKSTAT` is the only USB one and it reports rather than controls:
+`DEV_NEED_CLKST` in both, and `HOST_NEED_CLKST` additionally set here, which
+describes an uninitialised host block and is a symptom rather than a lever.
+
+## What is left: the driver
+
+The USB driver in use is ChibiOS's LPC one, written for the full-speed device
+controller of the LPC11Uxx family and reached through
 `lpc546xx_usb_compat.h`, which maps its register names onto `USBHSD`. The two
-blocks are similar but not the same, and this keyboard runs at high speed.
-Anything the high-speed controller requires that the full-speed one does not
-would be absent, and would look exactly like this: a controller that accepts
-`DEV_EN` and `DCON` and then does nothing.
+blocks are similar but not the same, and **this keyboard runs at 480 Mbit/s**.
+Anything the high-speed controller requires that the full-speed one does not is
+therefore absent, and would look exactly like what is observed: a controller
+that accepts `DEV_EN` and `DCON` and then does nothing at all.
+
+NXP's own bring-up for this part, from `CLOCK_EnableUsbhs0DeviceClock` in their
+SDK, also has an order this port does not follow:
+
+1. gate the USB1 device clock off
+2. `POWER_SetUsbPhy()`, which powers the PHY's own VD5 supply
+3. select and divide the clock source, then wait 50 µs
+4. enable the USB1 device and USB1 RAM clocks
+5. **power up the PHY last**, with `POWER_DisablePD(kPDRUNCFG_PD_USB1_PHY)`
+
+For the FRO path it additionally sets `FROCTRL.HSPDCLK` and
+`FROCTRL.USBCLKADJ`. `HSPDCLK` is already set here, and in Corsair's firmware,
+by whatever ran before. `USBCLKADJ` is set in neither — Corsair does not need
+it, because they do not use the FRO.
+
+`POWER_SetUsbPhy()` has no source in the SDK: it lives in NXP's binary power
+library, so what it writes beyond VD5 cannot be read. Whatever that is, it did
+not show up in the SYSCON comparison.
