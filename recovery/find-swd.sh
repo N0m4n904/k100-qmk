@@ -44,8 +44,21 @@ for clk in "$@"; do
         printf 'SWCLK=GPIO%-3s SWDIO=GPIO%-3s ... ' "$clk" "$dio"
         log=$(attempt "$clk" "$dio" || true)
 
-        if grep -q "IDCODE" <<<"$log"; then
-            echo "ANSWERED"
+        # OpenOCD announces a debug port that answered over SWD as
+        # "SWD DPIDR 0x...". It says IDCODE only on the JTAG path, so looking
+        # for that word would miss every success this script can produce.
+        if [[ $log =~ SWD\ DPIDR\ (0x[0-9a-fA-F]{8}) ]]; then
+            dpidr=${BASH_REMATCH[1]}
+
+            # An undriven line reads as all-ones, and a line stuck at ground as
+            # all-zeroes. Either can get far enough to be reported; neither is
+            # a debug port.
+            if [[ $dpidr == 0xffffffff || $dpidr == 0x00000000 ]]; then
+                echo "floating ($dpidr)"
+                continue
+            fi
+
+            echo "ANSWERED, DPIDR $dpidr"
             printf '\n%s\n\n' "$log"
             echo "Those are the pins. Record them, then dump the flash:"
             echo "  sudo $here/dump-flash.sh --swclk $clk --swdio $dio"

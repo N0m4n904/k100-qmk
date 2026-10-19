@@ -65,6 +65,15 @@ dump_once() {
         -c "init" \
         -c "dump_image $target $FLASH_BASE $FLASH_SIZE" \
         -c "shutdown"
+
+    # OpenOCD can exit successfully having written less than was asked for, so
+    # its exit status is not the thing to believe. The length is.
+    local got
+    got=$(stat -c %s "$target")
+    (( got == FLASH_SIZE )) || {
+        echo "short read: got $got bytes, expected $((FLASH_SIZE))" >&2
+        exit 1
+    }
 }
 
 echo "pass 1 of 2"
@@ -93,25 +102,33 @@ mv "$OUT/k100-flash-pass1.bin" "$OUT/k100-flash-512k.bin"
 rm -f "$OUT/k100-flash-pass2.bin"
 
 dd if="$OUT/k100-flash-512k.bin" of="$OUT/k100-bootloader-64k.bin" \
-   bs=1 count=$((BOOTLOADER_SIZE)) status=none
+   bs=4096 count=$(( BOOTLOADER_SIZE / 4096 )) status=none
 
 # A broken SWD read does not always fail; it can succeed and hand back a
 # constant. Two passes agreeing would not catch that, because they would agree
 # on the constant. Counting the distinct byte values does catch it.
-verdict=$(python3 - "$OUT/k100-flash-512k.bin" <<'PY'
-import sys
+distinct=$(python3 -c \
+    'import sys; print(len(set(open(sys.argv[1], "rb").read())))' \
+    "$OUT/k100-flash-512k.bin")
 
-distinct = len(set(open(sys.argv[1], "rb").read()))
-print("looks like real content" if distinct > 2 else
-      f"only {distinct} distinct byte value(s) -- NOT a real dump")
-PY
-)
+if (( distinct <= 2 )); then
+    cat >&2 <<EOF
+
+Both passes matched, but the result holds only $distinct distinct byte value(s)
+across 512 KB. That is not firmware. Either the reads never reached the flash,
+or the part is blank.
+
+The files have been kept at $OUT, but this is NOT a dump and nothing may be
+erased on the strength of it.
+EOF
+    exit 1
+fi
 
 cat <<EOF
 
-Both passes matched.
+Both passes matched, and the result holds $distinct distinct byte values.
 
-  $OUT/k100-flash-512k.bin      all 512 KB, $verdict
+  $OUT/k100-flash-512k.bin      all 512 KB
   $OUT/k100-bootloader-64k.bin  Corsair's bootloader
 
 Copy both off the Pi before going any further. Once they are somewhere else,
