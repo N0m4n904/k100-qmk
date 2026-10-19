@@ -263,8 +263,60 @@
 /**
  * @brief   USB1 device clock frequency.
  */
+/**
+ * @name    Crystal oscillator and the USB PLL it feeds
+ * @{
+ */
+/**
+ * @brief   External crystal frequency.
+ *
+ * @details 12 MHz on the K100, and that is derived rather than assumed: the
+ *          stock firmware's system PLL decodes to M=15, N=1 with no AHB
+ *          divider, so the core runs at fifteen times this, and 180 MHz is the
+ *          part's ceiling. NXP's own SDK passes 12000000 for this part too.
+ */
+#if !defined(LPC_SYSOSCCLK) || defined(__DOXYGEN__)
+#define LPC_SYSOSCCLK               12000000U
+#endif
+
+/**
+ * @brief   USB PLL dividers, as register fields.
+ *
+ * @details These are the values the stock firmware writes -- @p USBPLLCTRL
+ *          reads @p 0x00000d3f on a running keyboard -- so the PLL this
+ *          produces is the one the transceiver is known to work from, rather
+ *          than one derived from a formula and hoped for.
+ *
+ *          Unlike the system PLL's, these fields are plain numbers: no LFSR
+ *          encoding, no REQ bits to latch them.
+ */
+#if !defined(LPC_USBPLL_MSEL) || defined(__DOXYGEN__)
+#define LPC_USBPLL_MSEL             63U
+#endif
+#if !defined(LPC_USBPLL_PSEL) || defined(__DOXYGEN__)
+#define LPC_USBPLL_PSEL             1U
+#endif
+#if !defined(LPC_USBPLL_NSEL) || defined(__DOXYGEN__)
+#define LPC_USBPLL_NSEL             3U
+#endif
+
+/**
+ * @brief   USB PLL output frequency.
+ *
+ * @details @p M is @p MSEL+1, @p N is @p NSEL+1 and @p P is @p 1<<PSEL, and
+ *          the output is @p Fin*M/(N*2*P). With the defaults above and a
+ *          12 MHz crystal that is 48 MHz, which is what USB needs -- the same
+ *          figure the FRO gives, from a source accurate enough to use.
+ */
+#define LPC_USBPLLCLK                                                       \
+  ((LPC_SYSOSCCLK * (LPC_USBPLL_MSEL + 1U)) /                               \
+   ((LPC_USBPLL_NSEL + 1U) * 2U * (1U << LPC_USBPLL_PSEL)))
+/** @} */
+
 #if LPC_USB1CLKSEL == LPC_USB1CLKSEL_FROHF
 #define LPC_USB1CLK                 (LPC_FROHFCLK / (LPC_USB1CLKDIV + 1U))
+#elif LPC_USB1CLKSEL == LPC_USB1CLKSEL_USBPLL
+#define LPC_USB1CLK                 (LPC_USBPLLCLK / (LPC_USB1CLKDIV + 1U))
 #else
 #error "LPC_USB1CLKSEL setting is not supported yet"
 #endif

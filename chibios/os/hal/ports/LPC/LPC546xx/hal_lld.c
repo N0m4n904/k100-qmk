@@ -74,6 +74,31 @@
  * @param[out] reg      the divider register
  * @param[in] value     the raw divider value
  */
+#if (LPC_USB1CLKSEL == LPC_USB1CLKSEL_USBPLL) || defined(__DOXYGEN__)
+/**
+ * @brief   Spins long enough for a PLL to lock at any clock this part runs.
+ *
+ * @details Generous on purpose: this runs once, before anything is timed, and
+ *          a crystal takes a few hundred microseconds to start while a PLL
+ *          locks in tens. There is no realtime counter yet at this point in
+ *          @p halInit() -- that is the HAL's own job and it has not happened.
+ */
+#define LPC_USBPLL_LOCK_SPINS       200000U
+
+/**
+ * @brief   A short, clock-independent wait.
+ *
+ * @details For the oscillator's start-up, which has no status bit to poll on
+ *          this part. Written as a counted spin rather than a timed one
+ *          because nothing that can measure time exists yet.
+ */
+static void lpc_rough_delay(void) {
+
+  for (volatile uint32_t spin = 0U; spin < 20000U; spin++) {
+  }
+}
+#endif
+
 static void lpc_set_divider(volatile uint32_t *reg, uint32_t value) {
   /* Generous: the flag clears within a few clocks of either domain, so this is
      orders of magnitude longer than a working divider needs. */
@@ -102,6 +127,66 @@ static void lpc_set_divider(volatile uint32_t *reg, uint32_t value) {
  *
  * @notapi
  */
+#if (LPC_USB1CLKSEL == LPC_USB1CLKSEL_USBPLL) || defined(__DOXYGEN__)
+/**
+ * @brief   Brings up the crystal oscillator and the dedicated USB PLL.
+ *
+ * @details The high-speed transceiver cannot be run from the FRO. USB requires
+ *          its clock to be within 500 ppm and the FRO is a per-cent part, so
+ *          the only source on this board that will do is the 12 MHz crystal,
+ *          through the PLL that exists for exactly this.
+ *
+ *          Three things here are not obvious and each was found the hard way:
+ *
+ *          A PLL is analog, and will not lock while its analog supplies are
+ *          switched off. @p VD2_ANA and @p VD3 are powered down out of reset
+ *          and this port used to leave them that way; @p USBPLLSTAT stayed at
+ *          zero for as long as it did. Powering them is what makes the lock
+ *          happen.
+ *
+ *          The PLL has to be powered down while it is configured. Writing
+ *          @p USBPLLCTRL to a running PLL does not take -- read back, it is
+ *          still zero. @p lpc_syspll_init() says the same about its own.
+ *
+ *          @p PDEN_SYSOSC and @p PDEN_USB1_PLL are bits of @p PDRUNCFG**1**,
+ *          while @p PDEN_VD2_ANA and @p PDEN_VD3 are bits of @p PDRUNCFG0.
+ *          NXP's header names them all @p SYSCON_PDRUNCFG_PDEN_* without
+ *          saying which register they belong to, and the bit numbers collide
+ *          across the two.
+ *
+ * @notapi
+ */
+static void lpc_usbpll_init(void) {
+
+  /* The analog domains the oscillator and the PLL run on. */
+  SYSCON->PDRUNCFGCLR[0] = SYSCON_PDRUNCFG_PDEN_VD2_ANA_MASK |
+                           SYSCON_PDRUNCFG_PDEN_VD3_MASK;
+
+  /* The crystal, in oscillator mode with the frequency range that covers
+     12 MHz. A zero here is BYPASS clear and FREQRANGE at 1-20 MHz, which is
+     what the stock firmware leaves it at. */
+  SYSCON->PDRUNCFGCLR[1] = SYSCON_PDRUNCFG_PDEN_SYSOSC_MASK;
+  SYSCON->SYSOSCCTRL = 0U;
+  lpc_rough_delay();
+
+  /* Configured while powered down, then powered up. */
+  SYSCON->PDRUNCFGSET[1] = SYSCON_PDRUNCFG_PDEN_USB1_PLL_MASK;
+  SYSCON->USBPLLCTRL = SYSCON_USBPLLCTRL_MSEL(LPC_USBPLL_MSEL) |
+                       SYSCON_USBPLLCTRL_PSEL(LPC_USBPLL_PSEL) |
+                       SYSCON_USBPLLCTRL_NSEL(LPC_USBPLL_NSEL);
+  SYSCON->PDRUNCFGCLR[1] = SYSCON_PDRUNCFG_PDEN_USB1_PLL_MASK;
+
+  /* Bounded, unlike the system PLL's wait. Nothing is switched onto this
+     clock by this function, so a PLL that never locks costs USB and nothing
+     else -- which is a thing to report later, not to hang here over. */
+  for (uint32_t spin = 0U; spin < LPC_USBPLL_LOCK_SPINS; spin++) {
+    if ((SYSCON->USBPLLSTAT & SYSCON_USBPLLSTAT_LOCK_MASK) != 0U) {
+      break;
+    }
+  }
+}
+#endif /* LPC_USB1CLKSEL == LPC_USB1CLKSEL_USBPLL */
+
 void lpc_clock_init(void) {
 
   /* Flash wait states, in two steps, and the order is the whole point.
@@ -131,6 +216,12 @@ void lpc_clock_init(void) {
   SYSCON->FROCTRL = (SYSCON->FROCTRL & ~FROCTRL_FREQ_BITS) |
                     SYSCON_FROCTRL_SEL(LPC_FROHF_SEL) |
                     SYSCON_FROCTRL_HSPDCLK(1U);
+
+#if LPC_USB1CLKSEL == LPC_USB1CLKSEL_USBPLL
+  /* Before the main clock is touched, because the crystal this needs is also
+     what a PLL-driven core would run from. */
+  lpc_usbpll_init();
+#endif
 
 #if LPC_MAINCLKSELB == LPC_MAINCLKSELB_PLL
   /* Locked before the core is switched onto it, because switching to an

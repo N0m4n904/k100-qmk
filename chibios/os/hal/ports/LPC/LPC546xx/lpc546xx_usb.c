@@ -76,6 +76,9 @@ static void usb_rough_delay(uint32_t microseconds) {
    a voltage domain takes to come up. */
 #define VD5_READY_SPINS         100000U
 
+/* The same, for the host-clock handshake below. */
+#define USB1_HOST_CLOCK_SPINS   100000U
+
 /*===========================================================================*/
 /* Driver exported functions.                                                */
 /*===========================================================================*/
@@ -206,11 +209,35 @@ void lpc_usb_clock_init(void) {
 
   usb_rough_delay(100U);
 
-  /* The transceiver last, and only the transceiver: the USB PLL is a separate
-     bit in the same register, and this configuration does not use it -- the
-     FRO feeds USB1 directly. Powering a PLL nothing selects achieves nothing
-     and is not what either reference does. */
+  /* The transceiver last, and only the transceiver. Its PLL is a separate bit
+     in the same register and belongs to the clock driver, which powers it when
+     the configuration selects it. */
   SYSCON->PDRUNCFGCLR[1] = SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK;
+
+  /*
+   * And then a handshake that exists in no document.
+   *
+   * The firmware that works on this keyboard enables the USB1 *host*
+   * controller's clock, spins until USB1CLKSTAT's HOST_NEED_CLKST clears, and
+   * switches the host clock off again -- on a device that is never a host.
+   * It is at 0x000128ec in Heracles_Application_Firmware_v0.35.288, the first
+   * thing their USB bring-up does after powering the transceiver.
+   *
+   * It is not decoration. Read on a part running this firmware without it,
+   * USB1CLKSTAT is 0x3 -- both the device and the host side asking for a clock
+   * -- where the working firmware runs at 0x1. Performing the handshake here
+   * takes it to 0x0.
+   *
+   * Bounded, because the loop's exit condition is a bit whose meaning is known
+   * only from the code that waits on it.
+   */
+  SYSCON->AHBCLKCTRLSET[2] = SYSCON_AHBCLKCTRL_USB1H_MASK;
+  for (uint32_t spin = 0U; spin < USB1_HOST_CLOCK_SPINS; spin++) {
+    if ((SYSCON->USB1CLKSTAT & SYSCON_USB1CLKSTAT_HOST_NEED_CLKST_MASK) == 0U) {
+      break;
+    }
+  }
+  SYSCON->AHBCLKCTRLCLR[2] = SYSCON_AHBCLKCTRL_USB1H_MASK;
 }
 
 /**
