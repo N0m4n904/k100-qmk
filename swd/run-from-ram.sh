@@ -70,10 +70,17 @@ breakpoints=()
 peeks=()
 pokes=()
 THEN_WATCH=4
+load=yes
 
 while (( $# )); do
     case ${1:-} in
         --no-run) start=no; shift; continue ;;
+        # Run whatever is already in flash instead of loading anything. The
+        # breakpoint, peek and poke machinery is the same, and this is how the
+        # firmware that works gets watched doing what this one cannot -- a
+        # hardware breakpoint reaches flash, which is the half of the address
+        # space this core's breakpoint unit can match.
+        --no-load) load=no; shift; continue ;;
         --watch)  WATCH=$2; shift 2; continue ;;
         # A hardware breakpoint, so that nothing is written to the code under
         # test. The part has six. Stopping at a known function is how a
@@ -100,9 +107,13 @@ while (( $# )); do
     shift "$swd_shift"
 done
 
-(( $# == 1 )) || { echo "usage: $0 [options] <image.bin>" >&2; exit 1; }
-IMAGE=$1
-[[ -s $IMAGE ]] || { echo "$IMAGE is missing or empty" >&2; exit 1; }
+if [[ $load == no ]]; then
+    (( $# == 0 )) || { echo "--no-load takes no image" >&2; exit 1; }
+else
+    (( $# == 1 )) || { echo "usage: $0 [options] <image.bin>" >&2; exit 1; }
+    IMAGE=$1
+    [[ -s $IMAGE ]] || { echo "$IMAGE is missing or empty" >&2; exit 1; }
+fi
 
 # The image's first two words are its initial stack pointer and its reset
 # vector. Reading them is also the check that this is the right kind of image:
@@ -114,6 +125,7 @@ IMAGE=$1
 # substitution's exit status is discarded, so a refusal would print and the
 # script would carry on with nothing in sp and pc; a plain assignment is what
 # set -e actually acts on.
+if [[ $load == yes ]]; then
 vectors=$(python3 -I - "$IMAGE" "$SRAM_BASE" "$SRAM_END" <<'PY'
 import struct
 import sys
@@ -135,6 +147,9 @@ read -r sp pc <<<"$vectors"
 
 printf 'loading %s (%s bytes) at 0x%08x\n' "$IMAGE" "$(stat -c %s "$IMAGE")" "$SRAM_BASE"
 printf '  stack pointer %s, entry %s\n' "$sp" "$pc"
+else
+    echo "running what is already in flash; nothing is loaded"
+fi
 
 # Running and reporting have to happen in one session, and the core has to stop
 # itself at the fault rather than be asked about it afterwards.
@@ -214,15 +229,20 @@ if (( ${#pokes[@]} )); then
 fi
 [[ $start == no ]] && run=(-c "echo {left halted at the reset vector}")
 
+prologue=()
+if [[ $load == yes ]]; then
+    prologue=(
+        -c "mww $AHBCLKCTRLSET0 $SRAM_BANKS"
+        -c "load_image $IMAGE $SRAM_BASE bin"
+        -c "verify_image $IMAGE $SRAM_BASE bin"
+        -c "mww $VTOR $SRAM_BASE"
+        -c "reg msp $sp"
+        -c "reg pc $pc"
+    )
+fi
+
 started=$SECONDS
-log=$(swd_run \
-    -c "mww $AHBCLKCTRLSET0 $SRAM_BANKS" \
-    -c "load_image $IMAGE $SRAM_BASE bin" \
-    -c "verify_image $IMAGE $SRAM_BASE bin" \
-    -c "mww $VTOR $SRAM_BASE" \
-    -c "reg msp $sp" \
-    -c "reg pc $pc" \
-    "${run[@]}" || true)
+log=$(swd_run ${prologue[@]+"${prologue[@]}"} "${run[@]}" || true)
 printf '%s\n' "$log"
 elapsed=$(( SECONDS - started ))
 
@@ -231,7 +251,7 @@ swd_halted "$log" || {
     exit 1
 }
 
-if [[ ! $log =~ verified\ [0-9]+\ bytes ]]; then
+if [[ $load == yes && ! $log =~ verified\ [0-9]+\ bytes ]]; then
     echo >&2
     echo "SRAM does not read back as the file, so the load did not take." >&2
     echo "Differences only in the first few dozen bytes mean something ran" >&2
@@ -258,7 +278,8 @@ elif [[ $log =~ halted\ due\ to\ breakpoint ]]; then
     echo "A breakpoint was reached, after about ${elapsed}s."
     echo
     printf '%s\n' "$log" | python3 -I "$here/decode-fault.py"
-elif (( ${#pokes[@]} )) && [[ ${log##*=== after the pokes ===} =~ pc\ \(/32\):\ (0x[0-9a-fA-F]+) ]] \
+elif [[ $load == yes ]] && (( ${#pokes[@]} )) \
+     && [[ ${log##*=== after the pokes ===} =~ pc\ \(/32\):\ (0x[0-9a-fA-F]+) ]] \
      && (( BASH_REMATCH[1] < SRAM_BASE )); then
     printf 'After the pokes the program counter was %s, which is not in SRAM.\n' \
         "${BASH_REMATCH[1]}" >&2
