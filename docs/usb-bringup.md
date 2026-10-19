@@ -439,4 +439,36 @@ USBHSD LPM         0x00100000   0x00200000
 `PDRUNCFG[1]` is the readable summary: Corsair have the transceiver, the USB
 PLL and the crystal oscillator all powered; this firmware has none of the three.
 
+## Flashed, and what that settled
+
+The firmware was written to flash and started the real way -- boot ROM,
+Corsair's bootloader, application -- to remove the last doubt about the SRAM
+harness.
+
+**It behaves identically.** Halted while running from flash: no fault, the USB
+PLL locked, `PDRUNCFG[1]` at `0x20000084`, `DEVCMDSTAT` at `0x00410880` with no
+bus power, and the program counter in `port_rt_external_counter_value` by way
+of `chSysPolledDelayX` -- a settling delay in the matrix scan, which is the main
+loop doing its job.
+
+So **the SRAM harness is faithful**, and the question of whether starting
+without the boot ROM explained anything is closed. It did not. Future work can
+iterate in SRAM without wondering.
+
+Two things only the flash run could show:
+
+- **The watchdog is inherited.** `WWDT->MOD` read back with `WDTOF` set, so it
+  had fired. Booted this way the application inherits a running watchdog from
+  the bootloader; in the SRAM harness there is none, because nothing runs
+  before the image.
+- **The EEPROM route back failed here.** The watchdog firing is what
+  `housekeeping_task` falls back to when `k100_enter_bootloader()` returns
+  false, which it does when the mode word will not write or read back. In the
+  SRAM harness that same call reached `__NVIC_SystemReset`, so it worked there
+  and not here. Worth understanding before relying on it.
+
+The layering did its job: the keyboard ended in a reset loop rather than
+silent, the erase-and-reflash route took it back to stock in minutes, and
+nothing was lost.
+
 ## Where it stands
