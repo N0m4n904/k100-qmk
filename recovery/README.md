@@ -135,8 +135,11 @@ only possibility a wire cannot fix.
 ## Step 3 — dump the flash
 
 ```sh
-sudo recovery/dump-flash.sh --swclk 25 --swdio 24
+sudo recovery/dump-flash.sh
 ```
+
+The pins found in step 2 on a K100 are the defaults, so this takes no arguments
+on that board. `--swclk` and `--swdio` override them anywhere else.
 
 Reads all 512 KB twice and refuses to produce a dump unless the two passes
 agree, because a lead that moved mid-read gives a file that looks fine and is
@@ -144,9 +147,51 @@ not. It then checks the result is not a single repeated byte, which is what a
 read that never reached the flash looks like.
 
 Out come `k100-flash-512k.bin` and `k100-bootloader-64k.bin`. **Copy both off
-the Pi.** From that moment the only irreplaceable thing on the keyboard exists
-somewhere else, and nothing that happens afterwards can be worse than where this
-started.
+the Pi.**
+
+## Step 4 — check what the first 64 KB actually are
+
+The dump is taken with the core halted straight out of reset, and at that point
+`0x00000000` may not be showing the flash at all. On the unit dumped here the
+vector table read back from `0x00000000` was:
+
+```
+SP     0x20003fe0
+reset  0x03000137
+rest   0x03000b4d, 0x03000b4f, 0x03000135, ...
+```
+
+Every one of those handlers is in NXP's boot ROM at `0x03000000`, and they match
+where OpenOCD reported the core halted: `pc 0x03000136`, `msp 0x20003fe0`. That
+is what a part whose ROM is still mapped low looks like, which would mean the
+first 64 KB of the dump are the ROM and **Corsair's bootloader has not been read
+at all** — precisely the part that exists nowhere else.
+
+Settle it rather than assume it:
+
+```sh
+sudo recovery/read-memory.sh 0x03000000 0x10000 rom-64k.bin
+cmp rom-64k.bin k100-bootloader-64k.bin
+```
+
+Identical means the ROM answered at both addresses, so the bootloader is still
+unread. Different means `0x00000000` really is flash and the dump holds it.
+
+If it is the ROM, read the same region with the core left running, once
+firmware has had a chance to undo the boot mapping:
+
+```sh
+sudo recovery/read-memory.sh --no-halt 0x00000000 0x10000 flash0-running.bin
+```
+
+That read is taken from a part the watchdog is still resetting, so it may well
+need several goes before two passes agree. It is worth the trouble: it is the
+difference between having the bootloader and not.
+
+The application region is not in doubt either way. At `0x00010000` the dump
+holds Corsair's container header — length, entry address, USB product ID and
+build timestamp all matching the image that was last written — so the flash
+itself is certainly being read.
 
 ## Going faster
 
@@ -167,10 +212,13 @@ repeatedly.
 ## Files
 
 ```
-lpc54605.cfg        the target: LPC54605J512, SWD, no reset or halt in it
-rpi4-swd.cfg        the adapter: Pi GPIOs, slow clock, open-drain reset
+lpc54605.cfg        the target: LPC54605J512, SWD, reset via SYSRESETREQ
+rpi4-swd.cfg        the adapter: Pi GPIOs, open-drain reset
+swd-session.sh      sourced by the rest: the pins, and one call that opens
+                    a session and reports whether the core actually stopped
 identify-header.sh  classifies unknown header pins; --watch tells a pull-up
                     from a chip output by sampling across the reset loop
 find-swd.sh         sweeps pin pairs until the debug port answers
-dump-flash.sh       reads 512 KB twice and compares before believing it
+read-memory.sh      reads any region twice and compares before believing it
+dump-flash.sh       read-memory.sh with the flash's address and size
 ```

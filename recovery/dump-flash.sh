@@ -15,167 +15,56 @@
 # when it is used to restore a part. Two independent passes that match cannot
 # both have been corrupted the same way.
 #
-#   sudo recovery/dump-flash.sh --swclk 25 --swdio 24
+#   sudo recovery/dump-flash.sh
 #
 # Nothing here writes to the keyboard.
+#
+# Note that with the core halted out of reset, 0x00000000 may not show the
+# flash: see "What is actually at 0x00000000" in README.md.
 
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
-SWCLK=25
-SWDIO=24
-SRST=
 OUT=$PWD
-SPEED=100
-
-# Reading flash does not need the core stopped, but it does need the bus to
-# stay up, and on this board the watchdog resets the part every eleven seconds
-# -- which would fall in the middle of a read that takes minutes. Resetting and
-# catching the core before firmware runs leaves the watchdog in its own reset
-# state, which is off, so the part finally sits still. Wrapped in catch so that
-# a target which will not halt still gets dumped.
-HALT="catch {reset halt}"
-HALT_REQUIRED=yes
-
 FLASH_BASE=0x00000000
 FLASH_SIZE=0x80000      # 512 KB
 BOOTLOADER_SIZE=0x10000 #  64 KB, the irreplaceable part
 
+# --out is this script's own; everything else belongs to the session and is
+# handed straight through.
+session=()
 while (( $# )); do
     case $1 in
-        --swclk) SWCLK=$2; shift 2 ;;
-        --swdio) SWDIO=$2; shift 2 ;;
-        --srst)  SRST=$2;  shift 2 ;;
-        --out)   OUT=$2;   shift 2 ;;
-        --speed) SPEED=$2; shift 2 ;;
-        --no-halt) HALT="echo {leaving the core running}"
-                   HALT_REQUIRED=no; shift ;;
-        *) echo "unknown option: $1" >&2; exit 1 ;;
+        --out) OUT=$2; shift 2 ;;
+        *) session+=("$1"); shift ;;
     esac
 done
 
 mkdir -p "$OUT"
 
-read_flash() {
-    local target=$1
-    local -a gpio=(
-        -c "adapter gpio swclk -chip 0 $SWCLK"
-        -c "adapter gpio swdio -chip 0 $SWDIO"
-    )
-    [[ -n $SRST ]] && gpio+=(
-        -c "adapter gpio srst -chip 0 $SRST"
-        -c "reset_config srst_only srst_open_drain srst_nogate"
-    )
-
-    openocd \
-        -c "adapter driver linuxgpiod" \
-        "${gpio[@]}" \
-        -c "adapter speed $SPEED" \
-        -f "$here/lpc54605.cfg" \
-        -c "init" \
-        -c "$HALT" \
-        -c "targets" \
-        -c "dump_image $target $FLASH_BASE $FLASH_SIZE" \
-        -c "shutdown" 2>&1
-}
-
-# Attaching to a part that is resetting itself every few seconds is a race, and
-# it does not always come out right the first time: the examination can read
-# the ROM table where it expected the CPUID, or the halt can time out and leave
-# the core running. A read taken from a running core is not wrong in a way that
-# announces itself -- it is simply a different dump every time, which surfaces
-# much later as two passes that will not agree. So a pass that did not halt the
-# part is discarded here rather than passed on.
-dump_once() {
-    local target=$1 attempt log got
-
-    for attempt in 1 2 3; do
-        log=$(read_flash "$target" || true)
-        printf '%s\n' "$log"
-
-        if [[ $HALT_REQUIRED == yes && ! $log =~ cortex_m[[:space:]].*halted ]]; then
-            echo "attempt $attempt: the part did not halt, so this read is" \
-                 "discarded" >&2
-            continue
-        fi
-
-        # OpenOCD can exit successfully having written less than was asked for,
-        # so its exit status is not the thing to believe. The length is.
-        got=$(stat -c %s "$target" 2>/dev/null || echo 0)
-        if (( got != FLASH_SIZE )); then
-            echo "attempt $attempt: short read, got $got bytes of" \
-                 "$((FLASH_SIZE))" >&2
-            continue
-        fi
-
-        return 0
-    done
-
-    echo "gave up after $attempt attempts" >&2
-    exit 1
-}
-
-echo "pass 1 of 2"
-dump_once "$OUT/k100-flash-pass1.bin"
-
-echo
-echo "pass 2 of 2"
-dump_once "$OUT/k100-flash-pass2.bin"
-
-echo
-if ! cmp "$OUT/k100-flash-pass1.bin" "$OUT/k100-flash-pass2.bin"; then
-    cat >&2 <<'EOF'
-
-The two passes disagree, so neither can be trusted.
-
-Usually a lead that moved: re-seat all of them, shorten them if you can, and
-run it again. Check the line above the dump that reports the target state --
-if it does not say "halted", the watchdog is still resetting the part partway
-through each read, and that alone will make two passes differ.
-
-Note that the linuxgpiod adapter has no speed control, so --speed does nothing
-with it. Lowering the clock means switching to bcm2835gpio; see README.md.
-
-Both passes have been kept so they can be compared, but do not erase anything
-on the strength of either one.
-EOF
-    exit 1
-fi
-
-mv "$OUT/k100-flash-pass1.bin" "$OUT/k100-flash-512k.bin"
-rm -f "$OUT/k100-flash-pass2.bin"
+# Opening the session, retrying a read that did not halt the part and comparing
+# two passes all live in read-memory.sh; this adds the flash's address and
+# size, and what to do with the result.
+"$here/read-memory.sh" "${session[@]}" \
+    "$FLASH_BASE" "$FLASH_SIZE" "$OUT/k100-flash-512k.bin"
 
 dd if="$OUT/k100-flash-512k.bin" of="$OUT/k100-bootloader-64k.bin" \
    bs=4096 count=$(( BOOTLOADER_SIZE / 4096 )) status=none
 
-# A broken SWD read does not always fail; it can succeed and hand back a
-# constant. Two passes agreeing would not catch that, because they would agree
-# on the constant. Counting the distinct byte values does catch it.
-distinct=$(python3 -c \
-    'import sys; print(len(set(open(sys.argv[1], "rb").read())))' \
-    "$OUT/k100-flash-512k.bin")
-
-if (( distinct <= 2 )); then
-    cat >&2 <<EOF
-
-Both passes matched, but the result holds only $distinct distinct byte value(s)
-across 512 KB. That is not firmware. Either the reads never reached the flash,
-or the part is blank.
-
-The files have been kept at $OUT, but this is NOT a dump and nothing may be
-erased on the strength of it.
-EOF
-    exit 1
-fi
-
 cat <<EOF
 
-Both passes matched, and the result holds $distinct distinct byte values.
-
   $OUT/k100-flash-512k.bin      all 512 KB
-  $OUT/k100-bootloader-64k.bin  Corsair's bootloader
+  $OUT/k100-bootloader-64k.bin  the first 64 KB
 
-Copy both off the Pi before going any further. Once they are somewhere else,
-nothing after this point can lose anything that cannot be put back.
+Copy both off the Pi before going any further.
+
+Then check what the first 64 KB actually are, because with the core halted out
+of reset the boot ROM may be what answers at 0x00000000 rather than the flash:
+
+  sudo $here/read-memory.sh 0x03000000 0x10000 rom-64k.bin
+  cmp rom-64k.bin $OUT/k100-bootloader-64k.bin
+
+If those two are identical, the first 64 KB of the dump are NXP's ROM and
+Corsair's bootloader has not been read yet.
 EOF
