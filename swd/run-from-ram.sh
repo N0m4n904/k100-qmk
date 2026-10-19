@@ -135,11 +135,12 @@ run=(
     -c "reg pc"
     -c "reg lr"
     -c "reg sp"
-    -c "reg xPSR"
+    -c "reg xpsr"
     -c "mdw 0xE000ED24 7"
 )
 [[ $start == no ]] && run=(-c "echo {left halted at the reset vector}")
 
+started=$SECONDS
 log=$(swd_run \
     -c "mww $AHBCLKCTRLSET0 $SRAM_BANKS" \
     -c "load_image $IMAGE $SRAM_BASE bin" \
@@ -149,6 +150,7 @@ log=$(swd_run \
     -c "reg pc $pc" \
     "${run[@]}" || true)
 printf '%s\n' "$log"
+elapsed=$(( SECONDS - started ))
 
 swd_halted "$log" || {
     echo "the part did not halt, so nothing was loaded" >&2
@@ -168,8 +170,18 @@ echo
 if [[ $start == no ]]; then
     echo "Loaded and halted at the reset vector. Nothing has executed yet."
 elif [[ $log =~ timed\ out\ while\ waiting\ for\ target\ halted ]]; then
-    echo "Ran for ${WATCH}s without taking a fault, and was then stopped."
-    echo "Whatever holds this firmware up, it is not a fault. Where it was:"
+    if [[ $log =~ external\ reset\ detected ]]; then
+        echo "The part reset during the run, after about ${elapsed}s."
+        echo
+        echo "SRAM survives a reset but VTOR does not, so the part came back"
+        echo "running whatever is in flash -- Corsair's firmware, not this"
+        echo "image. Everything below describes that, not the image under test."
+        echo "Shorten --watch until the program counter is back in SRAM to see"
+        echo "where this firmware actually gets to."
+    else
+        echo "Ran for ${WATCH}s without taking a fault, and was then stopped."
+        echo "Whatever holds this firmware up, it is not a fault. Where it was:"
+    fi
     echo
     printf '%s\n' "$log" | python3 -I "$here/decode-fault.py"
 else
