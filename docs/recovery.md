@@ -114,7 +114,15 @@ recovery mode and would matter a great deal. Read-only, and the only cost is the
 
 ### Layer 3 — SWD
 
-Same idea, same ECRP caveat, needs pads located and a probe attached.
+**This is the layer that actually recovered the keyboard.** See
+[`../recovery/README.md`](../recovery/README.md) for the procedure and
+[`handover.md`](handover.md) for the background.
+
+No probe is needed: a Raspberry Pi's GPIOs are 3.3 V, the LPC54605 is 3.3 V, and OpenOCD will
+bit-bang SWD between them. No soldering either — the connection point is an unpopulated six-pin
+header in plated through-holes, `J1`, next to the controller, and a jumper wire pushed into a
+hole and taped down is contact enough. The ECRP caveat turned out not to apply on this unit:
+the debug port attached first try and all 512 KB read out.
 
 ## The two rules
 
@@ -470,6 +478,46 @@ each closing off a hoped-for escape:
   not in that path.
 
 What remains is [`docs/handover.md`](handover.md), for someone with a programmer.
+
+### The recovery
+
+Done on 19 October 2026, the day after the loss, with a Raspberry Pi 4, four jumper wires and
+no soldering. In order:
+
+1. **The header was measured, not guessed.** Each of `J1`'s six pins was read with the Pi's
+   internal pull-up and then its pull-down, repeated for 45 s per pin so that several of the
+   part's eleven-second watchdog restarts fell inside each measurement. A level that never
+   changes across a restart is a resistor on the board; one that changes is the chip driving
+   the pin, and driving that in turn is the one way this could have damaged a board that was
+   only soft-bricked. Pins 2 to 5 never changed, in about 1300 samples across some sixteen
+   restarts.
+2. **SWDIO and SWCLK were found by sweeping.** Twelve ordered pairs of those four pins, one
+   second each. `J1` pin 3 and pin 2 answered with `DPIDR 0x2ba01477`.
+3. **All 512 KB were read out**, twice, with the core halted and the passes compared. The first
+   attempt was rejected by that comparison: one pass had failed to halt and was read from a
+   part being reset underneath it.
+4. **The boot ROM was caught impersonating the flash.** Halted straight out of reset, the
+   bottom `0x200` bytes of the address space are the ROM's, so the vector table read back had
+   every handler in `0x0300xxxx`. Reading the ROM from `0x03000000` and comparing proved it:
+   identical for exactly `0x200` bytes, unrelated after. Re-reading with the part allowed to
+   run first recovered the real vector table, whose word at `0x1c` is the two's complement of
+   the seven before it — NXP's boot checksum, and the proof that the 64 KB image is complete.
+5. **Flash sector 2 was erased**, and read back to confirm it. That removed the container
+   header, so the bootloader had nothing to start.
+6. **The bootloader stayed, and enumerated.** `bcdDevice=000a`, the original serial number.
+   Which answers the question this document could not: it stays put when the application is
+   gone, with no held key and no EEPROM word involved.
+7. **Corsair's own update path did the rest.** `k100-bragi flash
+   Heracles_Application_Firmware_v0.35.288.bin --commit` wrote 150908 bytes, applied it, and
+   the keyboard rebooted into `SelfOperated` reporting firmware 0.35.288, `bcdDevice=0023`,
+   three interfaces, and `physical layout Iso` — which only the application can answer.
+
+Total writing done through the probe: one 32 KB erase.
+
+One practical note. On the Pi's own USB port the bootloader enumerated, held for 32 seconds and
+then dropped the port into `cannot reset (err = -71)`, from which it did not come back. The
+keyboard is hungrier than a Pi 4's port likes. Doing the USB half on a properly powered host
+made it uneventful.
 
 ### The window none of them covers
 

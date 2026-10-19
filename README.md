@@ -7,8 +7,9 @@ its stock firmware.
 
 ## ⚠️ Work in progress — read this before running anything
 
-**This project is unfinished, and it has already destroyed one keyboard.** There is no working
-firmware, and there may never be.
+**This project is unfinished, and it has already bricked one keyboard.** That keyboard was
+recovered, but only by opening the case and attaching a programmer to the PCB. There is no
+working firmware, and there may never be.
 
 **Using anything in this repository is entirely at your own risk.**
 
@@ -17,9 +18,10 @@ Specifically, you should understand before you start:
 - **This has already bricked a K100.** Not hypothetically. A custom image was flashed whose
   route back to the bootloader had never been observed working, and which called that route
   *before* the held-key escape hatch. The call faulted, both ways back were lost together, and
-  the keyboard has not enumerated since. It cannot be recovered without opening the case and
-  attaching a programmer. The post-mortem is in [`docs/recovery.md`](docs/recovery.md) and the
-  instructions for recovering such a keyboard are in [`docs/handover.md`](docs/handover.md).
+  the keyboard stopped enumerating entirely — no USB at all, and no key held at power-up
+  changed that. Recovering it took opening the case and wiring a programmer to the board. The
+  post-mortem is in [`docs/recovery.md`](docs/recovery.md) and the procedure that got it back
+  is in [`recovery/`](recovery/README.md).
 - **You can permanently destroy your keyboard.** The K100's MCU can ship with read-out
   protection and debug access disabled, in which case a failed firmware write leaves no way
   to recover it. This is not a theoretical risk; it is documented for this chip family.
@@ -45,7 +47,8 @@ and the two rules that keep a mistake survivable.
 | Firmware container format | **Proven.** The writer rebuilds both official images byte for byte. |
 | Firmware distribution | **Understood and verified.** Official images download and validate. |
 | Reflashing a *healthy* keyboard | **Proven on hardware.** An official image was written, applied and verified, many times. |
-| Recovery from firmware that will not boot | **Not proven, and it failed.** The firmware's own route back to the bootloader has never once been seen to work, and relying on it cost a keyboard. |
+| Recovery from firmware that will not boot, over USB | **Not proven, and it failed.** The firmware's own route back to the bootloader has never once been seen to work, and relying on it cost a keyboard. |
+| Recovery from firmware that will not boot, over SWD | **Proven on hardware.** A bricked K100 was dumped, erased and restored to stock with a Raspberry Pi and four jumper wires. See [`recovery/`](recovery/README.md). |
 | Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |
 | QMK layout, keymap, LED map, VIA | **Done** for OPX ISO DE, generated from ckb-next's data. |
 | ChibiOS LPC546xx port | **Runs on the keyboard** as far as QMK's pre-init. Three boot-stopping defects found and fixed (DWT, realtime counter, system timer); none of the fixes has run on hardware. |
@@ -54,7 +57,8 @@ and the two rules that keep a mistake survivable.
 | RGB bus pins | **Unknown** — configured by the bootloader, not the application. No lighting yet. |
 | Route back to the bootloader | Implemented three ways, all three funnelling through one EEPROM write that **has never succeeded on hardware**. Treat as non-functional. |
 | Working firmware | **No.** It has never completed a boot or enumerated. |
-| Test hardware | **None.** The only unit was bricked; nothing can be verified on real hardware. |
+| Test hardware | **One K100**, recovered from the brick and back on stock firmware, with an SWD header identified on its PCB. |
+| Corsair's bootloader | **Dumped.** 64 KB read out over SWD and checked: its vector checksum is valid, so the image is complete. Not redistributable, so not in this repository. |
 
 Start with [`NOTES.md`](NOTES.md) for the research and
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for the plan.
