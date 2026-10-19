@@ -29,6 +29,14 @@ SRST=
 OUT=$PWD
 SPEED=100
 
+# Reading flash does not need the core stopped, but it does need the bus to
+# stay up, and on this board the watchdog resets the part every eleven seconds
+# -- which would fall in the middle of a read that takes minutes. Resetting and
+# catching the core before firmware runs leaves the watchdog in its own reset
+# state, which is off, so the part finally sits still. Wrapped in catch so that
+# a target which will not halt still gets dumped.
+HALT="catch {reset halt}"
+
 FLASH_BASE=0x00000000
 FLASH_SIZE=0x80000      # 512 KB
 BOOTLOADER_SIZE=0x10000 #  64 KB, the irreplaceable part
@@ -40,6 +48,7 @@ while (( $# )); do
         --srst)  SRST=$2;  shift 2 ;;
         --out)   OUT=$2;   shift 2 ;;
         --speed) SPEED=$2; shift 2 ;;
+        --no-halt) HALT="echo {leaving the core running}"; shift ;;
         *) echo "unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -63,6 +72,8 @@ dump_once() {
         -c "adapter speed $SPEED" \
         -f "$here/lpc54605.cfg" \
         -c "init" \
+        -c "$HALT" \
+        -c "targets" \
         -c "dump_image $target $FLASH_BASE $FLASH_SIZE" \
         -c "shutdown"
 
@@ -89,8 +100,13 @@ if ! cmp "$OUT/k100-flash-pass1.bin" "$OUT/k100-flash-pass2.bin"; then
 
 The two passes disagree, so neither can be trusted.
 
-Usually a lead that moved. Re-seat everything, and if it keeps happening lower
-the clock:  --speed 50
+Usually a lead that moved: re-seat all of them, shorten them if you can, and
+run it again. Check the line above the dump that reports the target state --
+if it does not say "halted", the watchdog is still resetting the part partway
+through each read, and that alone will make two passes differ.
+
+Note that the linuxgpiod adapter has no speed control, so --speed does nothing
+with it. Lowering the clock means switching to bcm2835gpio; see README.md.
 
 Both passes have been kept so they can be compared, but do not erase anything
 on the strength of either one.
