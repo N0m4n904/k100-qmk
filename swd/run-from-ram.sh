@@ -64,10 +64,23 @@ WATCH=10
 # of a second and cannot disturb anything.
 SWD_PRE_CFG=(-c "set WORK_AREA_SIZE 0")
 
+breakpoints=()
+peeks=()
+
 while (( $# )); do
     case ${1:-} in
         --no-run) start=no; shift; continue ;;
         --watch)  WATCH=$2; shift 2; continue ;;
+        # A hardware breakpoint, so that nothing is written to the code under
+        # test. The part has six. Stopping at a known function is how a
+        # suspicion becomes an answer: put one on __NVIC_SystemReset and a
+        # software reset announces itself, while a part that resets anyway did
+        # it in hardware.
+        --break) breakpoints+=("$2"); shift 2; continue ;;
+        # Words to read once the part is stopped, as address:count. For looking
+        # at a peripheral the firmware was using -- a watchdog's counter, a
+        # controller's status -- without writing a script per register.
+        --peek)  peeks+=("$2"); shift 2; continue ;;
     esac
     swd_parse_option "$@"
     (( swd_shift < 0 )) && break
@@ -124,6 +137,11 @@ printf '  stack pointer %s, entry %s\n' "$sp" "$pc"
 # watchdog never gets the chance.
 run=(
     -c "cortex_m vector_catch hard_err bus_err mm_err state_err chk_err nocp_err"
+)
+for address in ${breakpoints[@]+"${breakpoints[@]}"}; do
+    run+=(-c "bp $address 2 hw")
+done
+run+=(
     -c "resume"
     -c "catch {wait_halt $(( WATCH * 1000 ))}"
     # Whether it faulted or is simply still going, stopping it here and reading
@@ -138,6 +156,9 @@ run=(
     -c "reg xpsr"
     -c "mdw 0xE000ED24 7"
 )
+for spec in ${peeks[@]+"${peeks[@]}"}; do
+    run+=(-c "mdw ${spec%%:*} ${spec##*:}")
+done
 [[ $start == no ]] && run=(-c "echo {left halted at the reset vector}")
 
 started=$SECONDS
@@ -169,6 +190,13 @@ fi
 echo
 if [[ $start == no ]]; then
     echo "Loaded and halted at the reset vector. Nothing has executed yet."
+elif [[ $log =~ halted\ due\ to\ breakpoint ]]; then
+    # A breakpoint reaching is a positive result, and it must not be read as a
+    # fault: wait_halt returns successfully when one is hit, which would
+    # otherwise land in the branch below and report a crash that did not happen.
+    echo "A breakpoint was reached, after about ${elapsed}s."
+    echo
+    printf '%s\n' "$log" | python3 -I "$here/decode-fault.py"
 elif [[ $log =~ timed\ out\ while\ waiting\ for\ target\ halted ]]; then
     if [[ $log =~ external\ reset\ detected ]]; then
         echo "The part reset during the run, after about ${elapsed}s."
