@@ -262,8 +262,19 @@ debugging
 ```sh
 LDSCRIPT=LPC546xx_sram qmk/test/build-k100.sh <work-dir>   # on the build machine
 sudo swd/run-from-ram.sh corsair_k100_default.bin          # on the Pi
-sudo swd/fault-report.sh
 ```
+
+That one command loads it, runs it, and says what happened — on purpose, and
+not for brevity. A firmware that faults here spins in a handler that does not
+feed the watchdog, so a few seconds later the part resets, every fault status
+register is cleared and flash starts running again. A separate `fault-report.sh`
+afterwards would arrive to find a clean machine running Corsair's firmware and
+report that nothing had gone wrong. The loader therefore arms the core's vector
+catch before resuming, so a fault stops it before its own handler runs, and
+reads the registers in the same session.
+
+`--no-run` loads without starting, to step from. `--watch <seconds>` changes how
+long it waits before concluding the firmware is still going.
 
 The image runs entirely out of SRAM. Nothing is erased, nothing is written to
 flash, and the next power cycle runs whatever is in flash again as though this

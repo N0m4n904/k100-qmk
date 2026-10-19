@@ -27,9 +27,13 @@
 #   VTOR                pointed at the loaded vector table before anything can
 #                       interrupt through the one still in flash
 #   MSP, PC             taken from the image's own first two words
+#   vector_catch        so that a fault stops the core before its own
+#                       handler runs, rather than after the watchdog has
+#                       reset the part and wiped the evidence
 #   resume              unless --no-run, which leaves it halted to step from
+#   wait, then report   what faulted and where, or that it is still running
 #
-# Options: --no-run, --swclk, --swdio, --srst, --speed.
+# Options: --no-run, --watch <seconds>, --swclk, --swdio, --srst, --speed.
 
 set -euo pipefail
 
@@ -48,14 +52,14 @@ AHBCLKCTRLSET0=0x40000220
 SRAM_BANKS=0x38
 
 VTOR=0xE000ED08
-run=yes
+start=yes
+WATCH=10
 
 while (( $# )); do
-    if [[ ${1:-} == --no-run ]]; then
-        run=no
-        shift
-        continue
-    fi
+    case ${1:-} in
+        --no-run) start=no; shift; continue ;;
+        --watch)  WATCH=$2; shift 2; continue ;;
+    esac
     swd_parse_option "$@"
     (( swd_shift < 0 )) && break
     shift "$swd_shift"
@@ -97,8 +101,27 @@ read -r sp pc <<<"$vectors"
 printf 'loading %s (%s bytes) at 0x%08x\n' "$IMAGE" "$(stat -c %s "$IMAGE")" "$SRAM_BASE"
 printf '  stack pointer %s, entry %s\n' "$sp" "$pc"
 
-resume=(-c "echo {left halted at the reset vector}")
-[[ $run == yes ]] && resume=(-c "resume")
+# Running and reporting have to happen in one session, and the core has to stop
+# itself at the fault rather than be asked about it afterwards.
+#
+# This firmware's fault handler spins without feeding the watchdog, so a few
+# seconds later the part resets -- which clears every fault status register and
+# starts whatever is in flash. A separate fault-report.sh run would arrive to
+# find a clean machine running Corsair's firmware and report that nothing had
+# gone wrong.
+#
+# vector_catch halts the core the instant it takes a fault, before its own
+# handler runs at all, so the registers and the stack frame are intact and the
+# watchdog never gets the chance.
+run=(
+    -c "cortex_m vector_catch hard_err bus_err mm_err state_err chk_err nocp_err"
+    -c "resume"
+    -c "catch {wait_halt $(( WATCH * 1000 ))}"
+    -c "targets"
+    -c "reg"
+    -c "mdw 0xE000ED24 7"
+)
+[[ $start == no ]] && run=(-c "echo {left halted at the reset vector}")
 
 log=$(swd_run \
     -c "mww $AHBCLKCTRLSET0 $SRAM_BANKS" \
@@ -107,7 +130,7 @@ log=$(swd_run \
     -c "mww $VTOR $SRAM_BASE" \
     -c "reg msp $sp" \
     -c "reg pc $pc" \
-    "${resume[@]}" || true)
+    "${run[@]}" || true)
 printf '%s\n' "$log"
 
 swd_halted "$log" || {
@@ -123,11 +146,17 @@ if [[ ! $log =~ verified\ [0-9]+\ bytes ]]; then
 fi
 
 echo
-if [[ $run == yes ]]; then
-    echo "Loaded and running. To see where it got to:"
-    echo "  sudo $here/fault-report.sh"
-else
+if [[ $start == no ]]; then
     echo "Loaded and halted at the reset vector. Nothing has executed yet."
+elif [[ $log =~ timed\ out\ while\ waiting\ for\ target\ halted ]]; then
+    echo "Still running after ${WATCH}s without taking a fault."
+    echo "Whatever stops this firmware, it is not a fault -- look for a wait"
+    echo "that never finishes. It is still running now, so the host's USB tree"
+    echo "is worth a look."
+else
+    echo "It faulted. The core was caught before its own handler ran:"
+    echo
+    printf '%s\n' "$log" | python3 -I "$here/decode-fault.py"
 fi
 echo
 echo "Flash was not touched. A power cycle brings back whatever is in it."
