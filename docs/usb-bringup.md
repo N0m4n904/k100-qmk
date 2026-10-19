@@ -387,19 +387,56 @@ runs from. It brought no benefit, so it is not set.
 It does not persist: a normal boot restores `FROCTRL` to `0x40af178a`, checked
 on the keyboard afterwards, which still enumerates at 480 Mbit/s.
 
+## Their USB init, from the top
+
+Comparing both firmwares halted on the *same instruction* -- the one that
+powers the transceiver -- showed Corsair's `PDRUNCFG[1]` bit 0 already clear.
+They had powered it earlier, somewhere between the application's entry and
+there. That narrowed the search to a few hundred instructions, and it ends at
+`0x000128ec`:
+
+```
+str.w r3, [r4, #0x634]      PDRUNCFGCLR1 = 1   power the transceiver, first
+bl    0x22914                                  clock setup
+str.w r3, [r4, #0x228]      AHBCLKCTRLSET2 = 0x10   the USB1 HOST clock on
+ldr.w r5, [r4, #0x428]      USB1CLKSTAT
+ands.w r5, r5, #2           HOST_NEED_CLKST
+bne   back                  spin until it clears
+str.w r3, [r4, #0x248]      AHBCLKCTRLCLR2 = 0x10   host clock off again
+```
+
+**They enable the USB host controller's clock, wait for `USB1CLKSTAT` bit 1 to
+clear, and switch it off again** -- on a keyboard that is a device and never a
+host. It is a handshake that brings the transceiver up, and it appears in no
+documentation.
+
+It matches a measurement taken before anyone was looking for it: this firmware
+reads `USB1CLKSTAT` as `0x3` where Corsair's running firmware reads `0x1`.
+`HOST_NEED_CLKST` is stuck set here and is exactly the bit they wait on.
+
+**Performing the handshake does clear it**, from `0x3` to `0x0`, both after
+this firmware's USB init and before it. **It does not wake the transceiver**:
+`DEVCMDSTAT` stays at `0x00410880`, and the host still records nothing.
+
+## What is still different at that instruction
+
+With both halted where the transceiver is powered, everything else that differs
+is the clock tree and what hangs off it:
+
+```
+                   Corsair      this firmware
+USB1CLKSEL         2            0
+SYSPLLCLKSEL       1            0
+MAINCLKSELA / B    1 / 2        3 / 0
+USBPLLCTRL         0x00000d3f   0x00000000
+USBPLLSTAT         1            0
+SYSPLL{N,P,M}DEC   programmed   0
+PDRUNCFG[1]        0x20000084   0x2000008f
+0x40020054         0x00000fff   0x00000fcf
+USBHSD LPM         0x00100000   0x00200000
+```
+
+`PDRUNCFG[1]` is the readable summary: Corsair have the transceiver, the USB
+PLL and the crystal oscillator all powered; this firmware has none of the three.
+
 ## Where it stands
-
-The transceiver does not report bus power, with its supply up and ready, its
-clock running, the gates enabled in the order both references use, and the
-power applied last. Measured and excluded so far: the clock source, every
-voltage domain, the power-up order, the pins, the peripheral resets, all 512
-words of SYSCON, `LPM_SUP`, `FORCE_VBUS`, `FORCE_NEEDCLK` and the driver's
-register programming.
-
-The next thing to do is narrow the gap between `0x00012568`, where their
-transceiver is off, and `0x0002534c`, where it reports bus power. Breakpoints
-reach both; bisecting between them finds the instruction that wakes it. That is
-a mechanical search and it will end somewhere definite.
-
-The `DEVCMDSTAT` read-modify-write noted above should be fixed regardless. It
-is a defect whether or not it is this one.
