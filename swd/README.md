@@ -244,6 +244,9 @@ reading
   dump-flash.sh       read-memory.sh with the flash's address and size
   flash-info.sh       asks the flash controller for its part id; writes nothing
 
+running firmware without touching flash
+  run-from-ram.sh     loads an image into SRAM and starts it
+
 writing
   erase-sectors.sh    erases sectors and reads them back to prove it
   write-image.sh      writes a raw binary and has the part verify it
@@ -253,6 +256,45 @@ debugging
   fault-report.sh     halts where it is and says what faulted
   decode-fault.py     turns the fault status registers into a sentence
 ```
+
+## Trying firmware without writing any
+
+```sh
+LDSCRIPT=LPC546xx_sram qmk/test/build-k100.sh <work-dir>   # on the build machine
+sudo swd/run-from-ram.sh corsair_k100_default.bin          # on the Pi
+sudo swd/fault-report.sh
+```
+
+The image runs entirely out of SRAM. Nothing is erased, nothing is written to
+flash, and the next power cycle runs whatever is in flash again as though this
+had not happened — so an attempt costs seconds rather than a flash sector and
+something permanent.
+
+Three things make it work, and all three are easy to get wrong silently:
+
+- **The upper SRAM banks are not clocked out of reset.** Only the first 32 KB
+  at `0x20000000` is live; `SRAM1`, `SRAM2` and `SRAM3` need `0x38` written to
+  `AHBCLKCTRLSET0` at `0x40000220` first. Without it an image larger than 32 KB
+  loads into nothing. The script does this before loading, and `verify_image`
+  afterwards is what would catch it if the write were wrong.
+- **Code must not live in `ram0`.** `crt0` zeroes the whole of `ram0` before any
+  HAL code runs, so an image whose own text sat there would erase itself
+  mid-startup. `LPC546xx_sram.ld` puts code in a separate region below
+  `0x20010000` and starts `ram0` above it.
+- **`VTOR` still points into flash** until `crt0` moves it. The script sets it
+  to the loaded vector table before resuming, so nothing can interrupt through
+  the bootloader's handlers in the meantime.
+
+The two scripts refuse each other's images. A flash-linked build has its reset
+vector in `0x0001xxxx`, and `run-from-ram.sh` will not load it; an SRAM-linked
+build has its vectors in `0x2000xxxx`, and `write-image.sh` will not put it in
+flash, where it would branch into memory that holds nothing at power-up with
+the working firmware already erased to make room.
+
+This is not a replacement for a flash build. The code runs at different
+addresses, so anything that depends on where it lives behaves differently or
+not at all, and the bootloader's handover is not exercised. It is where the
+boot faults get found; flash is where the result has to work.
 
 ## Debugging firmware with it
 

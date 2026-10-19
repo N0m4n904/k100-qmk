@@ -9,6 +9,7 @@
 #
 #   nix develop .#qmk
 #   qmk/test/build-k100.sh [work-dir] [-- extra make args]
+#   LDSCRIPT=LPC546xx_sram qmk/test/build-k100.sh [work-dir]
 #
 # Downloads are cached in the work directory, so a second run is fast.
 set -euo pipefail
@@ -17,6 +18,14 @@ qmk_ref=master
 part=LPC54605
 keyboard=corsair/k100
 keymap=${KEYMAP:-default}
+
+# Which memory layout to link for. The default is the real one: behind Corsair's
+# bootloader, in flash. LDSCRIPT=LPC546xx_sram links an image that runs out of
+# SRAM instead, for loading with a debugger and starting by hand -- which leaves
+# nothing behind on the part and is how boot failures are chased without
+# spending a flash sector on each attempt. A command-line variable beats the
+# rules.mk assignment, which is what makes this work.
+ldscript=${LDSCRIPT:-LPC546xx_app_at_64k}
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
@@ -139,8 +148,8 @@ cp -r "$repo/qmk/drivers/led/issi/." "$qmk/drivers/led/issi/"
 mkdir -p "$qmk/keyboards/$keyboard"
 cp -r "$repo/qmk/keyboards/$keyboard/." "$qmk/keyboards/$keyboard/"
 
-echo "building $keyboard:$keymap"
-make -C "$qmk" "$keyboard:$keymap" "${@:2}"
+echo "building $keyboard:$keymap, linked by $ldscript"
+make -C "$qmk" "$keyboard:$keymap" MCU_LDSCRIPT="$ldscript" "${@:2}"
 
 elf="$qmk/.build/$(echo "$keyboard" | tr / _)_$keymap.elf"
 echo

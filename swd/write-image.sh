@@ -60,6 +60,26 @@ EOF
     exit 1
 fi
 
+# The reciprocal of run-from-ram.sh's check. An image built with
+# LDSCRIPT=LPC546xx_sram has its vectors in 0x2000xxxx; writing that into flash
+# produces something whose reset vector points at SRAM, which holds nothing at
+# power-up. The part would start, branch into empty memory and fault, with the
+# working firmware already erased to make room for it.
+python3 -I - "$IMAGE" <<'PY'
+import struct
+import sys
+
+with open(sys.argv[1], "rb") as f:
+    sp, pc = struct.unpack("<II", f.read(8))
+
+entry = pc & ~1
+if not 0 <= entry < 0x80000:
+    sys.exit(f"{sys.argv[1]} is not linked for flash: its reset vector is "
+             f"0x{entry:08x}, outside the 512 KB at 0x00000000. An image built "
+             f"with LDSCRIPT=LPC546xx_sram belongs in swd/run-from-ram.sh, not "
+             f"in flash.")
+PY
+
 printf 'writing %s (%s bytes) to 0x%08x\n' "$IMAGE" "$(stat -c %s "$IMAGE")" "$ADDRESS"
 
 log=$(swd_run \
