@@ -285,11 +285,43 @@ the transceiver driving it.
 configured. **Tested on the part and refuted**: with the bit set the controller
 still receives nothing, and `USB1CLKSTAT` does not change.
 
+### Confirmed by reading Corsair's code
+
+Their application masks the status bits before every write to `DEVCMDSTAT`:
+
+```
+ldr   r3, [r2, #0]
+bic.w r3, r3, #0xef000000      bits 24-27 and 29-31, the write-one-to-clear ones
+orr/bic ...
+str   r3, [r2, #0]
+```
+
+So the read-modify-write above is not a theoretical hazard. Both NXP's driver
+and the firmware that works on this keyboard avoid it deliberately.
+
+Their controller init, at `0x00025300`, also disables before it configures:
+
+```
+bic.w r3, r3, #0x10800         DCON and LPM_SUP
+bic.w r3, r3, #0x80            DEV_EN
+str   r3, [r6, #0]             controller off
+bl    0x25294                  configure
+orr.w r3, r3, #0x80            DEV_EN back on
+```
+
+**`LPM_SUP` is cleared there and never cleared here.** It is set in this
+firmware before its driver touches anything — the handover state, measured at a
+breakpoint ahead of `usb_lld_start`. **Tested and refuted**: clearing it on the
+running part changes nothing.
+
+Their endpoint command and status list sits at `0x40100a00`, with
+`EPLISTSTART` at `0x40100b00`; this port puts both at `0x40100000`.
+
 ### Where that leaves it
 
 The transceiver does not drive the bus, and it does so with its supply powered
-and ready, its clock running, `DEV_EN` set, `DCON` set, `FORCE_VBUS` set and
-`FORCE_NEEDCLK` set. Every one of those was measured on the part rather than
+and ready, its clock running, `DEV_EN` set, `DCON` set, `FORCE_VBUS` set,
+`FORCE_NEEDCLK` set and `LPM_SUP` cleared. Every one of those was measured on the part rather than
 assumed. Nothing in the clock tree, the power domains, the pins, the peripheral
 resets, SYSCON as a whole, or the driver's register programming accounts for
 it.
