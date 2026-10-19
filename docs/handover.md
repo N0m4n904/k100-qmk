@@ -53,7 +53,13 @@ Keep `0x00000000`–`0x0000FFFF` separately: that is the bootloader.
 
 ### SWD
 
-Pads must be located on the PCB; their positions are not documented here.
+The main PCB carries an unpopulated six-pin header, **`J1`**, in plated
+through-holes at 0.1 in pitch, immediately beside the controller and its
+crystal, with pin 1 marked by a square pad and a silkscreen triangle. Four test
+points, `TP42`–`TP45`, sit directly beneath pins 2 to 5. Which pin is which is
+not known and is not worth guessing: [`recovery/`](../recovery/README.md)
+determines it by measurement, and holds a complete procedure for doing all of
+this with a Raspberry Pi and no other hardware.
 
 **Debug access is probably disabled.** A read-modify-write of `DWT->CTRL` at `0xE0001000` from
 code running on this part takes a fault, which is what a locked debug block does. If the probe

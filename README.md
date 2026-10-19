@@ -80,6 +80,8 @@ The K100 Air is a different device again and none of this applies to it either.
 
 ```
 docs/          research write-ups; recovery.md is the one to read first
+recovery/      SWD recovery of a keyboard that will not boot, using a Pi and
+               nothing else; read recovery/README.md before touching the PCB
 tools/
   fetch-firmware.py       downloads and verifies official firmware
   k100_container.py       Corsair's firmware container, read and written
