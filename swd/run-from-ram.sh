@@ -200,6 +200,13 @@ if (( ${#pokes[@]} )); then
         -c "catch {halt}"
         -c "echo {=== after the pokes ===}"
         -c "targets"
+        # Which firmware this second reading describes has to be established,
+        # not assumed. A run long enough to trip this firmware's own USB
+        # timeout puts the part back in the bootloader, and every register read
+        # afterwards then describes Corsair's code while looking exactly like a
+        # result. The program counter says whose it is: in SRAM it is this
+        # image, in flash it is not.
+        -c "reg pc"
     )
     for spec in ${peeks[@]+"${peeks[@]}"}; do
         run+=(-c "mdw ${spec%%:*} ${spec##*:}")
@@ -251,6 +258,17 @@ elif [[ $log =~ halted\ due\ to\ breakpoint ]]; then
     echo "A breakpoint was reached, after about ${elapsed}s."
     echo
     printf '%s\n' "$log" | python3 -I "$here/decode-fault.py"
+elif (( ${#pokes[@]} )) && [[ ${log##*=== after the pokes ===} =~ pc\ \(/32\):\ (0x[0-9a-fA-F]+) ]] \
+     && (( BASH_REMATCH[1] < SRAM_BASE )); then
+    printf 'After the pokes the program counter was %s, which is not in SRAM.\n' \
+        "${BASH_REMATCH[1]}" >&2
+    echo >&2
+    echo "The part left this image at some point, so every reading above the" >&2
+    echo "marker belongs to it and everything below belongs to whatever is in" >&2
+    echo "flash. Shorten --watch and --then-watch: their sum has to stay under" >&2
+    echo "this firmware's own USB timeout, or it hands the keyboard back to the" >&2
+    echo "bootloader partway through the measurement." >&2
+    exit 1
 elif [[ $log =~ timed\ out\ while\ waiting\ for\ target\ halted ]]; then
     if [[ $log =~ external\ reset\ detected ]]; then
         echo "The part reset during the run, after about ${elapsed}s."
