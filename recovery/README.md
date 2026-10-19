@@ -174,24 +174,41 @@ sudo recovery/read-memory.sh 0x03000000 0x10000 rom-64k.bin
 cmp rom-64k.bin k100-bootloader-64k.bin
 ```
 
-Identical means the ROM answered at both addresses, so the bootloader is still
-unread. Different means `0x00000000` really is flash and the dump holds it.
+**On the unit dumped here the two differ from byte 513 on** — that is, they are
+identical for exactly `0x200` bytes and unrelated after. So the shadowing covers
+the vector table and nothing more: `0x00000200`–`0x0000FFFF` is genuinely
+Corsair's bootloader, and only its first `0x200` bytes are missing.
 
-If it is the ROM, read the same region with the core left running, once
-firmware has had a chance to undo the boot mapping:
+What is past `0x200` is not in doubt. It holds Corsair's own symbol names and
+NXP's SDK built with a Windows toolchain:
 
-```sh
-sudo recovery/read-memory.sh --no-halt 0x00000000 0x10000 flash0-running.bin
+```
+bsp\SPIHal.c   is31fl3743b.c   keyboard.c   ledDriver.c   ledInfo.c
+opticalMatrixMask.c   keyToHidCodeMap.c   dataStorage.c
+..\lib\sdk\drivers\fsl_eeprom.c   ..\lib\sdk\drivers\fsl_wwdt.c
 ```
 
-That read is taken from a part the watchdog is still resetting, so it may well
-need several goes before two passes agree. It is worth the trouble: it is the
-difference between having the bootloader and not.
+Nor is the application region: at `0x00010000` the dump holds Corsair's
+container header, with length, entry address, USB product ID and build
+timestamp all matching the image last written to the part.
 
-The application region is not in doubt either way. At `0x00010000` the dump
-holds Corsair's container header — length, entry address, USB product ID and
-build timestamp all matching the image that was last written — so the flash
-itself is certainly being read.
+## Step 5 — read the vector table the ROM was covering
+
+`--halt-late` resets the part, lets it run long enough for the ROM to hand over,
+and halts it after, so the bottom of the address space is the flash's by then.
+
+```sh
+sudo recovery/read-memory.sh --halt-late 0x00000000 0x10000 boot0-late.bin
+cmp boot0-late.bin k100-bootloader-64k.bin
+```
+
+The watchdog is running again at that point, so the part is only still until it
+is reset once more. 64 KB takes about two seconds and fits; if two passes will
+not agree, ask for less — `0x1000` is more than enough, since only `0x200` is in
+question.
+
+Expect a difference confined to the first `0x200` bytes. Anything else means
+the part moved under the read, not that the flash changed.
 
 ## Going faster
 

@@ -21,6 +21,18 @@ SPEED=${SPEED:-100}
 HALT="catch {reset halt}"
 HALT_REQUIRED=yes
 
+# Halting out of reset has a cost: the part is caught before its boot ROM has
+# finished, and on this family the ROM is still mapped over the bottom of the
+# address space at that point. A read of 0x00000000 then returns the ROM's
+# first 0x200 bytes instead of the flash's -- which is how the vector table
+# came back with every handler pointing into 0x0300xxxx.
+#
+# --halt-late resets, lets the part run far enough for the ROM to hand over,
+# and halts it after. The watchdog is running again by then, so the part is
+# only still for as long as it takes to be reset once more; short reads are
+# fine, long ones should use the default.
+HALT_LATE="catch {reset run}; sleep 300; catch {halt}"
+
 swd_session_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 # swd_run <openocd -c arguments...> -- opens the session, runs them, shuts down.
@@ -64,6 +76,10 @@ swd_parse_option() {
         --no-halt)
             HALT="echo {leaving the core running}"
             HALT_REQUIRED=no
+            swd_shift=1
+            ;;
+        --halt-late)
+            HALT=$HALT_LATE
             swd_shift=1
             ;;
         *) swd_shift=-1 ;;
