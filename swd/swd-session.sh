@@ -41,6 +41,13 @@ HALT_ONLY="catch {halt}"
 
 swd_session_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
+# Tcl evaluated before the target file is sourced, for settings it reads at
+# configuration time rather than accepting later. WORK_AREA_SIZE is the one
+# that matters: a session running an image out of SRAM has to switch the work
+# area off before the target is created, because by the time the session is
+# open it is too late.
+SWD_PRE_CFG=()
+
 # swd_run <openocd -c arguments...> -- opens the session, runs them, shuts down.
 # Everything, including OpenOCD's own diagnostics, comes back on stdout.
 swd_run() {
@@ -57,6 +64,7 @@ swd_run() {
         -c "adapter driver linuxgpiod" \
         "${gpio[@]}" \
         -c "adapter speed $SPEED" \
+        ${SWD_PRE_CFG[@]+"${SWD_PRE_CFG[@]}"} \
         -f "$swd_session_dir/lpc54605.cfg" \
         -c "init" \
         -c "$HALT" \

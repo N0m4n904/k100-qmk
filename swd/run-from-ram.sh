@@ -55,6 +55,15 @@ VTOR=0xE000ED08
 start=yes
 WATCH=10
 
+# OpenOCD's work area sits at 0x20000000 by default, which is exactly where
+# this image goes. It is not reserved memory -- OpenOCD executes helper code
+# there -- so verify_image's checksum routine lands on top of the first fifty
+# or so bytes of the thing it was asked to check, and the image is destroyed by
+# its own verification. Switching the work area off makes verify_image read the
+# region back over SWD and compare on the host, which is slower by a fraction
+# of a second and cannot disturb anything.
+SWD_PRE_CFG=(-c "set WORK_AREA_SIZE 0")
+
 while (( $# )); do
     case ${1:-} in
         --no-run) start=no; shift; continue ;;
@@ -141,7 +150,9 @@ swd_halted "$log" || {
 if [[ ! $log =~ verified\ [0-9]+\ bytes ]]; then
     echo >&2
     echo "SRAM does not read back as the file, so the load did not take." >&2
-    echo "If the image is larger than 32 KB, suspect the bank clocks." >&2
+    echo "Differences only in the first few dozen bytes mean something ran" >&2
+    echo "there: check that the work area is off. Differences above" >&2
+    echo "0x20008000 mean the bank clocks did not take." >&2
     exit 1
 fi
 
