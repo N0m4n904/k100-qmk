@@ -139,7 +139,20 @@ run=(
     -c "cortex_m vector_catch hard_err bus_err mm_err state_err chk_err nocp_err"
 )
 for address in ${breakpoints[@]+"${breakpoints[@]}"}; do
-    run+=(-c "bp $address 2 hw")
+    # This core's Flash Patch and Breakpoint unit is revision 1, which can only
+    # match addresses below 0x20000000 -- it was built to patch flash, and SRAM
+    # is out of its reach. Every address in an image running from SRAM is out
+    # of its reach, so those have to be software breakpoints, which work by
+    # writing a BKPT instruction into the code.
+    #
+    # That is ordinarily a reason to prefer hardware ones, but not here: this
+    # code is in RAM and is reloaded from the file on every run, so there is
+    # nothing durable to damage.
+    if (( address >= SRAM_BASE )); then
+        run+=(-c "bp $address 2")
+    else
+        run+=(-c "bp $address 2 hw")
+    fi
 done
 run+=(
     -c "resume"
@@ -190,6 +203,14 @@ fi
 echo
 if [[ $start == no ]]; then
     echo "Loaded and halted at the reset vector. Nothing has executed yet."
+elif [[ ! $log =~ 0xe000ed24: ]]; then
+    # The fault registers are read last, so their absence means the session
+    # stopped early -- OpenOCD abandons the rest of a command list after an
+    # error. Saying so beats falling through to the branch below, which would
+    # announce a crash that never happened because the firmware never ran.
+    echo "The session did not get as far as running the image." >&2
+    echo "An OpenOCD error above will say why." >&2
+    exit 1
 elif [[ $log =~ halted\ due\ to\ breakpoint ]]; then
     # A breakpoint reaching is a positive result, and it must not be read as a
     # fault: wait_halt returns successfully when one is hit, which would
