@@ -194,20 +194,78 @@ For the FRO path it additionally sets `FROCTRL.HSPDCLK` and
 by whatever ran before. `USBCLKADJ` is set in neither — Corsair does not need
 it, because they do not use the FRO.
 
+## POWER_SetUsbPhy, disassembled
+
+### First, a correction about where to read it
+
+The flash dump is **not** a copy of Corsair's application. It was taken before
+the keyboard was restored, so from `0x00010000` it holds this project's own
+bricked firmware; only the first 64 KB, the bootloader, is Corsair's. A function
+found in the dump's application region and reported here as Corsair's
+`POWER_SetUsbPhy` was this port's own USB bring-up code — which is why poking
+its sequence into the running firmware changed nothing: the firmware already
+does it.
+
+Corsair's application is available as a file instead:
+`Heracles_Application_Firmware_v0.35.288.bin`, which
+`tools/fetch-firmware.py` downloads and checksum-verifies. Disassembled at
+`0x10000`, past its `0x2c` container header, it is the right thing to read.
+
+### What it does
+
+At `0x0002d0f8`:
+
+```
+mov.w r3, #0x40000000        SYSCON
+mov.w r2, #0x10000000        VD5, bit 28
+str.w r2, [r3, #0x630]       PDRUNCFGCLR[0] -- power VD5 up
+ldr   r2, =0x40020000
+ldr   r3, [r2, #0x54]        read 0x40020054
+lsls  r3, r3, #22            test bit 9
+bpl   -6                     loop until bit 9 is set
+bx    lr
+```
+
+So it powers the domain and then **waits for it to report ready**. Its sibling
+at `0x0002d0dc` does the same for VD3 and waits on bit 5 of the same word.
+
+**`0x40020000` does not appear anywhere in NXP's header for this part.** It is
+an undocumented power-management block, which is consistent with these functions
+living in a binary library rather than in the SDK's source.
+
+### What it reads
+
+| | `0x40020054` | `PDRUNCFG[0]` |
+| --- | --- | --- |
+| Corsair | `0x00000fff` | `0x02a80540` |
+| this firmware | `0x00000fcf` | `0x06f80740` |
+
+Twelve domains report ready in Corsair's; bits 4 and 5 are missing here, and
+bit 5 is the one their VD3 routine waits on — matching `PDRUNCFG[0]` bit 26,
+`VD3`, which this port leaves powered down.
+
+**Bit 9 is set in both.** VD5, the USB PHY's own domain, is powered and ready
+in this firmware too, so the PHY's supply is not what stops it. That remains
+unexplained.
+
 ## The best remaining lead
 
-`POWER_SetUsbPhy()` has no source in the SDK. It lives in NXP's binary power
-library, so what it writes beyond VD5 cannot be read from anything public, and
-it is the one step of NXP's sequence that has not been replicated here. The
-SYSCON comparison would have caught it only if it writes a register in that
-window and leaves it changed; a trim written and latched elsewhere would not
-show up.
+`POWER_SetUsbPhy` has now been read, and it does not explain this: VD5 is
+powered and reports ready in both firmwares.
 
-**It can be read anyway.** Corsair's firmware links the same library, and this
-repository has a full dump of their flash. Disassembling their `POWER_SetUsbPhy`
-would say exactly what it writes, which is a better answer than any amount of
-reasoning about what the PHY might want. That is the next thing to do, and it
-needs no hardware: the dump is already here.
+So the clock tree, the power domains, the power-up order, the pins, the
+peripheral resets and every register in SYSCON have each been measured and
+excluded. What has not been examined line by line is **the driver**, which is
+where the evidence has pointed since the high-speed enumeration was confirmed.
 
-The driver comparison is the other half, and the two are independent, so either
-can be done first.
+Two concrete things to try there:
+
+- Read the endpoint command/status list the driver builds in the USB SRAM at
+  `0x40100000` and compare it against what Corsair's leaves there. The
+  structure differs between the full-speed and high-speed controllers, and a
+  list the hardware cannot parse would stop it before anything reaches the bus.
+- Compare `lpc546xx_usb.c` and the shared LPC driver against NXP's
+  `usb_device_lpcip3511.c`, which is written for this exact controller and is
+  available in source.
+
+The two are independent, so either can be done first.
