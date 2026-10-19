@@ -54,11 +54,10 @@ marked both by a square pad and by a silkscreen triangle. Being plated holes
 rather than flat pads, **this very likely needs no soldering** — a jumper wire
 pushed into a hole and taped down makes a good enough contact for a read.
 
-What its six pins actually are is **not known**, and is not guessed at here.
-Four test points (`TP42`–`TP45`) sit directly beneath pins 2 to 5, which is the
-shape of a header carrying four signals between a supply and a ground, but that
-is an inference from a photograph and nothing is wired on the strength of it.
-The next section determines it by measurement instead.
+Four test points, `TP42`–`TP45`, sit directly beneath pins 2 to 5 — the shape
+of a header carrying four signals between a supply and a ground. Which signal
+is on which pin is **not known**, and is not guessed at here; step 1 measures
+what can be measured and step 2 finds the rest by trying it.
 
 nRESET is worth having if one of the six pins turns out to be it: this board's
 firmware faults and is restarted by its watchdog every few seconds, and holding
@@ -66,7 +65,7 @@ it in reset makes the chip sit still. It is not required — reading flash goes
 through the debug port's own bus bridge and does not need the core stopped, so a
 dump works straight through the loop.
 
-## Step 1 — find out which pins are safe to touch
+## Step 1a — survey the header
 
 ```sh
 sudo recovery/identify-header.sh 24
@@ -75,17 +74,46 @@ sudo recovery/identify-header.sh 24
 Probe wire from Pi GPIO24 to `J1` pin 1, run it, write the verdict down, move
 the wire to pin 2, run it again. Six runs.
 
-This reads each pin twice, once with the Pi's internal pull-up applied and once
-with its pull-down, and sorts it into one of three classes:
+Each pin is read twice, once with the Pi's internal pull-up applied and once
+with its pull-down. Reading is passive and cannot hurt anything.
 
-- **follows the pull** — nothing else is driving it, so it is safe to drive.
-- **held low** — ground, or an output the keyboard is driving.
-- **held high** — a supply, or an output the keyboard is driving.
+**Measured on the bricked unit:** pins 1 to 5 held high, pin 6 held low.
 
-Only the first class gets driven in step 2. That is the entire safety argument:
-driving a clock into a pin the keyboard's own chip is driving puts two outputs
-in opposition, and this is how you find out which pins those are before doing
-it rather than after. Reading is passive and cannot hurt anything.
+That is enough to place the two outer pins. A six-pin debug header carries its
+supply and its ground on the outside, and the board agrees: pin 6 is at ground,
+and pin 1 is the only one of the high five with no test point beneath it, while
+`TP42`–`TP45` sit under pins 2 to 5. Test points are put on signals; nobody
+needs a test point for a rail they can reach anywhere on the board.
+
+**So pins 1 and 6 are the supply and the ground, and neither is ever driven.**
+Driving a supply rail low is a short across the keyboard's regulator, and it is
+the Pi's own GPIO that would most likely die of it. Only pins 2 to 5 go any
+further.
+
+## Step 1b — check the four signals are not driven
+
+A single reading cannot tell a pull-up resistor from a chip output holding the
+same level: against the Pi's ~50 kΩ pull-down they look identical. One is
+entirely safe to drive and the other is the case worth avoiding, so "held high"
+on its own decides nothing.
+
+The keyboard's own fault settles it. The watchdog restarts the part every
+eleven seconds or so, and **a chip in reset has every pin high-impedance**. An
+output therefore cannot hold a level through a restart; a resistor soldered to
+the board does not care that one happened.
+
+```sh
+sudo recovery/identify-header.sh --watch 45 24
+```
+
+Forty-five seconds covers four restarts. Run it on pins 2, 3, 4 and 5.
+
+- **never changes** → static, so it is a pull-up and not the chip. Safe.
+- **changes at any point** → the chip drives that pin. Leave it out of step 2.
+
+That is the whole safety argument for what follows: driving a pin the keyboard
+is itself driving puts two outputs in opposition, and this finds them before
+rather than after.
 
 ## Step 2 — find SWDIO and SWCLK
 
@@ -141,7 +169,8 @@ repeatedly.
 ```
 lpc54605.cfg        the target: LPC54605J512, SWD, no reset or halt in it
 rpi4-swd.cfg        the adapter: Pi GPIOs, slow clock, open-drain reset
-identify-header.sh  classifies unknown header pins as safe or driven
+identify-header.sh  classifies unknown header pins; --watch tells a pull-up
+                    from a chip output by sampling across the reset loop
 find-swd.sh         sweeps pin pairs until the debug port answers
 dump-flash.sh       reads 512 KB twice and compares before believing it
 ```
