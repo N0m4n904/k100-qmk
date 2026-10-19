@@ -248,24 +248,65 @@ bit 5 is the one their VD3 routine waits on — matching `PDRUNCFG[0]` bit 26,
 in this firmware too, so the PHY's supply is not what stops it. That remains
 unexplained.
 
+## The driver, compared against NXP's
+
+NXP's `usb_device_lpcip3511.c` is written for this exact controller and is
+available in source, so the comparison is line by line rather than by
+inference.
+
+### What matches
+
+- **The clock and power sequence.** `lpc_usb_clock_init()` already does exactly
+  what `CLOCK_EnableUsbhs0DeviceClock` does: gate the USB1 device clock off,
+  power VD5, settle, power the PHY and its PLL, settle, gate the device and RAM
+  clocks back on. Measurement agrees — VD5 reports ready.
+- **The buffer addressing.** The two generations of this IP split a buffer
+  address between `DATABUFSTART` and the endpoint entry differently, and the
+  shared driver handles both; this port defines `LPC_USB_EPLIST_ADDR_BASE`,
+  which selects the form the high-speed controller needs.
+- **`EPBUFCFG`**, which is zero in both this firmware and Corsair's.
+- **The pull-up.** `usb_lld_connect_bus()` sets `DCON`, and the measured
+  register confirms it.
+
+### What differs
+
+**`DEVCMDSTAT` is written with read-modify-write throughout.** The register
+carries write-one-to-clear status bits — `DCON_C` at 24, `DSUS_C` at 25,
+`DRES_C` at 26 — and NXP's driver masks them off before every write. A `|=`
+reads them back as one and writes them, clearing them. This silently discards
+connect, suspend and reset events, which are exactly what tells the driver a
+host is there.
+
+That is a real defect and worth fixing on its own account. It does not explain
+the current symptom, because it concerns software noticing the bus rather than
+the transceiver driving it.
+
+**`FORCE_NEEDCLK` is never set.** NXP sets it unless low-power mode is
+configured. **Tested on the part and refuted**: with the bit set the controller
+still receives nothing, and `USB1CLKSTAT` does not change.
+
+### Where that leaves it
+
+The transceiver does not drive the bus, and it does so with its supply powered
+and ready, its clock running, `DEV_EN` set, `DCON` set, `FORCE_VBUS` set and
+`FORCE_NEEDCLK` set. Every one of those was measured on the part rather than
+assumed. Nothing in the clock tree, the power domains, the pins, the peripheral
+resets, SYSCON as a whole, or the driver's register programming accounts for
+it.
+
 ## The best remaining lead
 
-`POWER_SetUsbPhy` has now been read, and it does not explain this: VD5 is
-powered and reports ready in both firmwares.
+Everything reachable from outside the part has now been measured and excluded,
+so the next move is to watch Corsair's own firmware do it. Their application is
+available as a file and disassembles cleanly, and the part can be stopped
+anywhere with a breakpoint, so their USB bring-up can be stepped through and
+every register they touch recorded in order -- including any write to an
+address that appears in no header, as `POWER_SetUsbPhy` turned out to do.
 
-So the clock tree, the power domains, the power-up order, the pins, the
-peripheral resets and every register in SYSCON have each been measured and
-excluded. What has not been examined line by line is **the driver**, which is
-where the evidence has pointed since the high-speed enumeration was confirmed.
+That is a different kind of work from this document: not comparing two end
+states, but recording one firmware's sequence as it happens. It needs the
+keyboard, a breakpoint in Corsair's code rather than in this project's, and
+patience.
 
-Two concrete things to try there:
-
-- Read the endpoint command/status list the driver builds in the USB SRAM at
-  `0x40100000` and compare it against what Corsair's leaves there. The
-  structure differs between the full-speed and high-speed controllers, and a
-  list the hardware cannot parse would stop it before anything reaches the bus.
-- Compare `lpc546xx_usb.c` and the shared LPC driver against NXP's
-  `usb_device_lpcip3511.c`, which is written for this exact controller and is
-  available in source.
-
-The two are independent, so either can be done first.
+The `DEVCMDSTAT` read-modify-write above should be fixed regardless. It is a
+defect whether or not it is this one.
