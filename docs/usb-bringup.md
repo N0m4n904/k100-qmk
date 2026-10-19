@@ -148,6 +148,28 @@ USB control:
 `DEV_NEED_CLKST` in both, and `HOST_NEED_CLKST` additionally set here, which
 describes an uninitialised host block and is a symptom rather than a lever.
 
+## Three more things tried on the running part, and refuted
+
+Each was applied with `--poke` to the firmware while it ran, and each reading
+was attributed by reading the program counter afterwards and checking it was
+still in SRAM. That check exists because the first attempt produced what looked
+like a complete success — `VBUS_DEBOUNCED` set, device address 31, the frame
+counter moving — which turned out to be **Corsair's firmware**: the run had
+lasted eleven seconds, this firmware hands the keyboard back after ten, and
+every register read after that point described the code in flash.
+
+| tried | result |
+| --- | --- |
+| Crystal and USB PLL up, selected **before** USB init, by breaking at `usb_lld_start` | `USBPLLSTAT` 1, `DEVCMDSTAT` unchanged, no frames |
+| PHY powered down and up again **after** everything else, as NXP's order has it | `DEVCMDSTAT` `0x08410880`, `VBUS_DEBOUNCED` still clear, no frames |
+| Both together: crystal, USB PLL, then the PHY last | `USBPLLSTAT` 1, `VBUS_DEBOUNCED` still clear, no frames |
+| `FORCE_VBUS` set, so the controller assumes bus power regardless | `DEVCMDSTAT` `0x00410c80`, still no frames |
+
+The last one matters most. With `FORCE_VBUS` set the controller no longer needs
+to detect anything and still receives nothing, so **VBUS is a symptom and not
+the cause**: the PHY is not driving the lines at all, which is why the host
+never sees the pull-up and why nothing ever comes back.
+
 ## What is left: the driver
 
 The USB driver in use is ChibiOS's LPC one, written for the full-speed device
@@ -172,6 +194,20 @@ For the FRO path it additionally sets `FROCTRL.HSPDCLK` and
 by whatever ran before. `USBCLKADJ` is set in neither — Corsair does not need
 it, because they do not use the FRO.
 
-`POWER_SetUsbPhy()` has no source in the SDK: it lives in NXP's binary power
-library, so what it writes beyond VD5 cannot be read. Whatever that is, it did
-not show up in the SYSCON comparison.
+## The best remaining lead
+
+`POWER_SetUsbPhy()` has no source in the SDK. It lives in NXP's binary power
+library, so what it writes beyond VD5 cannot be read from anything public, and
+it is the one step of NXP's sequence that has not been replicated here. The
+SYSCON comparison would have caught it only if it writes a register in that
+window and leaves it changed; a trim written and latched elsewhere would not
+show up.
+
+**It can be read anyway.** Corsair's firmware links the same library, and this
+repository has a full dump of their flash. Disassembling their `POWER_SetUsbPhy`
+would say exactly what it writes, which is a better answer than any amount of
+reasoning about what the PHY might want. That is the next thing to do, and it
+needs no hardware: the dump is already here.
+
+The driver comparison is the other half, and the two are independent, so either
+can be done first.
