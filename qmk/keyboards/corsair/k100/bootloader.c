@@ -11,12 +11,18 @@
  * a perfectly good build that cannot be replaced is as much a dead end as one
  * that does not boot.
  *
- * The route is Corsair's own, recovered from the stock application image: its
- * SET OPERATING_MODE handler writes the mode to word 2 of the on-chip EEPROM
- * and then soft-resets, and the bootloader reads that word back on startup. So
- * any firmware that can program one EEPROM word can hand control back, with no
- * dependency on USB, on the matrix, or on anything else here being correct.
- * docs/recovery.md records how that was established, register by register.
+ * The route is Corsair's own, read out of both their images: force a watchdog
+ * reset. The bootloader's first decision is WDTOF, the flag a watchdog reset
+ * leaves behind, and it keeps the keyboard whenever it finds that flag set. An
+ * invalid feed sequence is how their application sets it, and it needs no USB,
+ * no matrix and nothing else here to be correct.
+ *
+ * An earlier version of this wrote Corsair's operating mode into EEPROM word 2
+ * and soft-reset, because that is what their SET OPERATING_MODE handler does.
+ * It never worked, and could not have: the bootloader does not read word 2.
+ * The write and its read-back both succeed and the bootloader starts this
+ * firmware again regardless -- measured, with tools/watch-bootloader-route.py.
+ * docs/recovery.md records both, and why the first reading was wrong.
  *
  * Three routes are provided, because each one depends on a different part of
  * this firmware being right:
@@ -32,21 +38,9 @@
 #include "quantum.h"
 #include "usb_device_state.h"
 
-#include "lpc546xx_eeprom.h"
 #include "lpc546xx_rit.h"
 #include "lpc546xx_wwdt.h"
 #include "k100.h"
-
-/*
- * Corsair's operating mode, in EEPROM word 2.
- *
- * Both the index and the value are the stock firmware's: its setter writes the
- * mode to word 2 and its getter reads word 2, and the mode enumeration is the
- * one the updater bundle declares -- SELF_OPERATED 1, HOST_CONTROLLED 2,
- * BOOTLOADER 3.
- */
-#define EEPROM_WORD_OPERATING_MODE 2U
-#define OPERATING_MODE_BOOTLOADER  3U
 
 /*
  * The strobe the recovery key is looked for on: row 0, the top row.
@@ -284,36 +278,17 @@
 #endif
 
 bool k100_enter_bootloader(void) {
-    if (!lpcEepromWrite(EEPROM_WORD_OPERATING_MODE, OPERATING_MODE_BOOTLOADER)) {
-        return false;
-    }
-
     /*
-     * Read it back before resetting, because the alternative is a loop. The
-     * EEPROM array is ordinary readable memory, so this costs one load -- and
-     * all three routes into the bootloader funnel through this one function, so
-     * if the write silently does not take they all fail together. Resetting
-     * then would come straight back here: the mode word still says
-     * self-operated, so the bootloader would start this firmware again, and the
-     * watchdog would reset it again ten seconds later, forever.
+     * One write pair, and nothing to get wrong afterwards. The watchdog this
+     * firmware inherited is already running -- it has to be, or nothing here
+     * would need to feed it -- so the reset is immediate and the flag the
+     * bootloader reads is set by the reset itself.
      *
-     * Reporting the failure instead leaves the keyboard in whatever working
-     * state it had, which is strictly better than a reboot loop and leaves the
-     * other routes something to act on.
+     * It reports rather than loops when there is no watchdog to force. That
+     * leaves the keyboard in whatever working state it had, which is better
+     * than a reboot loop, and leaves the other routes something to act on.
      */
-    if (lpcEepromRead(EEPROM_WORD_OPERATING_MODE) != OPERATING_MODE_BOOTLOADER) {
-        return false;
-    }
-
-    // The stock firmware defers this by 10 ms through a timer, which it needs
-    // because it is answering a USB request and wants the reply out first.
-    // Nothing here is waiting on a reply.
-    NVIC_SystemReset();
-
-    while (true) {
-        // NVIC_SystemReset does not return; this only keeps the compiler from
-        // deciding the function falls through.
-    }
+    return lpcWwdtForceReset();
 }
 
 /*

@@ -34,6 +34,7 @@ extern "C" {
   bool lpcWwdtIsRunning(void);
   void lpcWwdtFeed(void);
   bool lpcWwdtStretch(void);
+  bool lpcWwdtForceReset(void);
 #ifdef __cplusplus
 }
 #endif

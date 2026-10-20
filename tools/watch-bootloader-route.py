@@ -101,10 +101,11 @@ def main() -> int:
                   "and got it, so a reflash from here needs no programmer:")
             print("  k100-bragi flash <image> --device 0x1b7c --commit")
             print("  k100-bragi exit-bootloader")
-            print("\nWhat the bus cannot say is whether the reset was the "
-                  "firmware's or the watchdog's after it fell over. WDTOF, bit "
-                  "2 of WWDT->MOD, answers that:")
-            print("  sudo swd/fault-report.sh --peek 0x4000C000:1")
+            print("\nThis looks identical to the firmware falling over, "
+                  "because it is the same door: the route forces the watchdog "
+                  "reset that a crash would have caused anyway. What "
+                  "distinguishes them is that this one happened when the key "
+                  "was pressed.")
             return 0
 
         if now[0] == OURS:

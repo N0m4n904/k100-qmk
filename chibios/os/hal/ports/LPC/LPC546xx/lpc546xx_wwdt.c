@@ -59,6 +59,15 @@
  */
 #define WWDT_FEED_FIRST                     0xAAU
 #define WWDT_FEED_SECOND                    0x55U
+
+/**
+ * @brief   A value that is not part of the sequence.
+ * @details Writing it is not a no-op. The part treats a feed it cannot
+ *          complete as a watchdog event in its own right, which is what
+ *          @p lpcWwdtForceReset() is built on. Zero rather than any other
+ *          wrong value because it says plainly that no sequence was meant.
+ */
+#define WWDT_FEED_INVALID                   0x00U
 /** @} */
 
 /*===========================================================================*/
@@ -97,6 +106,51 @@ void lpcWwdtFeed(void) {
 
   WWDT->FEED = WWDT_FEED_FIRST;
   WWDT->FEED = WWDT_FEED_SECOND;
+}
+
+/**
+ * @brief   Resets the part at once, through the watchdog.
+ *
+ * @details An invalid feed is a watchdog event in its own right, so the part
+ *          resets immediately rather than at the end of a timeout. That makes
+ *          this the cheapest reset there is: it needs nothing initialised and
+ *          no peripheral beyond the one already running.
+ *
+ *          It is not interchangeable with @p NVIC_SystemReset(), and the
+ *          difference is the reason to have it. A reset from here sets
+ *          @p WDTOF, which survives the reset, so a boot ROM or a bootloader
+ *          that reads that flag can tell this reset from an ordinary one and
+ *          act on it. On this keyboard that is the whole mechanism by which an
+ *          application hands control back: the bootloader keeps the keyboard
+ *          when it finds @p WDTOF set, and starts the application when it does
+ *          not.
+ *
+ *          @p WDRESET is checked as well as @p WDEN, because with it clear the
+ *          same write raises an interrupt instead of resetting, and a caller
+ *          relying on not returning would then carry on.
+ *
+ * @return              @p false when there is no running watchdog configured
+ *                      to reset, in which case nothing was written. It does
+ *                      not return otherwise.
+ *
+ * @notapi
+ */
+bool lpcWwdtForceReset(void) {
+
+  if (!lpcWwdtIsRunning()) {
+    return false;
+  }
+
+  if ((WWDT->MOD & WWDT_MOD_WDRESET_MASK) == 0U) {
+    return false;
+  }
+
+  WWDT->FEED = WWDT_FEED_INVALID;
+  WWDT->FEED = WWDT_FEED_INVALID;
+
+  while (true) {
+    /* The reset is immediate; this only says so to the compiler. */
+  }
 }
 
 /**

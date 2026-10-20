@@ -320,18 +320,55 @@ The reset is therefore not in doubt, and neither is the write. `k100_enter_bootl
 resets only after writing the mode word *and* reading it back, so a reset happening at all
 means both succeeded. The bootloader then started this firmware anyway.
 
-So writing word 2 and soft-resetting is **not sufficient**, and the route this project has
-been treating as its escape hatch does not work. What the bootloader keys on is still open.
-Two things are known about its side of it:
+So writing word 2 and soft-resetting is **not sufficient**. The EEPROM was the wrong half of
+what the stock firmware does.
 
-- It does read that array. The function at `0x1664` takes a word index, range-checks it
-  against 31, and loads from `0x40000000 + 0x108000 + index * 4` — a computed address, which
-  is why searching the dump for a literal `0x40108000` finds nothing.
-- Read over SWD after the attempt, words 0 to 7 of the array were all zero. That reading is
-  not conclusive on its own, because nothing had clocked the EEPROM since the reset.
+### What the bootloader actually keys on: WDTOF
 
-Until this is understood, **SWD remains the only proven way back** from firmware that does not
-speak Bragi: erase sector 2 and reset. See [`swd/README.md`](../swd/README.md).
+Its startup asks three questions before anything else, and all three read the watchdog at
+`0x4000C000`:
+
+```
+0x1108   r0 = WWDT->MOD & 1            WDEN
+0x1118   r0 = (WWDT->MOD >> 2) & 1     WDTOF
+0x1128   WWDT->FEED = 0, twice         an invalid feed: an immediate watchdog reset
+```
+
+and the decision reads:
+
+```
+3ea:  bl 0x1108          WDEN set?
+3ee:  cbz r0, 0x40a      no -> carry on
+3f0:  ...AIRCR SYSRESETREQ...    yes -> reset again
+40a:  bl 0x1118          WDTOF set?
+40e:  bne 0x49a          yes -> return without launching: stay in the bootloader
+412:  ...                no  -> scan the keys, check the image, launch
+```
+
+**`WDTOF` is the software route.** It is the flag a watchdog reset leaves behind, it survives
+the reset that sets it, and the bootloader keeps the keyboard whenever it finds it. Corsair's
+application sets it the only way an application can: by writing an invalid feed sequence, at
+`0x12a38`, which is `WWDT->FEED = 0` twice and resets the part at once. The EEPROM word it
+writes alongside is for reporting the mode over Bragi, nothing more — and the RTC general
+purpose register it also sets, `GPREG[1]`, is read in exactly one place, the bootloader's own
+Bragi property handler.
+
+**Measured before any firmware was built around it.** With this firmware running, those two
+writes were made over SWD from outside:
+
+```
+before: bcdDevice 0001
+after:  bcdDevice 000a  CORSAIR K100 RGB Optical-Mechanical Gaming Keyboard
+```
+
+This also explains, after the fact, every time this keyboard landed in the bootloader on its
+own. `bootloader.c` had it that "an application that dies soon after handover makes the
+bootloader stay in bootloader mode" — the observation was right and the reason was not. The
+application died by watchdog, and it was `WDTOF` that kept the bootloader, not the dying.
+
+`k100_enter_bootloader()` now does exactly this and nothing else. It needs no EEPROM, no USB
+and no matrix; it needs only the watchdog the bootloader was already running when it handed
+over, which is the one peripheral this firmware can be sure of.
 
 ### Bootloader mode does not survive a power cycle — tested
 
