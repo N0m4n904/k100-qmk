@@ -105,13 +105,21 @@ def main() -> int:
     presses = 0
     distinct = {}
 
-    while True:
+    while streams:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
         ready, _, _ = select.select(list(streams), [], [], remaining)
         for stream in ready:
-            data = stream.read(EVENT.size)
+            try:
+                data = stream.read(EVENT.size)
+            except OSError:
+                # The keyboard left the bus while being read. That is a result
+                # and not a crash -- firmware that stops under observation is
+                # the most interesting thing this can see -- so the node is
+                # dropped and what was collected is still reported.
+                del streams[stream]
+                continue
             if not data or len(data) < EVENT.size:
                 continue
             _, _, etype, code, value = EVENT.unpack(data)
@@ -152,6 +160,12 @@ def main() -> int:
         if noisy:
             print("\n  pressed far more often than the rest, which is worth a "
                   "look: " + " ".join(str(c) for c in noisy))
+
+    if not after[0]:
+        print(f"\nIt was bcdDevice {before[0]} throughout and then left the "
+              f"bus. The keys above are that firmware's, and it stopped while "
+              f"it was being watched.")
+        return 1
 
     if after != before:
         print(f"\nThe device changed under this reading: it started as "

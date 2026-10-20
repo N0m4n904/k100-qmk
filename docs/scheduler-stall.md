@@ -18,6 +18,29 @@ of the whole keyboard was collected, 104 distinct keys, from a keyboard whose
 custom firmware had been gone for minutes. Keys arriving prove only that
 *something* is scanning the matrix. See `docs/recovery.md`.
 
+Read against `bcdDevice`, though, this firmware does deliver keystrokes: 67
+presses across 16 distinct keys, on four bound input nodes, with the device
+reading `0.01` and `K100 RGB (OPX, ISO DE)` throughout. The matrix, the HID
+reports and the USB path all work. It is only that they do not keep working.
+
+## What sets it off
+
+Not time. Started by a hardware reset and left alone, it ran **181 seconds**
+feeding its watchdog without a missed pass, and a separate 60 s window with the
+counter sampled throughout showed the same. It stopped within a second of
+someone beginning to type.
+
+The hangs before that one all followed `exit-bootloader`, whose client then
+polls the keyboard for twenty seconds before giving up — which is also traffic.
+So the thing the two have in common is **endpoint traffic**, not elapsed time,
+and that fits where it stops: an endpoint completion is exactly what wakes a
+thread from the USB interrupt handler and so asks for the reschedule that never
+finishes.
+
+That is a lead rather than a result. It has not been tested by typing on
+purpose with the catcher attached, which is the next thing to do and costs one
+run.
+
 ## What it is not
 
 Each of these was tested on the part, not reasoned about.
@@ -98,9 +121,8 @@ k100-bragi exit-bootloader
 ssh <programmer> sudo swd/catch-failure.sh --seconds 150
 ```
 
-It halts the part in the act and prints the registers above. The first thing
-worth knowing from any run is the line saying how long it took: at the time of
-writing, a few seconds.
+It halts the part in the act and prints the registers above, and says how long
+it took. An idle keyboard can run the whole window; type during it.
 
 ## Where to look next
 
