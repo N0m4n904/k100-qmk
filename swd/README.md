@@ -254,8 +254,31 @@ writing
 
 debugging
   fault-report.sh     halts where it is and says what faulted
+  catch-failure.sh    watches firmware that is still running, and halts it in
+                      the act of faulting or of losing its main loop
   decode-fault.py     turns the fault status registers into a sentence
 ```
+
+## Catching firmware that fails later
+
+`fault-report.sh` answers for a part that has already stopped. Firmware that
+runs for a while and then goes needs the opposite: everything arranged before
+the failure, because the watchdog resets the part a second or so afterwards and
+a reset clears every register that would have said why.
+
+```sh
+sudo swd/catch-failure.sh --seconds 150
+```
+
+It never halts the core to set itself up — the watchdog is stretched and the
+vector catch armed through the debug port while the firmware runs, because a
+stall that only appears after a debugger interrupted the firmware is the
+debugger's stall. Then it watches two things at once: the core, which it halts
+on any fault, and the watchdog counter, which falls as soon as a main loop
+stops reaching its feed. Either way the part ends up stopped in the act, and
+the registers are read and decoded there.
+
+[`docs/scheduler-stall.md`](../docs/scheduler-stall.md) is what it found.
 
 ## Trying firmware without writing any
 
