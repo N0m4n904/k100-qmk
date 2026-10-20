@@ -471,4 +471,70 @@ The layering did its job: the keyboard ended in a reset loop rather than
 silent, the erase-and-reflash route took it back to stock in minutes, and
 nothing was lost.
 
+## Solved: the port was wired to the wrong controller
+
+This part has **one high-speed port and two controllers behind it**, and which
+one it reaches is decided by `PORTMODE`'s `DEV_ENABLE` -- bit 16 of a register
+at `0x400A3050`, inside the **host** controller's block. Out of reset the port
+belongs to the host.
+
+That is why nothing done to the device controller mattered. `DEV_EN`, `DCON`,
+`FORCE_VBUS`, the clock source, the power domains, the bring-up order: all of
+them correct, all of them addressed to a controller the wire was not connected
+to. The transceiver reported no bus power because, as far as the device side
+was concerned, there was no bus.
+
+It also explains the host-clock handshake. `PORTMODE` cannot be written while
+the host controller's block is unclocked, so the stock firmware turns that
+clock on for the one write and off again. The handshake was never the point;
+the write in the middle of it was.
+
+Found by halting both firmwares on the same instruction, seeing Corsair's
+transceiver already powered, and walking back to where they power it -- which
+turned out to be the first thing their USB bring-up does, at `0x000128ec`. The
+`PORTMODE` write is four instructions later.
+
+### What it looks like now
+
+With that one write, and nothing else:
+
+```
+DEVCMDSTAT  0x1283088e     a device address the host assigned, VBUS set
+INFO        0x02003212     the frame counter moving
+```
+
+and in the host's kernel log:
+
+```
+usb 10-2: new high-speed USB device number 8 using xhci-pci-prom21
+usb 10-2: device descriptor read/all, error -75
+```
+
+**The keyboard is on the bus.** For the first time in this project, a host
+detects it, resets it and addresses it.
+
+## What fails now
+
+Enumeration does not finish: `-75` is `EOVERFLOW`, the device returning more
+than the host asked for. The address was assigned first, so control transfers
+work in part; it is the descriptor read that goes wrong.
+
+Two things checked and excluded already:
+
+- **`bMaxPacketSize0` is 64**, read out of the built image's descriptor, which
+  is what high speed requires.
+- **`ep0config` is 64 bytes** in and out.
+
+What is left is the endpoint command and status entry itself. The driver this
+port borrows puts `NBytes` at bit 16 in a 10-bit field and the buffer offset in
+the 16 bits below it, which is the full-speed controller's layout. The
+high-speed controller supports 1024-byte endpoints, which does not fit in ten
+bits, so at least one of those fields must sit differently -- and a length read
+one bit out is exactly a transfer of twice the intended size.
+
+Reading NXP's driver gives one constraint on the other field: a buffer address
+must match `DATABUFSTART & 0xFFC00000`, so the entry carries address bits 21:6.
+It does not give the position of `NBytes`, and neither does their header. The
+reference manual's USB device chapter would.
+
 ## Where it stands
