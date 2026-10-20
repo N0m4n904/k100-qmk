@@ -880,8 +880,13 @@ field that distinguishes them.
 So, after writing a custom image:
 
 1. `lsusb -v -d 1b1c:1b7c | grep bcdDevice` — `0.01` means it booted.
-2. Type something. Two HID interfaces and working keys means the matrix guesses were right
-   too; keys that stick or report their neighbours mean `MATRIX_SENSE_ACTIVE_LOW` or
+2. Type something, and read `bcdDevice` again in the same breath. **Corsair's bootloader
+   presents a working keyboard of its own**, so keys arriving proves only that *something* is
+   scanning the matrix. A whole keyboard was swept this way, 104 distinct keys reported, and
+   the firmware under test had already been gone for minutes: the device on the bus was
+   `bcdDevice 0.0a` with Corsair's product string, and the evidence was worth nothing. Keys
+   that arrive *while* `bcdDevice` reads `0.01` mean the matrix guesses were right; keys that
+   stick or report their neighbours mean `MATRIX_SENSE_ACTIVE_LOW` or
    `MATRIX_STROBE_SETTLE_US` need the other value, which is a reflash, not a brick.
 3. Nothing at all after ten seconds means the watchdog should already have put it back in the
    bootloader; check for `bcdDevice 0.0a`.

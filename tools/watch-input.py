@@ -30,10 +30,17 @@ EVENT = struct.Struct("qqHHi")
 EV_KEY = 0x01
 ACTIONS = {0: "release", 1: "press", 2: "repeat"}
 
+# Corsair's bootloader presents a working keyboard of its own, under the same
+# vendor and product id. Keys arriving therefore prove only that something is
+# scanning the matrix, and a whole sweep can be collected from firmware that
+# died minutes earlier. This is the one field that tells the two apart, so
+# every reading here is reported against it. See docs/recovery.md.
+OUR_VERSION = "0001"
 
-def event_devices(vid: str, pid: str) -> list[Path]:
-    """The evdev nodes belonging to one USB device, newest first."""
-    found = []
+
+def keyboard(vid: str, pid: str) -> tuple[Path | None, list[Path]]:
+    """The keyboard's sysfs directory and the evdev nodes the kernel gave it."""
+    device, found = None, []
     for event in sorted(Path("/sys/class/input").glob("event*")):
         # Walk up to the USB device: an input node sits under the HID device,
         # which sits under the interface, which sits under the device itself.
@@ -44,9 +51,19 @@ def event_devices(vid: str, pid: str) -> list[Path]:
                 continue
             if (vendor.read_text().strip().lower() == vid.lower()
                     and product.read_text().strip().lower() == pid.lower()):
+                device = parent
                 found.append(Path("/dev/input") / event.name)
             break
-    return found
+    return device, found
+
+
+def identity(device: Path) -> tuple[str, str]:
+    """The firmware version and product string the device reports right now."""
+    try:
+        return ((device / "bcdDevice").read_text().strip(),
+                (device / "product").read_text().strip())
+    except OSError:
+        return ("", "gone from the bus")
 
 
 def main() -> int:
@@ -60,11 +77,13 @@ def main() -> int:
                              "event, for sweeping a whole keyboard")
     args = parser.parse_args()
 
-    paths = event_devices(args.vid, args.pid)
-    if not paths:
+    device, paths = keyboard(args.vid, args.pid)
+    if device is None or not paths:
         print(f"no event device for {args.vid}:{args.pid} -- is it on the bus, "
               f"and did the kernel bind it as an input device?", file=sys.stderr)
         return 1
+
+    before = identity(device)
 
     streams = {}
     for path in paths:
@@ -78,6 +97,7 @@ def main() -> int:
               "usually root-only", file=sys.stderr)
         return 1
 
+    print(f"running  bcdDevice {before[0]}  {before[1]}")
     print(f"listening on {' '.join(streams.values())} for {args.seconds:.0f}s")
     print("press a key now")
 
@@ -112,6 +132,8 @@ def main() -> int:
     if args.quiet:
         print()
 
+    after = identity(device)
+
     if not presses:
         print("\nNo key events. Either no key was pressed, or they are not "
               "arriving.")
@@ -131,7 +153,19 @@ def main() -> int:
             print("\n  pressed far more often than the rest, which is worth a "
                   "look: " + " ".join(str(c) for c in noisy))
 
-    print("\nThe firmware delivers keystrokes.")
+    if after != before:
+        print(f"\nThe device changed under this reading: it started as "
+              f"bcdDevice {before[0]} and ended as bcdDevice {after[0]} "
+              f"({after[1]}). The keys above came from both, so they say "
+              f"nothing about either.")
+        return 1
+
+    if after[0] != OUR_VERSION:
+        print(f"\nThese keystrokes came from bcdDevice {after[0]}, which is "
+              f"not this project's firmware. Corsair's bootloader types too.")
+        return 1
+
+    print("\nThis firmware delivers keystrokes.")
     return 0
 
 
