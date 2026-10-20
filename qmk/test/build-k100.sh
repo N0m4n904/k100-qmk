@@ -115,6 +115,8 @@ git -C "$contrib" apply --whitespace=nowarn \
     "$repo/chibios/patches/0010-devcmdstat-latched-bits.patch"
 git -C "$contrib" apply --whitespace=nowarn \
     "$repo/chibios/patches/0011-systick-priority-is-a-level.patch"
+git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/chibios/patches/0012-endpoint-memory-granules.patch"
 git -C "$qmk" init -q .
 git -C "$qmk" apply --whitespace=nowarn \
     "$repo/qmk/patches/0001-mcu-selection-lpc546xx.patch"

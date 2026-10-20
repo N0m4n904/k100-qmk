@@ -1,0 +1,44 @@
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+@@ -208,13 +208,40 @@
+ /* Driver local functions.                                                   */
+ /*===========================================================================*/
+ 
++/**
++ * @brief   Reserves endpoint memory, a whole granule at a time.
++ *
++ * @details The alignment is not a preference here, it is what an endpoint
++ *          entry can express: the entry holds a buffer address divided by the
++ *          granule, so two buffers inside one granule are not two buffers --
++ *          they are the same address written twice.
++ *
++ *          This aligned where a reservation starts and then advanced by the
++ *          size asked for, which is not the same thing. A reservation that
++ *          does not fill its last granule left the next one pointing into the
++ *          same one, and a reservation of nothing did not advance at all --
++ *          and a size of zero is ordinary, because an endpoint that only
++ *          receives is configured with a maximum packet size of zero in the
++ *          direction it does not use. Two endpoints then shared a buffer, and
++ *          what that looks like from outside is one of them refusing every
++ *          packet the host sends it.
++ */
+ static size_t usb_ep_malloc(USBDriver *usbp, size_t size, size_t alignment) {
+   size_t current = usbp->epmem_next;
+   if ((current & (alignment - 1)) != 0) { // Alignment issue
+     current = (current + alignment) & (~(alignment - 1));
+   }
+   const size_t epmo = current;
+-  usbp->epmem_next = current + size;
++
++  /* Every reservation takes at least one granule, including one of nothing.
++     Handing the same address out twice is the one thing this must not do, and
++     costing a granule to a caller that asked for no bytes is the cheap half of
++     that bargain. */
++  size_t granules = (size + alignment - 1U) / alignment;
++  if (granules == 0U) {
++    granules = 1U;
++  }
++  usbp->epmem_next = current + (granules * alignment);
+   osalDbgAssert(usbp->epmem_next <= LPC_USB_SRAM_END, "USB SRAM exhausted");
+   return epmo;
+ }

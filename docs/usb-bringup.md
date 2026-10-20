@@ -291,6 +291,38 @@ so every later device interrupt re-enters that branch and decides again from
 whatever `DSUP` reads at the time. The patch acknowledges it before acting on
 it.
 
+### The interrupt OUT endpoint has never worked
+
+No OUT endpoint was used on this driver until VIA was turned on: keystrokes
+only go outwards, and the host's LED state arrives as a control transfer. VIA's
+raw HID interface is the first to need both directions, and it does not answer.
+
+What the measurements say, and what they rule out:
+
+- **Control transfers with a data stage work.** With Num Lock on, the firmware's
+  own `usb_device_state.leds` reads `0x01`. So the failure is not every transfer
+  that carries data towards the device.
+- **The firmware arms the endpoint correctly.** The entry reads `0x80010008`:
+  active, 32 bytes. Its interrupt is enabled in `INTEN`, `EPINUSE` and
+  `EPBUFCFG` are both zero, and the device is connected and addressed.
+- **The controller never takes the packet.** Every host write ends in
+  `ETIMEDOUT` and the entry's active bit is still set afterwards.
+- **The two directions of that interface share a buffer.** The IN entry and the
+  OUT entry both carry offset 8, which the entry format cannot distinguish --
+  it stores an address divided by 64.
+
+`0012-endpoint-memory-granules.patch` makes that impossible for two successive
+reservations: every one takes a whole granule, including a reservation of
+nothing, which is ordinary here because QMK configures each direction
+separately and gives the unused one a maximum packet size of zero.
+
+**It did not change the layout**, which is the useful part of the result. The
+two entries are therefore not two successive reservations. `usb_lld_reset()`
+restarts the allocator and QMK re-initialises endpoints on every configuration
+event, so the likely reading is that these entries were written in different
+rounds, and one kept an address a later round handed to someone else. That is a
+hypothesis, not a measurement, and it is where the next session starts.
+
 **`FORCE_NEEDCLK` is never set.** NXP sets it unless low-power mode is
 configured. **Tested on the part and refuted**: with the bit set the controller
 still receives nothing, and `USB1CLKSTAT` does not change.
