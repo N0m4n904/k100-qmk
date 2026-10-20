@@ -382,8 +382,58 @@ so a whole page is sent from where it was built with no copy -- a shape worth ke
 | 0 | channel + 1 | PWM | brightness, 198 channels |
 | 1 | channel + 1 | scaling | current limit; initialised to `0xFF` throughout |
 | 2 | `0x00` | `0x09` / `0x08` | configuration: running, or software shutdown |
+| 2 | `0x01` | `0xFF` | global current; **found by measurement, not by reading** |
 | 2 | `0x2F` | `0xAE` | reset |
-| 2 | `0x25` | `0xC0` / `0x80` | set from a flag; purpose not identified |
+| 2 | `0x25` | `0x80` | set from a flag; purpose not identified |
+
+**Register `0x01` was missing from this table**, and it is the one register without which
+nothing lights at all: a reset leaves the global current at zero, and zero there is not a dim
+setting. Five callers of the frame builder were found by reading the image, and this write was
+not among them.
+
+It was found by running Corsair's own firmware on the keyboard, letting it light, and setting a
+hardware breakpoint on the builder at `0x1523c` from a reset. Its arguments are
+`(buffer, page, register, data)`, and the first writes it makes to each of the three drivers in
+turn are:
+
+```
+reg=0x2f  bytes=0xae        reset
+reg=0x01  bytes=0xff        global current
+reg=0x25  bytes=0x80        the flag register, whose value is 0x80 and not 0xC0
+```
+
+The same run settled the `0x25` value, which static reading could only give as one of two.
+
+### Where the lighting stands
+
+It does not light. Every layer below it has been compared against Corsair's own firmware while
+that firmware was running and lighting the keyboard, and every one of them matches:
+
+| | Verified against the stock firmware |
+| --- | --- |
+| Peripheral | Flexcomm 3, and the sticky chip-select bits show both firmwares transmitting |
+| Pin mux | IOCON port 0 identical under both |
+| Bus | `CFG 0x05`, `DLY 0`, `DIV 0`, `FCLKSEL 0` identical under both |
+| Frames | `0x52`/`0x51`/`0x50` headers, lengths 3 and 200, read out of both by breakpoint |
+| Function registers | `0x2F`←`0xAE`, `0x01`←`0xFF`, `0x25`←`0x80`, `0x00`←`0x09` |
+| Scaling | `0xFF` throughout, read back out of the buffer |
+| Enable outputs | `P0_8` and `P0_29` high, as the stock firmware holds them |
+
+Four defects were found and fixed along the way, each of which alone keeps the keyboard dark
+while every part of the path reports success: the two LED tables disagreeing on their length,
+the scaling page never being given a value, the global current register never being written,
+and both enable outputs being left low. None of them announced itself.
+
+The enable outputs are the most recent and were the hardest to see: both firmwares configure
+the *same* outputs, and only the level differed. A comparison of GPIO directions -- which is
+the obvious comparison -- shows nothing.
+
+What has not been compared yet is the one thing the bus cannot be asked about from the
+processor's side: whether the signals arrive. Flexcomm 3's own status says it transmits, but
+that is the peripheral's account of itself and not a measurement at the pins. The next step is
+to read the pins while a frame is being sent, or to break in the stock firmware's transport and
+compare the state of the whole Flexcomm block word for word at the moment of a transfer rather
+than at rest.
 
 The page numbers and the reset magic match the IS31FL3743A, the I2C sibling QMK already drives,
 which is corroboration from an independent source: the two parts share the register model and

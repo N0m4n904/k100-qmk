@@ -54,6 +54,23 @@
 #define IS31FL3743B_RESET_MAGIC 0xAE
 
 /**
+ * @brief   Global current control, and the value the stock firmware gives it.
+ *
+ * @details Nothing lights without this. A reset leaves it at zero, and zero
+ *          here is not a dim setting but no current at all, whatever the PWM
+ *          and scaling pages say -- so a keyboard with a perfectly working bus
+ *          stays dark and nothing reports a fault.
+ *
+ *          It was missing from this driver because it was missing from the
+ *          table in docs/pin-mapping.md, which listed the function registers
+ *          found by reading the stock firmware statically. A breakpoint in its
+ *          frame builder, with the keyboard lit, shows it writing `0x2F` then
+ *          this register to each of the three drivers in turn.
+ */
+#define IS31FL3743B_REG_GLOBAL_CURRENT 0x01
+#define IS31FL3743B_GLOBAL_CURRENT_VALUE 0xFF
+
+/**
  * @brief   A function register the stock firmware writes, and this one must.
  *
  * @details Its purpose is not identified. It is reproduced because leaving it
@@ -64,10 +81,12 @@
  *          firmware never writes. A part whose current control had moved would
  *          explain both.
  *
- *          The stock firmware writes `0xC0` or `0x80` depending on a flag.
- *          The lower is reproduced: if this is a current control then that is
- *          the gentler of the two, and if it is not, it is still one of the
- *          two states their firmware puts the part in.
+ *          The static reading of the stock firmware found it writing `0xC0`
+ *          or `0x80` from a flag. Read off the running keyboard while it was
+ *          lit, the value is `0x80`, so that is what is written here. The
+ *          guess that the other one might be the one that mattered was wrong,
+ *          and the measurement that settled it also turned up the global
+ *          current register above, which is what was actually missing.
  */
 #define IS31FL3743B_REG_UNDOCUMENTED 0x25
 #define IS31FL3743B_UNDOCUMENTED_VALUE 0x80

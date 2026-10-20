@@ -93,6 +93,10 @@ void is31fl3743b_init(uint8_t index) {
     memset(&pwm_buffers[index], 0, sizeof(pwm_buffers[index]));
     memset(&scaling_buffers[index], 0, sizeof(scaling_buffers[index]));
 
+    /* Immediately after the reset, and before anything else, which is the
+       order the stock firmware uses. */
+    is31fl3743b_write_register(index, IS31FL3743B_PAGE_FUNCTION, IS31FL3743B_REG_GLOBAL_CURRENT, IS31FL3743B_GLOBAL_CURRENT_VALUE);
+
     is31fl3743b_write_register(index, IS31FL3743B_PAGE_FUNCTION, IS31FL3743B_REG_UNDOCUMENTED, IS31FL3743B_UNDOCUMENTED_VALUE);
 
     is31fl3743b_write_register(index, IS31FL3743B_PAGE_FUNCTION, IS31FL3743B_REG_CONFIGURATION, IS31FL3743B_CONFIGURATION);

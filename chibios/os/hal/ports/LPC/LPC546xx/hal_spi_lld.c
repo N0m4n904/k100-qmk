@@ -81,19 +81,21 @@ static uint32_t flexcomm_clock_enable(uint8_t flexcomm) {
     SYSCON->AHBCLKCTRLSET[2] = 1UL << (14U + (flexcomm - 8U));
   }
 
-  /* Take the function clock from the main clock, which needs no PLL and is
-     whatever this port was configured to run on.
+  /* Take the function clock from the 12 MHz FRO. It is always running, needs
+     no PLL, and is far more than the LED drivers' bus needs -- this port has
+     no PLL yet, so a selection that depends on one would not work.
 
-     Selection zero is the main clock, and the figure returned has to be the
-     main clock too. It was a literal 12 MHz, written alongside a comment
-     meaning to select the 12 MHz FRO -- so the register said one thing and the
-     arithmetic another. Every divider came out four times too small on a
-     48 MHz main clock, and a bus asked for 12 MHz ran at 48. Nothing says so
-     at the time: the peripheral is happy, the transfers complete, and only the
-     device at the other end notices that it cannot follow. */
+     Both numbers here were doubted and then confirmed against the keyboard.
+     The stock firmware, read off the part while it was lighting the keyboard,
+     holds this same selection with a divider of zero and asks its own driver
+     for 12 MHz -- so selection zero is the 12 MHz source and not the main
+     clock, and the figure below is the one the arithmetic needs. The
+     bootloader differs, taking another source and dividing it by four, which
+     is what made this look wrong when the bootloader was used as the
+     reference. The application is the reference. */
   SYSCON->FCLKSEL[flexcomm] = SYSCON_FCLKSEL_SEL(0U);
 
-  return LPC_MAINCLK;
+  return 12000000U;
 }
 
 /**

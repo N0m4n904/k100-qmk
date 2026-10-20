@@ -49,9 +49,31 @@ static const SPIConfig led_spi_config[] = {
 
 #define DRIVER_COUNT (sizeof(led_spi_config) / sizeof(led_spi_config[0]))
 
+/**
+ * @brief Pins the stock firmware holds high while the keyboard is lit.
+ *
+ * @details Found by running Corsair's own firmware, letting it light the
+ *          keyboard, and reading both ports' direction and level over SWD
+ *          against the same registers under this one. The directions were
+ *          identical -- which is what made this invisible while only
+ *          directions were compared -- and two outputs differed in level:
+ *          these. Everything else about the bus matched: the same Flexcomm,
+ *          the same pin mux, the same divider, the same frames.
+ *
+ *          What they switch is not known. They behave as the LED section's
+ *          enable, and nothing is lit without them however correct the bus is,
+ *          which is what this driver had been demonstrating for an evening.
+ */
+static const ioline_t led_enable_lines[] = {LPC_LINE(0U, 8U), LPC_LINE(0U, 29U)};
+
 void is31fl3743b_transport_init(void) {
-    /* Nothing to do: each send starts the bus with its own driver's chip
-       select, because that is the only thing that differs between them. */
+    /* The bus itself needs nothing here: each send starts it with its own
+       driver's chip select, because that is the only thing that differs
+       between them. */
+    for (size_t i = 0; i < sizeof(led_enable_lines) / sizeof(led_enable_lines[0]); i++) {
+        palSetLineMode(led_enable_lines[i], PAL_MODE_OUTPUT_PUSHPULL);
+        palSetLine(led_enable_lines[i]);
+    }
 }
 
 void is31fl3743b_transport_send(uint8_t index, const uint8_t *frame, size_t length) {
