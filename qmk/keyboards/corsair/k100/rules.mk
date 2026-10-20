@@ -27,3 +27,15 @@ VPATH += $(TOP_DIR)/drivers/led/issi
 # at zero would have a reset vector pointing into the bootloader and could not
 # run; see the script's own comment and docs/pin-mapping.md.
 MCU_LDSCRIPT = LPC546xx_app_at_64k
+
+# Debounce per key rather than across the whole matrix.
+#
+# QMK's default, sym_defer_g, waits for *every* position to be quiet before it
+# reports anything. On this board several positions that hold no key flicker
+# continuously -- there is no switch in them to interrupt the beam -- so the
+# matrix is never quiet and nothing is ever reported, however cleanly a real
+# key is read. Per-key debouncing lets a key through on its own merits.
+#
+# Safe here: all twenty positions that read as permanently pressed are ones the
+# layout leaves empty, so none of them can report a stuck key.
+DEBOUNCE_TYPE = sym_eager_pk

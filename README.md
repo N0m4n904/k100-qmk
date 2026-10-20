@@ -7,9 +7,9 @@ its stock firmware.
 
 ## ⚠️ Work in progress — read this before running anything
 
-**This project is unfinished, and it has already bricked one keyboard.** That keyboard was
-recovered, but only by opening the case and attaching a programmer to the PCB. There is no
-working firmware, and there may never be.
+**This project has already bricked one keyboard.** That keyboard was recovered, but only by
+opening the case and attaching a programmer to the PCB. The firmware now runs, enumerates and
+types; the lighting does not exist yet, and nothing here should be mistaken for finished.
 
 **Using anything in this repository is entirely at your own risk.**
 
@@ -51,13 +51,14 @@ and the two rules that keep a mistake survivable.
 | Recovery from firmware that will not boot, over SWD | **Proven on hardware.** A bricked K100 was dumped, erased and restored to stock with a Raspberry Pi and four jumper wires. See [`swd/`](swd/README.md). |
 | Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |
 | QMK layout, keymap, LED map, VIA | **Done** for OPX ISO DE, generated from ckb-next's data. |
-| ChibiOS LPC546xx port | **Runs on the keyboard** as far as QMK's pre-init. Three boot-stopping defects found and fixed (DWT, realtime counter, system timer); none of the fixes has run on hardware. |
-| Key matrix pins | **Found** by disassembly. Sense polarity and settling time are untested guesses. |
+| ChibiOS LPC546xx port | **Runs on the keyboard.** Boots through `crt0`, `halInit()` and `chSysInit()` into QMK's main loop, from SRAM and from flash alike. |
+| Key matrix pins | **Proven on hardware.** Pressing a key reaches the host as that key. The settle time is 500 us: these are optical switches, and the 20 us first guessed was far too short for an emitter and phototransistor to answer. |
 | RGB driver chips and protocol | **Derived from firmware**: IS31FL3743B on SPI3, framing and registers known. |
 | RGB bus pins | **Unknown** — configured by the bootloader, not the application. No lighting yet. |
-| Route back to the bootloader | Implemented three ways, all three funnelling through one EEPROM write that **has never succeeded on hardware**. Treat as non-functional. |
-| Working firmware | **No.** It has never completed a boot or enumerated. |
-| Test hardware | **One K100**, recovered from the brick and back on stock firmware, with an SWD header identified on its PCB. |
+| Route back to the bootloader | Over USB, still unproven. Over SWD it is one command: erase flash sector 2 and the bootloader keeps control. Used repeatedly. |
+| USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0001`, and the kernel binds all four HID interfaces. |
+| Working firmware | **Yes.** It runs from flash, enumerates, and delivers keystrokes. Lighting is not implemented. |
+| Test hardware | **One K100**, running this firmware, with its SWD header wired to a Raspberry Pi. |
 | Corsair's bootloader | **Dumped.** 64 KB read out over SWD and checked: its vector checksum is valid, so the image is complete. Not redistributable, so not in this repository. |
 
 Start with [`NOTES.md`](NOTES.md) for the research and

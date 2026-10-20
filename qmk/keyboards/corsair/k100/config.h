@@ -57,3 +57,21 @@
  */
 #define NO_USB_STARTUP_CHECK
 
+/*
+ * Settle time between asserting a strobe and sampling the senses.
+ *
+ * The driver's own default is 20 us, which was a guess on what an optical
+ * switch needs. Measured on hardware it is not enough: with a switch installed
+ * and held down, its bit in raw_matrix never changes, while every position
+ * that has no key at all reads as pressed. The scan runs, the map is right --
+ * all twenty of those stuck bits land on positions the layout leaves empty,
+ * which noise would not do -- and the one thing left between asserting a
+ * strobe and reading a meaningful answer is time.
+ *
+ * These are not contacts. Each key interrupts an infrared beam, so a strobe
+ * has to turn an emitter on and let a phototransistor settle before the sense
+ * line means anything, and that is tens to hundreds of microseconds rather
+ * than tens. At eight rows this costs four milliseconds a scan, which is a
+ * 250 Hz matrix -- far more than a keyboard needs.
+ */
+#define MATRIX_STROBE_SETTLE_US 500
