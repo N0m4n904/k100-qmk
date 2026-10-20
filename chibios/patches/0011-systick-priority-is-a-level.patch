@@ -1,0 +1,42 @@
+--- a/os/hal/ports/LPC/LLD/STM/hal_st_lld.h
++++ b/os/hal/ports/LPC/LLD/STM/hal_st_lld.h
+@@ -43,9 +43,24 @@
+  */
+ /**
+  * @brief   SysTick timer IRQ priority.
++ *
++ * @details Expressed in the port's priority levels, of which a part has
++ *          @p CORTEX_PRIORITY_LEVELS. This was a literal 8, which is a level
++ *          only on a part with four priority bits or more. A part with three
++ *          has eight levels, and the port turns a level into the hardware
++ *          field by shifting it left by @p 8 - CORTEX_PRIORITY_BITS -- so 8
++ *          shifts out of the byte entirely and arrives as zero, which is not
++ *          the weakest priority but the strongest.
++ *
++ *          What that costs is not a slow tick, it is the kernel. The tick
++ *          handler then outranks the @p BASEPRI the kernel raises around its
++ *          critical regions, so it runs inside them, and the context switch
++ *          the interrupt epilogue sets up stops being atomic. The firmware
++ *          keeps working until the one tick that lands in the wrong
++ *          instruction, and then stops dead with nothing faulted.
+  */
+ #if !defined(LPC_ST_IRQ_PRIORITY) || defined(__DOXYGEN__)
+-#define LPC_ST_IRQ_PRIORITY    8
++#define LPC_ST_IRQ_PRIORITY    CORTEX_MINIMUM_PRIORITY
+ #endif
+ /** @} */
+ 
+@@ -62,6 +77,13 @@
+   #error "OSAL_ST_MODE_FREERUNNING is not supported. Check CH_CFG_ST_TIMEDELTA"
+ #endif
+ 
++/* The tick handler calls the kernel, so it has to sit where the kernel can
++   mask it. A level it cannot -- including one that is not a level on this part
++   at all -- is the defect above, and it does not announce itself at runtime. */
++#if !OSAL_IRQ_IS_VALID_PRIORITY(LPC_ST_IRQ_PRIORITY)
++  #error "Invalid IRQ priority assigned to LPC_ST_IRQ_PRIORITY"
++#endif
++
+ /*===========================================================================*/
+ /* Driver data structures and types.                                         */
+ /*===========================================================================*/

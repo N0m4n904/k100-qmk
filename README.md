@@ -9,9 +9,8 @@ its stock firmware.
 
 **This project has already bricked one keyboard.** That keyboard was recovered, but only by
 opening the case and attaching a programmer to the PCB. The firmware now runs, enumerates and
-types, but it hangs as soon as it is used and the watchdog hands the keyboard back to
-Corsair's bootloader; the lighting does not exist yet. Nothing here should be mistaken for
-finished.
+types, and holds up under use; the lighting does not exist yet. Nothing here should be
+mistaken for finished.
 
 **Using anything in this repository is entirely at your own risk.**
 
@@ -59,7 +58,7 @@ and the two rules that keep a mistake survivable.
 | RGB bus pins | **Unknown** — configured by the bootloader, not the application. No lighting yet. |
 | Route back to the bootloader | Over USB, still unproven. Over SWD it is one command: erase flash sector 2 and the bootloader keeps control. Used repeatedly. |
 | USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0001`, and the kernel binds all four HID interfaces. |
-| Working firmware | **Almost.** It runs from flash, enumerates, binds four HID interfaces and types — and then hangs in ChibiOS's reschedule-from-interrupt path, after which the watchdog Corsair's bootloader handed over resets the part. Idle it lasts minutes; typing stops it, which has been caught in the act. [`docs/scheduler-stall.md`](docs/scheduler-stall.md) has the measurements and what they rule out. |
+| Working firmware | **Yes.** It runs from flash, enumerates, binds four HID interfaces and types, measured at 5204 key events across four minutes of continuous typing. It used to hang within a second of being used; the cause was a system-timer priority that is not a priority on a part with three priority bits, which put the tick above the kernel's own interrupt mask. [`docs/scheduler-stall.md`](docs/scheduler-stall.md) has the measurements, the fix and the eight explanations that were refuted on the way. Lighting is not implemented. |
 | Telling our firmware from Corsair's | **Only `bcdDevice` does it.** Corsair's bootloader presents a working keyboard of its own under the same vendor and product id, so typing proves nothing on its own. A whole 104-key sweep was once collected from the bootloader and credited to this firmware. `tools/watch-input.py` now refuses to attribute keystrokes it cannot place. |
 | Test hardware | **One K100**, running this firmware, with its SWD header wired to a Raspberry Pi. |
 | Corsair's bootloader | **Dumped.** 64 KB read out over SWD and checked: its vector checksum is valid, so the image is complete. Not redistributable, so not in this repository. |

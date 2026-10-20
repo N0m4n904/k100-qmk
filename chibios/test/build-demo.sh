@@ -113,6 +113,8 @@ git -C "$contrib" apply --whitespace=nowarn \
     "$repo/patches/0008-systick-freerunning-guard.patch"
 git -C "$contrib" apply --whitespace=nowarn \
     "$repo/patches/0010-devcmdstat-latched-bits.patch"
+git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/patches/0011-systick-priority-is-a-level.patch"
 
 # And the two to ChibiOS proper, which are a pair: one makes enabling the DWT
 # optional, the other supplies a realtime counter for the parts that have to turn

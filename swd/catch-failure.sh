@@ -38,8 +38,8 @@
 # window that ends with the counter still full is an answer too: the firmware
 # neither faulted nor stopped feeding while it was watched.
 #
-# Options: --seconds <n>, --no-stretch, --stall-ms <n>, --peek <addr>:<count>,
-# --leave-halted, --swclk, --swdio, --srst, --speed.
+# Options: --seconds <n>, --no-stretch, --stall-ms <n>, --break <address>,
+# --peek <addr>:<count>, --leave-halted, --swclk, --swdio, --srst, --speed.
 
 set -euo pipefail
 
@@ -73,12 +73,14 @@ SECONDS_TO_WATCH=120
 STALL_MS=500
 stretch=yes
 leave_halted=no
+breakpoint=
 peeks=()
 
 while (( $# )); do
     case ${1:-} in
         --seconds)      SECONDS_TO_WATCH=$2; shift 2; continue ;;
         --stall-ms)     STALL_MS=$2; shift 2; continue ;;
+        --break)        breakpoint=$2; shift 2; continue ;;
         --no-stretch)   stretch=no; shift; continue ;;
         --leave-halted) leave_halted=yes; shift; continue ;;
         --peek)         peeks+=("$2"); shift 2; continue ;;
@@ -108,6 +110,20 @@ for spec in ${peeks[@]+"${peeks[@]}"}; do
     reads_tcl+="mdw ${spec%%:*} ${spec##*:}"$'\n'
 done
 
+# A breakpoint on an address the firmware only reaches when it has already gone
+# wrong turns this from catching the failure into catching its first moment.
+# The counter watch sees a stall once it is half a second old and by then the
+# same wrong state has usually been re-entered several times; a breakpoint on
+# the dead end itself stops the core the first time it arrives there, with the
+# frames that put it there still on the stack.
+#
+# Setting one costs a halt, because the comparators are programmed through the
+# core. That is a halt before the failure rather than during it, which is the
+# one that does not change what is being measured.
+if [[ -n $breakpoint ]]; then
+    prepare+=(-c "halt" -c "bp $breakpoint 2 hw" -c "resume")
+fi
+
 resume=(-c "catch {resume}")
 [[ $leave_halted == yes ]] && resume=()
 
@@ -123,12 +139,20 @@ RAN="still feeding when the window ended"
 watch_tcl="
   set tc [lindex [read_memory $WWDT_TC 32 1] 0]
   set floor [expr {\$tc - ($STALL_MS * $COUNTS_PER_MS)}]
+  set tgt [target current]
   set started [clock seconds]
   set deadline [expr {\$started + $SECONDS_TO_WATCH}]
   set reported \$started
   set caught 0
   echo \"watchdog reloads from \$tc; halting if the counter falls below \$floor\"
   while {[clock seconds] < \$deadline} {
+    # A core that stopped on its own got there by a breakpoint or a caught
+    # fault, which is earlier and more exact than the counter can be.
+    if {[\$tgt curstate] eq {halted}} {
+      echo \"$CAUGHT after [expr {[clock seconds] - \$started}] s, on its own\"
+      set caught 1
+      break
+    }
     set tv [lindex [read_memory $WWDT_TV 32 1] 0]
     set now [clock seconds]
     if {\$tv < \$floor} {
@@ -163,6 +187,16 @@ watch_tcl="
     echo [mdw $WWDT_MOD 1]
   } else {
     foreach r {pc lr sp xpsr basepri primask control} { echo [reg \$r] }
+    # The stack the thread is standing on. Exception frames are what this path
+    # is made of, and whether the one at the stack pointer is the 32 bytes of a
+    # basic frame or the 104 of one carrying FPU state is the difference
+    # between a return that lands and one that does not. Only reading it says
+    # which is there.
+    if {[regexp {0x([0-9a-fA-F]+)} [reg sp] -> h]} {
+      scan \$h %x spv
+      echo {the process stack, from 128 bytes below the stack pointer:}
+      echo [mdw [expr {\$spv - 128}] 96]
+    }
     echo [mdw 0xE000ED24 7]
     echo {VTOR, then the SVCall, DebugMon, reserved and PendSV vectors:}
     echo [mdw 0xE000ED08 1]
