@@ -6,7 +6,56 @@ This is the document to re-read before any write to the keyboard. Evidence is qu
 Corsair's own updater bundle and from ckb-next; see `firmware-format.md` and
 `bragi-firmware-update.md` for how those were obtained.
 
-## Three independent layers of recovery
+## Hold B and L while plugging in, and the bootloader keeps the keyboard
+
+**Decoded out of Corsair's bootloader and then measured on hardware.** It needs no tool, no
+programmer and no working firmware — only that the bootloader itself is intact, which the one
+rule below protects.
+
+```
+[ 29.193s] GONE      10-2  1b1c:1b7c
+[ 54.912s] APPEARED  10-2  1b1c:1b7c  bcdDevice=000a
+           product='CORSAIR K100 RGB Optical-Mechanical Gaming Keyboard'
+```
+
+Both cables out, hold `B` and `L` and nothing else, plug in while holding. The keyboard comes
+up as the bootloader and `k100-bragi flash` can replace whatever was on it.
+
+### How it was found
+
+The bootloader registers a callback at `0x330` and then runs its own matrix scan at `0x1e38`.
+The scan sets up eighteen sense lines from a table of port and pin pairs, masks each row's
+reading to the positions that carry a key, and calls the callback with `row * 18 + col` and
+whether it is down. The callback keeps three positions separately and everything else in one
+flag:
+
+| Flag | Position | Key |
+| --- | --- | --- |
+| `0x200002a6` | 1 | Esc |
+| `0x200002a7` | `0x4f` | B |
+| `0x200002a8` | `0x40` | L |
+| `0x200002a5` | anything else | — |
+
+The decision at `0x444` then branches to the application unless **all four** hold: B down, L
+down, nothing else down, and Esc **not** down. Only then does it fall into the bootloader at
+`0x458`.
+
+The positions are this keyboard's own matrix, so they map straight through
+`qmk/keyboards/corsair/k100/keyboard.json`: position 1 is row 0 column 1, which is Escape;
+`0x40` is row 3 column 10, which is L; `0x4f` is row 4 column 7, which is B.
+
+### What this means for the keyboard this project bricked
+
+It was probably never a brick. The firmware that would not enumerate sat behind a bootloader
+that would have kept control if B and L had been held — and the case was opened and a
+programmer wired to the board instead.
+
+Worse, the key that was tried was Escape, because that is what this firmware's own held-key
+escape hatch reads. **Escape is the one key that guarantees the opposite**: the bootloader
+treats it as a reason to start the application. The two mechanisms were in direct conflict and
+nothing said so.
+
+## Three further layers of recovery
 
 ### Layer 1 — the Bragi bootloader (primary, software only)
 

@@ -22,7 +22,10 @@ Specifically, you should understand before you start:
   the keyboard stopped enumerating entirely — no USB at all, and no key held at power-up
   changed that. Recovering it took opening the case and wiring a programmer to the board. The
   post-mortem is in [`docs/recovery.md`](docs/recovery.md) and the procedure that got it back
-  is in [`swd/`](swd/README.md).
+  is in [`swd/`](swd/README.md). **It need not have.** Corsair's bootloader keeps the keyboard
+  if `B` and `L` are held while it is plugged in — decoded out of the bootloader and measured
+  since. The key tried at the time was Escape, which is the one key that guarantees the
+  opposite.
 - **You can permanently destroy your keyboard.** The K100's MCU can ship with read-out
   protection and debug access disabled, in which case a failed firmware write leaves no way
   to recover it. This is not a theoretical risk; it is documented for this chip family.
@@ -56,7 +59,7 @@ and the two rules that keep a mistake survivable.
 | Key matrix pins | **Proven on hardware**, and this time read against `bcdDevice` so it is this firmware and not the bootloader's own keyboard: 67 presses across 16 keys arrived while the device reported `0.01`. The settle time is 500 us: these are optical switches, and the 20 us first guessed was far too short for an emitter and phototransistor to answer. |
 | RGB driver chips and protocol | **Derived from firmware**: IS31FL3743B on SPI3, framing and registers known. |
 | RGB bus pins | **Unknown** — configured by the bootloader, not the application. No lighting yet. |
-| Route back to the bootloader | **Tested from the firmware, and it does not work.** `Fn+Esc` resets the keyboard — the write and its read-back both succeed, which is what the reset proves — but the bootloader starts the application again regardless, so writing Corsair's mode word is not sufficient. `tools/watch-bootloader-route.py` is the test. Over SWD it is one command: erase flash sector 2 and the bootloader keeps control. Used repeatedly. |
+| Route back to the bootloader | **Solved, from the keyboard alone.** Hold `B` and `L` while plugging in and Corsair's bootloader keeps control — decoded out of its own startup matrix scan and then measured. No programmer, no working firmware, nothing to install. Over SWD it is still one command, and `Fn+Esc` from inside this firmware **does not work**: the reset happens but the bootloader starts the application again, so Corsair's mode word is not what it keys on. [`docs/recovery.md`](docs/recovery.md) has all three. |
 | USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0001`, and the kernel binds all four HID interfaces. |
 | Working firmware | **Yes.** It runs from flash, enumerates, binds four HID interfaces and types, measured at 5204 key events across four minutes of continuous typing. It used to hang within a second of being used; the cause was a system-timer priority that is not a priority on a part with three priority bits, which put the tick above the kernel's own interrupt mask. [`docs/scheduler-stall.md`](docs/scheduler-stall.md) has the measurements, the fix and the eight explanations that were refuted on the way. Lighting is not implemented. |
 | Telling our firmware from Corsair's | **Only `bcdDevice` does it.** Corsair's bootloader presents a working keyboard of its own under the same vendor and product id, so typing proves nothing on its own. A whole 104-key sweep was once collected from the bootloader and credited to this firmware. `tools/watch-input.py` now refuses to attribute keystrokes it cannot place. |
