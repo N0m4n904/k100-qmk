@@ -14,8 +14,8 @@
 # registers and the stack frame that say what happened, so resetting first
 # would destroy the evidence and report a clean machine every time.
 #
-# Options: --peek <address>:<count>, --swclk, --swdio, --srst, --speed,
-# --halt-late, --no-halt.
+# Options: --peek <address>:<count>, --leave-halted, --swclk, --swdio,
+# --srst, --speed, --halt-late, --no-halt.
 
 set -euo pipefail
 
@@ -25,6 +25,7 @@ source "$here/swd-session.sh"
 
 HALT=$HALT_ONLY
 peeks=()
+leave_halted=no
 
 while (( $# )); do
     # Words to read while the part is stopped, as address:count. Reading a
@@ -34,6 +35,13 @@ while (( $# )); do
     if [[ ${1:-} == --peek ]]; then
         peeks+=("$2")
         shift 2
+        continue
+    fi
+    # For when the part should stay stopped -- stepping from here, or keeping a
+    # crash exactly as it was found.
+    if [[ ${1:-} == --leave-halted ]]; then
+        leave_halted=yes
+        shift
         continue
     fi
     swd_parse_option "$@"
@@ -49,9 +57,18 @@ done
 # 0xE000ED24 is SHCSR, and the seven words from there are SHCSR, CFSR, HFSR,
 # DFSR, MMFAR, BFAR and AFSR -- everything the architecture records about a
 # fault, in one read.
+# Reading has to put the part back the way it was found. Halting is how the
+# registers get read at all, but a session that ends while the core is stopped
+# has killed the firmware it came to look at -- which is how a perfectly good
+# measurement ends up being the last thing that firmware ever did, and how the
+# reading after it describes whatever ran next.
+resume=(-c "resume")
+[[ $leave_halted == yes ]] && resume=()
+
 log=$(swd_run -c "reg pc" -c "reg lr" -c "reg sp" -c "reg xpsr" \
               -c "mdw 0xE000ED24 7" \
-              ${reads[@]+"${reads[@]}"} || true)
+              ${reads[@]+"${reads[@]}"} \
+              ${resume[@]+"${resume[@]}"} || true)
 printf '%s\n' "$log"
 
 swd_halted "$log" || {
