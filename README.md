@@ -8,8 +8,9 @@ its stock firmware.
 ## ⚠️ Work in progress — read this before running anything
 
 **This project has already bricked one keyboard.** That keyboard was recovered, but only by
-opening the case and attaching a programmer to the PCB. The firmware now runs, enumerates and
-types; the lighting does not exist yet, and nothing here should be mistaken for finished.
+opening the case and attaching a programmer to the PCB. The firmware now runs and enumerates,
+but it hangs within seconds and the watchdog hands the keyboard back to Corsair's bootloader;
+the lighting does not exist yet. Nothing here should be mistaken for finished.
 
 **Using anything in this repository is entirely at your own risk.**
 
@@ -52,12 +53,13 @@ and the two rules that keep a mistake survivable.
 | Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |
 | QMK layout, keymap, LED map, VIA | **Done** for OPX ISO DE, generated from ckb-next's data. |
 | ChibiOS LPC546xx port | **Runs on the keyboard.** Boots through `crt0`, `halInit()` and `chSysInit()` into QMK's main loop, from SRAM and from flash alike. |
-| Key matrix pins | **Proven on hardware.** Pressing a key reaches the host as that key. The settle time is 500 us: these are optical switches, and the 20 us first guessed was far too short for an emitter and phototransistor to answer. |
+| Key matrix pins | **Derived and consistent with the part**: the raw matrix read out of the running firmware over SWD matches the map, and the positions that never settle are exactly the ones with no switch fitted. Keystrokes reaching the host have **not** been separated from the bootloader's own keyboard yet — see below. The settle time is 500 us: these are optical switches, and the 20 us first guessed was far too short for an emitter and phototransistor to answer. |
 | RGB driver chips and protocol | **Derived from firmware**: IS31FL3743B on SPI3, framing and registers known. |
 | RGB bus pins | **Unknown** — configured by the bootloader, not the application. No lighting yet. |
 | Route back to the bootloader | Over USB, still unproven. Over SWD it is one command: erase flash sector 2 and the bootloader keeps control. Used repeatedly. |
 | USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0001`, and the kernel binds all four HID interfaces. |
-| Working firmware | **Yes.** It runs from flash, enumerates, and delivers keystrokes. Lighting is not implemented. |
+| Working firmware | **Not yet.** It runs from flash and enumerates, then hangs in ChibiOS's reschedule-from-interrupt path within seconds, and the watchdog Corsair's bootloader handed over resets the part. [`docs/scheduler-stall.md`](docs/scheduler-stall.md) has the measurements and what they rule out. |
+| Telling our firmware from Corsair's | **Only `bcdDevice` does it.** Corsair's bootloader presents a working keyboard of its own under the same vendor and product id, so typing proves nothing on its own. A whole 104-key sweep was once collected from the bootloader and credited to this firmware. `tools/watch-input.py` now refuses to attribute keystrokes it cannot place. |
 | Test hardware | **One K100**, running this firmware, with its SWD header wired to a Raspberry Pi. |
 | Corsair's bootloader | **Dumped.** 64 KB read out over SWD and checked: its vector checksum is valid, so the image is complete. Not redistributable, so not in this repository. |
 
