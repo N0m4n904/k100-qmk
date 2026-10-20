@@ -48,18 +48,30 @@ def exchange(node: Path, request: bytes) -> bytes | None:
     """One command and its reply, or None when the node does not answer."""
     padded = request.ljust(REPORT_SIZE, b"\x00")
     try:
-        fd = os.open(node, os.O_RDWR | os.O_NONBLOCK)
+        fd = os.open(node, os.O_RDWR)
     except OSError as error:
-        print(f"{node}: {error}", file=sys.stderr)
+        print(f"  {node.name}: cannot be opened: {error}", file=sys.stderr)
         return None
 
     try:
-        os.write(fd, b"\x00" + padded)
+        # Blocking, and the error is reported rather than swallowed. A write
+        # the device never takes and a reply that never comes are different
+        # faults -- one says the host could not deliver the command, the other
+        # that the firmware did not answer it -- and a probe that cannot tell
+        # them apart sends the reader looking in the wrong half.
+        try:
+            os.write(fd, b"\x00" + padded)
+        except OSError as error:
+            print(f"  {node.name}: the write was not accepted: {error}",
+                  file=sys.stderr)
+            return None
+
         ready, _, _ = select.select([fd], [], [], TIMEOUT_S)
         if not ready:
             return None
         return os.read(fd, REPORT_SIZE)
-    except OSError:
+    except OSError as error:
+        print(f"  {node.name}: {error}", file=sys.stderr)
         return None
     finally:
         os.close(fd)
