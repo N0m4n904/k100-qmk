@@ -1,0 +1,67 @@
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+@@ -110,9 +110,51 @@
+ 
+ #define USB_EPLIST ((struct usb_eplist *)LPC_USB_SRAM_START)
+ 
++/**
++ * @name    Where an endpoint entry divides its buffer offset from its length
++ * @{
++ */
++/**
++ * @brief   First bit of the entry's @p NBytes field.
++ *
++ * @details The two generations of this IP split the same 26 bits differently,
++ *          and nothing in the entry itself says which one is in front of you:
++ *
++ *          - full speed: a 16-bit buffer offset, then 10 bits of length
++ *          - high speed: an 11-bit buffer offset, then 15 bits of length
++ *
++ *          Ten bits cannot describe the 1024-byte endpoints the high-speed
++ *          controller supports, which is why the field had to move.
++ *
++ *          Writing one layout into a controller that reads the other does not
++ *          fail cleanly. A length written at bit 16 and read from bit 11 is
++ *          the intended length multiplied by 32, so the controller transfers
++ *          far more than was asked for, and the host reports an overflow
++ *          against an endpoint that looks correctly configured. Transfers of
++ *          zero length are unaffected, so enumeration gets as far as the first
++ *          one that carries data and no further.
++ *
++ *          A family whose controller is the high-speed one defines these.
++ */
++#if !defined(LPC_USB_EPLIST_NBYTES_POS)
++#define LPC_USB_EPLIST_NBYTES_POS             16U
++#endif
++
++/**
++ * @brief   Width of the entry's @p NBytes field.
++ */
++#if !defined(LPC_USB_EPLIST_NBYTES_BITS)
++#define LPC_USB_EPLIST_NBYTES_BITS            10U
++#endif
++/** @} */
++
+ #define EPLIST_ENTRY_BUFFER_RSHIFT            6U
+ #define EPLIST_ENTRY_BUFFER_POS               0U
+-#define EPLIST_ENTRY_BUFFER_MASK              (0xFFFF << EPLIST_ENTRY_BUFFER_POS)
++
++/* Everything below the length field, so the two cannot be described as
++   overlapping or as leaving a gap between them. */
++#define EPLIST_ENTRY_BUFFER_MASK                                              \
++  (((1U << LPC_USB_EPLIST_NBYTES_POS) - 1U) << EPLIST_ENTRY_BUFFER_POS)
+ 
+ /**
+  * @brief   What the buffer field of an endpoint entry is measured from.
+@@ -139,8 +181,9 @@
+ #define EPLIST_ADDR(ADDR)                     \
+   ((((uint32_t)(ADDR)) >> EPLIST_ENTRY_BUFFER_RSHIFT) & EPLIST_ENTRY_BUFFER_MASK)
+ #endif
+-#define EPLIST_ENTRY_NBYTES_POS               16U
+-#define EPLIST_ENTRY_NBYTES_MASK              (0x3FF << EPLIST_ENTRY_NBYTES_POS)
++#define EPLIST_ENTRY_NBYTES_POS               LPC_USB_EPLIST_NBYTES_POS
++#define EPLIST_ENTRY_NBYTES_MASK                                              \
++  (((1U << LPC_USB_EPLIST_NBYTES_BITS) - 1U) << EPLIST_ENTRY_NBYTES_POS)
+ #define EPLIST_ENTRY_NBYTES(BYTES)            \
+   (((BYTES) << EPLIST_ENTRY_NBYTES_POS) & EPLIST_ENTRY_NBYTES_MASK)
+ #define EPLIST_ENTRY_ACTIVE                   (1U << 31U)

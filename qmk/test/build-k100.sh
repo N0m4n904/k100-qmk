@@ -108,6 +108,8 @@ git -C "$contrib" apply --whitespace=nowarn \
 git -C "$contrib" apply --whitespace=nowarn \
     "$repo/chibios/patches/0006-eplist-buffer-base.patch"
 git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/chibios/patches/0009-eplist-nbytes-position.patch"
+git -C "$contrib" apply --whitespace=nowarn \
     "$repo/chibios/patches/0008-systick-freerunning-guard.patch"
 git -C "$qmk" init -q .
 git -C "$qmk" apply --whitespace=nowarn \

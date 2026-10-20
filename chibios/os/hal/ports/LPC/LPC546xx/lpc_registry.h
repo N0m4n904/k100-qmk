@@ -94,6 +94,22 @@
    an address. */
 #define LPC_USB_EPLIST_ADDR_BASE    LPC_USB_SRAM_START
 
+/**
+ * @brief   This controller is the high-speed one, and splits an endpoint
+ *          entry differently.
+ *
+ * @details Eleven bits of buffer offset and fifteen of length, where the
+ *          full-speed controller has sixteen and ten. The driver defaults to
+ *          the full-speed split, and writing that into this controller is not
+ *          a near miss: a length stored at bit 16 is read from bit 11, which
+ *          multiplies it by 32. Zero-length transfers survive, so enumeration
+ *          reaches the first transfer carrying data and fails there, with the
+ *          host reporting an overflow against an endpoint that looks correctly
+ *          configured.
+ */
+#define LPC_USB_EPLIST_NBYTES_POS   11U
+#define LPC_USB_EPLIST_NBYTES_BITS  15U
+
 /* Flexcomm. Each instance is one of USART, SPI, I2C or I2S, selected at
    runtime, so there is one vector per instance rather than per function.
    Flexcomm 3 is the one the stock keyboard firmware drives its LED drivers

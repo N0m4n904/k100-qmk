@@ -108,6 +108,8 @@ git -C "$contrib" apply --whitespace=nowarn \
 git -C "$contrib" apply --whitespace=nowarn \
     "$repo/patches/0006-eplist-buffer-base.patch"
 git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/patches/0009-eplist-nbytes-position.patch"
+git -C "$contrib" apply --whitespace=nowarn \
     "$repo/patches/0008-systick-freerunning-guard.patch"
 
 # And the two to ChibiOS proper, which are a pair: one makes enabling the DWT
