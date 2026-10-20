@@ -11,7 +11,7 @@ there is nothing to look up and nothing to get wrong when the numbers move
 between re-enumerations.
 
     tools/watch-input.py --seconds 30
-    tools/watch-input.py --vid 1b1c --pid 1b7c
+    tools/watch-input.py --quiet --seconds 180    # sweep every key
 """
 
 from __future__ import annotations
@@ -55,6 +55,9 @@ def main() -> int:
     parser.add_argument("--pid", default="1b7c", help="USB product id, hex")
     parser.add_argument("--seconds", type=float, default=30.0,
                         help="how long to listen")
+    parser.add_argument("--quiet", action="store_true",
+                        help="count distinct keys instead of printing every "
+                             "event, for sweeping a whole keyboard")
     args = parser.parse_args()
 
     paths = event_devices(args.vid, args.pid)
@@ -80,6 +83,7 @@ def main() -> int:
 
     deadline = time.monotonic() + args.seconds
     presses = 0
+    distinct = {}
 
     while True:
         remaining = deadline - time.monotonic()
@@ -94,16 +98,41 @@ def main() -> int:
             if etype != EV_KEY:
                 continue
             presses += 1
-            action = ACTIONS.get(value, str(value))
-            print(f"  {streams[stream]}  keycode {code}  {action}")
+            if value == 1:
+                distinct[code] = distinct.get(code, 0) + 1
+            if not args.quiet:
+                action = ACTIONS.get(value, str(value))
+                print(f"  {streams[stream]}  keycode {code}  {action}")
+            elif value == 1:
+                # Enough to watch progress across a hundred keys without a
+                # hundred lines of it.
+                print(f"\r  {len(distinct)} distinct keys so far", end="",
+                      flush=True)
 
-    if presses:
-        print(f"\n{presses} key event(s). The firmware delivers keystrokes.")
-        return 0
+    if args.quiet:
+        print()
 
-    print("\nNo key events. Either no key was pressed, or they are not "
-          "arriving.")
-    return 1
+    if not presses:
+        print("\nNo key events. Either no key was pressed, or they are not "
+              "arriving.")
+        return 1
+
+    print(f"\n{presses} key event(s), {len(distinct)} distinct keys.")
+    print("  " + " ".join(str(code) for code in sorted(distinct)))
+
+    # A key that reports twice as often as its neighbours is a key being read
+    # twice, which is what a settle time still too short looks like once every
+    # key works at all.
+    if len(distinct) > 1:
+        counts = sorted(distinct.values())
+        median = counts[len(counts) // 2]
+        noisy = [c for c, n in sorted(distinct.items()) if n > 3 * median]
+        if noisy:
+            print("\n  pressed far more often than the rest, which is worth a "
+                  "look: " + " ".join(str(c) for c in noisy))
+
+    print("\nThe firmware delivers keystrokes.")
+    return 0
 
 
 if __name__ == "__main__":
