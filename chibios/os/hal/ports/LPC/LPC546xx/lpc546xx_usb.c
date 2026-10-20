@@ -215,28 +215,40 @@ void lpc_usb_clock_init(void) {
   SYSCON->PDRUNCFGCLR[1] = SYSCON_PDRUNCFG_PDEN_USB1_PHY_MASK;
 
   /*
-   * And then a handshake that exists in no document.
+   * And then the step without which none of the above matters: route the port
+   * to the device controller.
    *
-   * The firmware that works on this keyboard enables the USB1 *host*
-   * controller's clock, spins until USB1CLKSTAT's HOST_NEED_CLKST clears, and
-   * switches the host clock off again -- on a device that is never a host.
-   * It is at 0x000128ec in Heracles_Application_Firmware_v0.35.288, the first
-   * thing their USB bring-up does after powering the transceiver.
+   * This part has one high-speed port and two controllers behind it, and which
+   * one it is wired to is decided by PORTMODE's DEV_ENABLE -- a register in the
+   * *host* controller's block. Out of reset the port belongs to the host. A
+   * device driver can set DEV_EN, assert DCON and configure every endpoint it
+   * likes, and none of it reaches the wire, because the wire is not connected
+   * to it. That is exactly how this firmware behaved: the device controller
+   * accepted everything and the transceiver never reported bus power.
    *
-   * It is not decoration. Read on a part running this firmware without it,
-   * USB1CLKSTAT is 0x3 -- both the device and the host side asking for a clock
-   * -- where the working firmware runs at 0x1. Performing the handshake here
-   * takes it to 0x0.
+   * Which also explains the host clock below. PORTMODE lives in the host
+   * controller's register block and cannot be written while that block is
+   * unclocked, so the clock goes on for the one write and off again. The
+   * waiting on USB1CLKSTAT in between is what the stock firmware does, and it
+   * is presumably the block reporting itself ready to be addressed.
    *
-   * Bounded, because the loop's exit condition is a bit whose meaning is known
+   * All of it is read from Heracles_Application_Firmware_v0.35.288 at
+   * 0x000128ec, which is the first thing their USB bring-up does after
+   * powering the transceiver. None of it appears in NXP's SDK.
+   *
+   * The wait is bounded: its exit condition is a bit whose meaning is known
    * only from the code that waits on it.
    */
   SYSCON->AHBCLKCTRLSET[2] = SYSCON_AHBCLKCTRL_USB1H_MASK;
+
   for (uint32_t spin = 0U; spin < USB1_HOST_CLOCK_SPINS; spin++) {
     if ((SYSCON->USB1CLKSTAT & SYSCON_USB1CLKSTAT_HOST_NEED_CLKST_MASK) == 0U) {
       break;
     }
   }
+
+  USBHSH->PORTMODE = USBHSH_PORTMODE_DEV_ENABLE_MASK;
+
   SYSCON->AHBCLKCTRLCLR[2] = SYSCON_AHBCLKCTRL_USB1H_MASK;
 }
 
