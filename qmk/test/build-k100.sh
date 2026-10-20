@@ -120,6 +120,8 @@ git -C "$qmk" apply --whitespace=nowarn \
     "$repo/qmk/patches/0001-mcu-selection-lpc546xx.patch"
 git -C "$qmk" apply --whitespace=nowarn \
     "$repo/qmk/patches/0002-main-loop-checkpoints.patch"
+git -C "$qmk" apply --whitespace=nowarn \
+    "$repo/qmk/patches/0003-eeprom-lpc546xx.patch"
 
 # ChibiOS proper, not Contrib: port_init() enables the DWT cycle counter
 # unconditionally, and this keyboard's debug block is not accessible to
@@ -150,6 +152,8 @@ echo "placing the QMK platform support and the keyboard"
 cp -r "$repo/qmk/platforms/chibios/vendors/LPC" "$qmk/platforms/chibios/vendors/"
 cp -r "$repo/qmk/platforms/chibios/boards/GENERIC_LPC_LPC54605" \
       "$qmk/platforms/chibios/boards/"
+cp "$repo/qmk/platforms/chibios/drivers/eeprom/"* \
+   "$qmk/platforms/chibios/drivers/eeprom/"
 cp -r "$repo/qmk/drivers/led/issi/." "$qmk/drivers/led/issi/"
 mkdir -p "$qmk/keyboards/$keyboard"
 cp -r "$repo/qmk/keyboards/$keyboard/." "$qmk/keyboards/$keyboard/"

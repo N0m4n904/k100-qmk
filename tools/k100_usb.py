@@ -48,6 +48,19 @@ def device(vid: str = VENDOR, pid: str = PRODUCT) -> Path | None:
     return None
 
 
+def hidraw_nodes(entry: Path) -> list[Path]:
+    """Every /dev/hidraw this device offers, in interface order.
+
+    Which one carries which protocol is not written down anywhere the host can
+    read, so this returns them all and leaves the caller to ask.
+    """
+    found = []
+    for interface in sorted(entry.glob(f"{entry.name}:*")):
+        for hidraw in sorted(interface.glob("*/hidraw/hidraw*")):
+            found.append(Path("/dev") / hidraw.name)
+    return found
+
+
 def identity(entry: Path | None) -> tuple[str, str]:
     """The firmware version and product string the device reports right now."""
     if entry is None:

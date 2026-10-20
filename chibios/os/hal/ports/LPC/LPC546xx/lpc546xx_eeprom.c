@@ -110,10 +110,12 @@ void lpcEepromStart(void) {
      asserts, and the only symptom is that lpcEepromWrite() spins out its bound
      and reports failure.
 
-     That was not a hypothetical. Both of this firmware's routes back to the
-     bootloader go through one EEPROM write, this register was never touched,
-     and so neither route had ever worked -- which is how the keyboard twice
-     ended up running, invisible on the bus and unable to hand itself back. */
+     That was not a hypothetical. The keyboard this driver was written for had
+     its routes back to the bootloader going through one EEPROM write, this
+     register was never touched, and so no write had ever taken -- which is how
+     it twice ended up running, invisible on the bus and unable to hand itself
+     back. Those routes no longer use the EEPROM at all, for a different reason
+     recorded in docs/recovery.md, but the trap is the cell's and remains. */
   EEPROM->PWRDWN = 0U;
 
   /* The cell needs time to come up before it is addressed, and this runs on a

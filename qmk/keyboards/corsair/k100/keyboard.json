@@ -18,7 +18,8 @@
         "extrakey": true,
         "mousekey": false,
         "nkro": true,
-        "rgb_matrix": false
+        "rgb_matrix": false,
+        "via": true
     },
     "usb": {
         "vid": "0x1B1C",

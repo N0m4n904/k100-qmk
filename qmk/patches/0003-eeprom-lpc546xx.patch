@@ -1,0 +1,25 @@
+--- a/builddefs/common_features.mk
++++ b/builddefs/common_features.mk
+@@ -242,6 +242,10 @@
+           # True EEPROM on STM32L0xx, L1xx
+           OPT_DEFS += -DEEPROM_DRIVER -DEEPROM_STM32_L0_L1
+           SRC += eeprom_driver.c eeprom_stm32_L0_L1.c
++        else ifneq ($(filter $(MCU_SERIES),LPC546xx),)
++          # True EEPROM on the LPC546xx
++          OPT_DEFS += -DEEPROM_DRIVER -DEEPROM_LPC546XX
++          SRC += eeprom_driver.c eeprom_lpc546xx.c
+         else ifneq ($(filter $(MCU_SERIES),RP2040),)
+           # Wear-leveling EEPROM implementation, backed by RP2040 flash
+           OPT_DEFS += -DEEPROM_DRIVER -DEEPROM_WEAR_LEVELING
+--- a/platforms/eeprom.h
++++ b/platforms/eeprom.h
+@@ -51,6 +51,9 @@
+ #elif defined(EEPROM_STM32_L0_L1)
+ #    include "eeprom_stm32_L0_L1.h"
+ #    define TOTAL_EEPROM_BYTE_COUNT (STM32_ONBOARD_EEPROM_SIZE)
++#elif defined(EEPROM_LPC546XX)
++#    include "eeprom_lpc546xx.h"
++#    define TOTAL_EEPROM_BYTE_COUNT (LPC546XX_ONBOARD_EEPROM_SIZE)
+ #elif defined(EEPROM_KINETIS_FLEXRAM)
+ #    include "eeprom_kinetis_flexram.h"
+ #    define TOTAL_EEPROM_BYTE_COUNT (EEPROM_SIZE)
