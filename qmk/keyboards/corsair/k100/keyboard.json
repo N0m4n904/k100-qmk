@@ -18,7 +18,7 @@
         "extrakey": true,
         "mousekey": false,
         "nkro": true,
-        "rgb_matrix": false,
+        "rgb_matrix": true,
         "via": true
     },
     "usb": {
@@ -27,7 +27,7 @@
         "device_version": "0.0.1"
     },
     "rgb_matrix": {
-        "driver": "custom",
+        "driver": "is31fl3743b",
         "layout": [
             {
                 "matrix": [

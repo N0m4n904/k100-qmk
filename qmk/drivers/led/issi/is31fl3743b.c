@@ -66,7 +66,15 @@ void is31fl3743b_init_drivers(void) {
     }
 
     /* Scaling is what bounds each channel's current, so it has to reach the
-       drivers before anything is lit. */
+       drivers before anything is lit -- and it has to be given a value first.
+       Resetting a driver leaves its buffer zeroed, and zero is not a dimmer
+       setting, it is no current at all: the PWM values arrive, the transfers
+       complete, and the keyboard stays dark. Full scale throughout is what the
+       stock firmware writes. */
+    for (uint8_t i = 0; i < IS31FL3743B_LED_COUNT; i++) {
+        is31fl3743b_set_scaling_register(i, 0xFF, 0xFF, 0xFF);
+    }
+
     for (uint8_t i = 0; i < IS31FL3743B_DRIVER_COUNT; i++) {
         is31fl3743b_update_scaling_registers(i);
     }
@@ -84,6 +92,8 @@ void is31fl3743b_init(uint8_t index) {
 
     memset(&pwm_buffers[index], 0, sizeof(pwm_buffers[index]));
     memset(&scaling_buffers[index], 0, sizeof(scaling_buffers[index]));
+
+    is31fl3743b_write_register(index, IS31FL3743B_PAGE_FUNCTION, IS31FL3743B_REG_UNDOCUMENTED, IS31FL3743B_UNDOCUMENTED_VALUE);
 
     is31fl3743b_write_register(index, IS31FL3743B_PAGE_FUNCTION, IS31FL3743B_REG_CONFIGURATION, IS31FL3743B_CONFIGURATION);
 }

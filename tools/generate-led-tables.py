@@ -14,6 +14,7 @@ tools/k100_firmware.py for the reader.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -32,8 +33,20 @@ HEADER = """// Copyright 2026 k100-qmk contributors
 """
 
 
-def emit_channel_table(firmware: Firmware, image_name: str) -> str:
-    leds = firmware.leds()
+def emit_channel_table(firmware: Firmware, image_name: str, placed: int) -> str:
+    """The table, as far as the keyboard definition places LEDs.
+
+    The firmware knows more LEDs than the definition has positions for: the
+    light strips are in its map and are not in ckb-next's grid, which is where
+    the positions come from. QMK sizes both tables by the same count, so a
+    table longer than the layout does not build -- and inventing coordinates
+    for the rest to make it build would put them somewhere no measurement says
+    they are.
+
+    Both generators order by the same LED index, so the ones with positions are
+    the first @p placed of them.
+    """
+    leds = [led for led in firmware.leds() if led.index < placed]
 
     lines = [HEADER.format(page=PWM_PAGE_SIZE, image=image_name)]
     lines.append('#include "is31fl3743b.h"\n')
@@ -73,10 +86,19 @@ def main(argv: list[str]) -> int:
     chips = sorted({led.chip for led in leds})
     rgb = sum(1 for led in leds if led.is_rgb)
 
+    # The count belongs to the keyboard definition, which is the thing QMK
+    # sizes the RGB matrix from. Taking it from there rather than repeating it
+    # here is what keeps the two tables from drifting apart.
+    definition = json.loads((args.out / "keyboard.json").read_text())
+    placed = len(definition["rgb_matrix"]["layout"])
+
     target = args.out / "is31fl3743b_leds.c"
-    target.write_text(emit_channel_table(firmware, args.image.name))
+    target.write_text(emit_channel_table(firmware, args.image.name, placed))
 
     print(f"{len(leds)} LEDs across {len(chips)} drivers: {rgb} RGB, {len(leds) - rgb} single colour")
+    if len(leds) > placed:
+        print(f"{len(leds) - placed} of them have no position in keyboard.json "
+              f"and are left out; see docs/pin-mapping.md on the LED counts")
     print(f"written     {target}")
 
     # The channel table is only meaningful if no two LEDs claim one channel, and

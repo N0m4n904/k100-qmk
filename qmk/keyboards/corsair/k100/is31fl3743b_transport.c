@@ -16,11 +16,16 @@
  * at flash 0x30052, which reads 0, 1, 2 -- so driver n is on SSEL n. See
  * docs/pin-mapping.md.
  *
- * What is *not* known is which pins carry those signals. The application
- * firmware configures no Flexcomm pins at all, so the bootloader must, and the
- * bootloader is not published. Reading IOCON back from this firmware answers
- * it; until then this driver configures no pins, and on real hardware will only
- * work if whatever ran before it left them muxed.
+ * Which pins carry those signals is still not written down anywhere, and this
+ * driver still configures none -- but it no longer has to hope. IOCON was read
+ * back over SWD under Corsair's bootloader and under this firmware, and port 0
+ * is identical in both: the bootloader mixes the bus before it hands over, and
+ * nothing here disturbs it. The pins arrive muxed.
+ *
+ * The clock agrees from both ends as well. The bootloader leaves Flexcomm 3
+ * dividing its source by four, and this port's SPI driver selects the main
+ * clock and asks for the 12 MHz above -- which on a 48 MHz main clock is the
+ * same divider, and so the same bus speed the stock firmware uses.
  */
 
 #include "is31fl3743b_transport.h"

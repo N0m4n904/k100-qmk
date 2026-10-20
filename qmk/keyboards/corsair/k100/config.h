@@ -17,7 +17,7 @@
  * the tables are still compiled.
  */
 #ifndef RGB_MATRIX_IS31FL3743B
-#    define IS31FL3743B_LED_COUNT 190
+#    define IS31FL3743B_LED_COUNT 174
 #endif
 
 #define IS31FL3743B_DRIVER_COUNT 3

@@ -53,6 +53,25 @@
 /** @brief Written to the reset register to restore defaults. */
 #define IS31FL3743B_RESET_MAGIC 0xAE
 
+/**
+ * @brief   A function register the stock firmware writes, and this one must.
+ *
+ * @details Its purpose is not identified. It is reproduced because leaving it
+ *          out was one of the reasons this keyboard stayed dark with every
+ *          other part of the path demonstrably working, and because the I2C
+ *          sibling's global current control -- the register that decides
+ *          whether any current flows at all -- sits at `0x01`, which the stock
+ *          firmware never writes. A part whose current control had moved would
+ *          explain both.
+ *
+ *          The stock firmware writes `0xC0` or `0x80` depending on a flag.
+ *          The lower is reproduced: if this is a current control then that is
+ *          the gentler of the two, and if it is not, it is still one of the
+ *          two states their firmware puts the part in.
+ */
+#define IS31FL3743B_REG_UNDOCUMENTED 0x25
+#define IS31FL3743B_UNDOCUMENTED_VALUE 0x80
+
 #if defined(RGB_MATRIX_IS31FL3743B)
 #    define IS31FL3743B_LED_COUNT RGB_MATRIX_LED_COUNT
 #endif
