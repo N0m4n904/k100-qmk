@@ -1,0 +1,140 @@
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.h
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.h
+@@ -345,12 +345,45 @@
+   ((usbp)->epc[ep]->out_state->rxcnt)
+ 
+ /**
++ * @brief   The bits of @p DEVCMDSTAT that a write of one clears.
++ *
++ * @details @p DCON_C, @p DSUS_C and @p DRES_C record that the device was
++ *          connected, suspended or reset, and @p SETUP that a SETUP token
++ *          arrived. Each stands until software acknowledges it.
++ */
++#define USB_DEVCMDSTAT_LATCHED_MASK                                         \
++  (USB_DEVCMDSTAT_DCON_C | USB_DEVCMDSTAT_DSUS_C |                          \
++   USB_DEVCMDSTAT_DRES_C | USB_DEVCMDSTAT_SETUP)
++
++/**
++ * @brief   Writes @p DEVCMDSTAT without discarding a latched event.
++ *
++ * @details A read-modify-write of this register reads the latched bits back as
++ *          ones and writes them, which is what clears them. Every such write
++ *          therefore throws away whichever connect, suspend, reset or SETUP
++ *          was waiting to be read -- the events that tell the driver a host is
++ *          there. Masking them off first makes a write leave them standing,
++ *          and makes naming one in @p set the way to acknowledge it.
++ *
++ * @param[in] clear     bits to clear
++ * @param[in] set       bits to set, and latched events to acknowledge
++ *
++ * @notapi
++ */
++static inline void usb_lld_devcmdstat_write(uint32_t clear, uint32_t set) {
++  const uint32_t kept =
++    LPC_USB->DEVCMDSTAT & ~(USB_DEVCMDSTAT_LATCHED_MASK | clear);
++
++  LPC_USB->DEVCMDSTAT = kept | set;
++}
++
++/**
+  * @brief   Connects the USB device.
+  *
+  * @api
+  */
+ #define usb_lld_connect_bus(usbp)                                           \
+-  (LPC_USB->DEVCMDSTAT |= USB_DEVCMDSTAT_DCON)
++  usb_lld_devcmdstat_write(0U, USB_DEVCMDSTAT_DCON)
+ 
+ /**
+  * @brief   Disconnect the USB device.
+@@ -358,7 +391,7 @@
+  * @api
+  */
+ #define usb_lld_disconnect_bus(usbp)                                        \
+-  (LPC_USB->DEVCMDSTAT &= ~USB_DEVCMDSTAT_DCON)
++  usb_lld_devcmdstat_write(USB_DEVCMDSTAT_DCON, 0U)
+ 
+ /**
+  * @brief   Start of host wake-up procedure.
+@@ -366,7 +399,7 @@
+  * @notapi
+  */
+ #define usb_lld_wakeup_host(usbp)                                           \
+-  (LPC_USB->DEVCMDSTAT &= ~USB_DEVCMDSTAT_DSUP)
++  usb_lld_devcmdstat_write(USB_DEVCMDSTAT_DSUP, 0U)
+ 
+ /*===========================================================================*/
+ /* External declarations.                                                    */
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+@@ -295,6 +295,11 @@
+ 
+   if (isr & USB_INT_DEV_INT) {
+     if (devstat & USB_DEVCMDSTAT_DSUS_C) {
++      /* Acknowledged before the state is acted on. Left standing it would
++         re-enter this branch on every later device interrupt, deciding each
++         time from whatever DSUP happens to read then. */
++      usb_lld_devcmdstat_write(0U, USB_DEVCMDSTAT_DSUS_C);
++
+       if (devstat & USB_DEVCMDSTAT_DCON) {
+         if (devstat & USB_DEVCMDSTAT_DSUP) {
+           // Suspend
+@@ -307,7 +312,7 @@
+     }
+ 
+     if (devstat & USB_DEVCMDSTAT_DRES_C) {
+-      LPC_USB->DEVCMDSTAT |= USB_DEVCMDSTAT_DRES_C;
++      usb_lld_devcmdstat_write(0U, USB_DEVCMDSTAT_DRES_C);
+       _usb_reset(usbp);
+     }
+   } // USB_INT_DEV_INT
+@@ -433,7 +438,7 @@
+       nvicDisableVector(LPC_USB_IRQ_NUMBER);
+       LPC_USB->INTEN = 0;
+       lpc_usb_power_off();
+-      LPC_USB->DEVCMDSTAT &= ~USB_DEVCMDSTAT_DEV_EN;
++      usb_lld_devcmdstat_write(USB_DEVCMDSTAT_DEV_EN, 0U);
+     }
+ #endif
+   }
+@@ -489,7 +494,7 @@
+   usbp->epc[0] = &ep0config;
+   usb_lld_init_endpoint(usbp, 0);
+ 
+-  LPC_USB->DEVCMDSTAT |= USB_DEVCMDSTAT_DEV_EN; // USB Start Running
++  usb_lld_devcmdstat_write(0U, USB_DEVCMDSTAT_DEV_EN); // USB Start Running
+ }
+ 
+ /**
+@@ -500,9 +505,10 @@
+  * @notapi
+  */
+ void usb_lld_set_address(USBDriver *usbp) {
+-  LPC_USB->DEVCMDSTAT  &= ~USB_DEVCMDSTAT_DEVADDR_MASK;
+-  LPC_USB->DEVCMDSTAT  |= (USB_DEVCMDSTAT_DEV_EN |
+-  (usbp->address & USB_DEVCMDSTAT_DEVADDR_MASK));
++  /* One write, so the device never sits at address zero in between. */
++  usb_lld_devcmdstat_write(USB_DEVCMDSTAT_DEVADDR_MASK,
++                           USB_DEVCMDSTAT_DEV_EN |
++                           (usbp->address & USB_DEVCMDSTAT_DEVADDR_MASK));
+ }
+ 
+ /**
+@@ -651,7 +657,7 @@
+       /* Check/Clear STALL on both EP0 IN and OUT when SETUP is received. */
+       USB_EPLIST->entry[0] &= ~(EPLIST_ENTRY_STALL | EPLIST_ENTRY_ACTIVE); // EP0OUT
+       USB_EPLIST->entry[2] &= ~(EPLIST_ENTRY_STALL | EPLIST_ENTRY_ACTIVE); // EP0IN
+-      LPC_USB->DEVCMDSTAT |= USB_DEVCMDSTAT_SETUP; // Clear SETUP
++      usb_lld_devcmdstat_write(0U, USB_DEVCMDSTAT_SETUP); // Clear SETUP
+       memcpy(buf, usbp->setup_buffer, 8);
+       USB_EPLIST->entry[1] = EPLIST_ADDR(usbp->setup_buffer);
+     }
+@@ -683,7 +689,7 @@
+     EPLIST_ADDR(usbp->epn_buffer[ep * 2]);
+ 
+   if (ep == 0)
+-    LPC_USB->DEVCMDSTAT |= USB_DEVCMDSTAT_INTONNAK_CO;
++    usb_lld_devcmdstat_write(0U, USB_DEVCMDSTAT_INTONNAK_CO);
+ }
+ 
+ /**

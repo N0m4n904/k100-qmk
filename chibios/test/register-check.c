@@ -224,7 +224,8 @@ void lpc546xx_usb_compat_check(void) {
   /* The nine registers the driver touches that this part has. INTROUTING is
      absent here, which is the one thing the shared driver needs guarded. */
   LPC_USB->DEVCMDSTAT = USB_DEVCMDSTAT_DEV_EN | USB_DEVCMDSTAT_SETUP |
-                        USB_DEVCMDSTAT_DCON | USB_DEVCMDSTAT_DRES_C |
+                        USB_DEVCMDSTAT_DCON | USB_DEVCMDSTAT_DCON_C |
+                        USB_DEVCMDSTAT_DRES_C |
                         USB_DEVCMDSTAT_DSUS_C | USB_DEVCMDSTAT_INTONNAK_CO |
                         USB_DEVCMDSTAT_DSUP |
                         (1U & USB_DEVCMDSTAT_DEVADDR_MASK);

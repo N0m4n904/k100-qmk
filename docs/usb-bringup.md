@@ -272,14 +272,24 @@ inference.
 
 **`DEVCMDSTAT` is written with read-modify-write throughout.** The register
 carries write-one-to-clear status bits — `DCON_C` at 24, `DSUS_C` at 25,
-`DRES_C` at 26 — and NXP's driver masks them off before every write. A `|=`
-reads them back as one and writes them, clearing them. This silently discards
-connect, suspend and reset events, which are exactly what tells the driver a
-host is there.
+`DRES_C` at 26, and `SETUP` at 8 — and NXP's driver masks them off before every
+write. A `|=` reads them back as one and writes them, clearing them. This
+silently discards connect, suspend, reset and SETUP events, which are exactly
+what tells the driver a host is there.
 
-That is a real defect and worth fixing on its own account. It does not explain
-the current symptom, because it concerns software noticing the bus rather than
-the transceiver driving it.
+It does not explain the symptom this investigation was chasing, because it
+concerns software noticing the bus rather than the transceiver driving it, but
+it is a real defect. `0010-devcmdstat-latched-bits.patch` fixes it: every write
+to the register goes through `usb_lld_devcmdstat_write()`, which masks the
+latched bits off first, so a write leaves them standing and naming one is how
+it gets acknowledged.
+
+Reading the register closely for that patch turned up a second defect beside
+it. **`DSUS_C` was never acknowledged at all.** The handler tests it, decides
+between suspend and wakeup from the live `DSUP` bit, and leaves the latch set —
+so every later device interrupt re-enters that branch and decides again from
+whatever `DSUP` reads at the time. The patch acknowledges it before acting on
+it.
 
 **`FORCE_NEEDCLK` is never set.** NXP sets it unless low-power mode is
 configured. **Tested on the part and refuted**: with the bit set the controller
