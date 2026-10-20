@@ -23,19 +23,16 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+
+from k100_usb import OURS, PRODUCT, VENDOR, identity  # noqa: E402
+
 # struct input_event on a 64-bit kernel: two longs of timestamp, then the type,
 # code and value.
 EVENT = struct.Struct("qqHHi")
 
 EV_KEY = 0x01
 ACTIONS = {0: "release", 1: "press", 2: "repeat"}
-
-# Corsair's bootloader presents a working keyboard of its own, under the same
-# vendor and product id. Keys arriving therefore prove only that something is
-# scanning the matrix, and a whole sweep can be collected from firmware that
-# died minutes earlier. This is the one field that tells the two apart, so
-# every reading here is reported against it. See docs/recovery.md.
-OUR_VERSION = "0001"
 
 
 def keyboard(vid: str, pid: str) -> tuple[Path | None, list[Path]]:
@@ -57,19 +54,10 @@ def keyboard(vid: str, pid: str) -> tuple[Path | None, list[Path]]:
     return device, found
 
 
-def identity(device: Path) -> tuple[str, str]:
-    """The firmware version and product string the device reports right now."""
-    try:
-        return ((device / "bcdDevice").read_text().strip(),
-                (device / "product").read_text().strip())
-    except OSError:
-        return ("", "gone from the bus")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--vid", default="1b1c", help="USB vendor id, hex")
-    parser.add_argument("--pid", default="1b7c", help="USB product id, hex")
+    parser.add_argument("--vid", default=VENDOR, help="USB vendor id, hex")
+    parser.add_argument("--pid", default=PRODUCT, help="USB product id, hex")
     parser.add_argument("--seconds", type=float, default=30.0,
                         help="how long to listen")
     parser.add_argument("--quiet", action="store_true",
@@ -174,7 +162,7 @@ def main() -> int:
               f"nothing about either.")
         return 1
 
-    if after[0] != OUR_VERSION:
+    if after[0] != OURS:
         print(f"\nThese keystrokes came from bcdDevice {after[0]}, which is "
               f"not this project's firmware. Corsair's bootloader types too.")
         return 1

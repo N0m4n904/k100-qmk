@@ -257,10 +257,32 @@ things:
 1. writes the mode to **word index 2 of the EEPROM**, and
 2. arms a 10 ms timer whose callback is an inlined `NVIC_SystemReset` at `0x1556c`.
 
-That is the whole mechanism. **The mode lives in EEPROM, and the chip soft-resets into the
-bootloader, which reads it back.** The consequence that matters: any firmware that can write
-that EEPROM word can enter the bootloader. It does **not** require Corsair's application, the
-Bragi protocol, or a working USB stack.
+That is the whole mechanism as the stock application performs it. The consequence drawn from
+it here was that any firmware able to write that EEPROM word can enter the bootloader, without
+Corsair's application, the Bragi protocol or a working USB stack.
+
+### That consequence is wrong — tested
+
+`Fn+Esc` was run on this firmware with the bus watched at 20 ms
+(`tools/watch-bootloader-route.py`). The keyboard **left the bus and came back as itself**,
+`bcdDevice 0.01`, 0.67 s later.
+
+The reset is therefore not in doubt, and neither is the write. `k100_enter_bootloader()`
+resets only after writing the mode word *and* reading it back, so a reset happening at all
+means both succeeded. The bootloader then started this firmware anyway.
+
+So writing word 2 and soft-resetting is **not sufficient**, and the route this project has
+been treating as its escape hatch does not work. What the bootloader keys on is still open.
+Two things are known about its side of it:
+
+- It does read that array. The function at `0x1664` takes a word index, range-checks it
+  against 31, and loads from `0x40000000 + 0x108000 + index * 4` — a computed address, which
+  is why searching the dump for a literal `0x40108000` finds nothing.
+- Read over SWD after the attempt, words 0 to 7 of the array were all zero. That reading is
+  not conclusive on its own, because nothing had clocked the EEPROM since the reset.
+
+Until this is understood, **SWD remains the only proven way back** from firmware that does not
+speak Bragi: erase sector 2 and reset. See [`swd/README.md`](../swd/README.md).
 
 ### Bootloader mode does not survive a power cycle — tested
 
