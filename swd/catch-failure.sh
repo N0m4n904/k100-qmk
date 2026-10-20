@@ -59,6 +59,7 @@ HALT_REQUIRED=no
 
 # The watchdog block, from the part's memory map. TC is the constant the counter
 # reloads from, TV the counter, and the two FEED writes are what reloads it.
+WWDT_MOD=0x4000C000
 WWDT_TC=0x4000C004
 WWDT_FEED=0x4000C008
 WWDT_TV=0x4000C00C
@@ -113,6 +114,7 @@ resume=(-c "catch {resume}")
 # The session halts the part once at the start, so the state in OpenOCD's own
 # target table says nothing about how the window ended. These markers do.
 CAUGHT="the firmware stopped feeding its watchdog"
+RESET="the part reset instead of stalling"
 RAN="still feeding when the window ended"
 
 # Reading memory does not need the core stopped, so the counter can be sampled
@@ -131,8 +133,17 @@ watch_tcl="
     set now [clock seconds]
     if {\$tv < \$floor} {
       halt
-      echo \"$CAUGHT after [expr {\$now - \$started}] s (counter at \$tv)\"
-      set caught 1
+      # A reset restores the timeout constant the bootloader uses, so the
+      # constant says which of the two happened. Without this a part that
+      # reset reads as a counter that fell, and the registers then describe
+      # the bootloader rather than the firmware that was being watched.
+      if {[lindex [read_memory $WWDT_TC 32 1] 0] != \$tc} {
+        echo \"$RESET, after [expr {\$now - \$started}] s\"
+        set caught 2
+      } else {
+        echo \"$CAUGHT after [expr {\$now - \$started}] s (counter at \$tv)\"
+        set caught 1
+      }
       break
     }
     # A line every few seconds, so a counter that never reloads at all is
@@ -144,6 +155,12 @@ watch_tcl="
   }
   if {\$caught == 0} {
     echo \"$RAN\"
+  } elseif {\$caught == 2} {
+    # Whatever is halted now is whatever the reset started, so its registers
+    # describe that and not the firmware. WDTOF is the one thing worth reading
+    # here: set, and the watchdog did it; clear, and something else did.
+    echo {WWDT->MOD, whose bit 2 is set when the last reset was the watchdog:}
+    echo [mdw $WWDT_MOD 1]
   } else {
     foreach r {pc lr sp xpsr basepri primask control} { echo [reg \$r] }
     echo [mdw 0xE000ED24 7]
@@ -169,6 +186,14 @@ log=$(swd_run \
         -c "targets" \
         ${resume[@]+"${resume[@]}"} || true)
 printf '%s\n' "$log"
+
+if [[ $log == *"$RESET"* ]]; then
+    echo
+    echo "The part reset rather than stalling, and with the watchdog stretched"
+    echo "that was not a missed feed. Read the MOD word above: bit 2 set means"
+    echo "the watchdog did it after all, clear means something else did."
+    exit 0
+fi
 
 [[ $log == *"$CAUGHT"* ]] || {
     echo

@@ -37,9 +37,19 @@ and that fits where it stops: an endpoint completion is exactly what wakes a
 thread from the USB interrupt handler and so asks for the reschedule that never
 finishes.
 
-That is a lead rather than a result. It has not been tested by typing on
-purpose with the catcher attached, which is the next thing to do and costs one
-run.
+**Confirmed by typing on purpose with the catcher attached.** Started by a
+hardware reset and typed on, with `VTOR` reading `0x00010400` throughout so it
+is this firmware and not the bootloader:
+
+```
+   5 s, counter 0xffff63      fed on every pass
+  10 s, counter 0xff0281      already a quarter-second into the stall
+  11 s                        halted, at pc 0x00010694
+```
+
+So the next place to look is narrower than the whole reschedule path: what the
+USB interrupt handler does on an endpoint completion, and what it leaves the
+scheduler holding when it hands over.
 
 ## What it is not
 
@@ -124,10 +134,25 @@ ssh <programmer> sudo swd/catch-failure.sh --seconds 150
 It halts the part in the act and prints the registers above, and says how long
 it took. An idle keyboard can run the whole window; type during it.
 
+## A trap in measuring it
+
+A run that looked like a stall was a reset: the part had already restarted, and
+the registers read out described Corsair's bootloader — `VTOR` zero, a stack at
+`0x20028000`, a program counter nowhere near this image. The watchdog counter
+had fallen below the threshold not because a loop stopped feeding it but
+because the constant it reloads from went back to the bootloader's on reset.
+
+`catch-failure.sh` now re-reads that constant when it triggers. A constant that
+is no longer the one it set means the part reset, and it says so instead of
+printing registers that belong to something else. Two readings in this document
+were taken before that check existed; both have `VTOR` at `0x00010400`, which
+is what makes them this firmware's.
+
 ## Where to look next
 
 The question is narrow: why does the exception return from `SVC_Handler` come
 back to the instruction after the `svc` instead of to the context ChibiOS
-arranged. Reading the process stack around `sp` at the moment of the hang, and
-comparing the frame there against the 104 bytes the handler skips, answers it
-directly and has not been done yet.
+arranged, and it is now known to happen on endpoint traffic. Reading the
+process stack around `sp` at the moment of the hang, and comparing the frame
+there against the 104 bytes the handler skips, answers it directly and has not
+been done yet — `catch-failure.sh --peek` takes the reads.
