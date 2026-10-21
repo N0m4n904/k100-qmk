@@ -43,29 +43,3 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         /* P1_25 */ KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS
     ),
 };
-
-#ifdef RGB_MATRIX_ENABLE
-/*
- * Which icon is which, asked of the keyboard.
- *
- * The six status LEDs above the keys are single-colour -- one channel each, so
- * they are on or off and nothing else -- and nothing in Corsair's LED map says
- * which printed icon sits on which. Colour cannot carry the answer, so time
- * does: each is lit alone for a second and a half, in index order from 173,
- * with a dark gap before the sequence repeats so that the start can be told.
- *
- * Replaced by the real mapping once the order is read off the keyboard.
- */
-bool rgb_matrix_indicators_kb(void) {
-    static const uint8_t status[] = {173, 174, 175, 176, 177, 178};
-
-    const uint8_t step = (timer_read32() / 1500U) % (ARRAY_SIZE(status) + 1U);
-
-    for (uint8_t i = 0; i < ARRAY_SIZE(status); i++) {
-        const uint8_t level = (i == step) ? 255 : 0;
-        rgb_matrix_set_color(status[i], level, level, level);
-    }
-
-    return true;
-}
-#endif

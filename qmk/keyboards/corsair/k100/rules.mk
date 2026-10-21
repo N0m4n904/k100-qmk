@@ -11,6 +11,10 @@ SRC += matrix.c
 SRC += is31fl3743b_transport.c
 SRC += is31fl3743b_leds.c
 
+# The six status icons. Keyboard level rather than keymap: which LED carries
+# which printed icon is a property of the board, not a preference.
+SRC += indicators.c
+
 # The way back to Corsair's bootloader. Not optional: QMK does not speak Bragi,
 # so without this the first custom image written to the keyboard is the last
 # one. keyboard.json declares `bootloader: custom`, which gives QMK's weak
