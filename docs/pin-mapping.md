@@ -404,6 +404,34 @@ reg=0x25  bytes=0x80        the flag register, whose value is 0x80 and not 0xC0
 
 The same run settled the `0x25` value, which static reading could only give as one of two.
 
+### The LED bus, identified at the pins
+
+Sampling GPIO port 0 while each firmware runs, and counting how often each pin reads high,
+identifies the bus without a logic analyser. A mode-0 clock rests low and pulses high; a chip
+select rests high and dips low; data follows its content. Under Corsair's firmware, lighting
+the keyboard, 600 samples:
+
+| Pin | High | What it is |
+| --- | --- | --- |
+| `P0_0` | 2/600 | SCK |
+| `P0_3` | 522/600 | MOSI |
+| `P0_1` | 599/600 | chip select |
+| `P0_7` | 598/600 | chip select |
+| `P0_9` | 599/600 | chip select |
+| `P0_13` | 552/600 | an open-drain output it pulses; purpose unknown |
+| `P0_8`, `P0_29` | held high | the enables, which this firmware now holds high too |
+
+Under this firmware the same pins move, with one exception: **`P0_13` never moves at all**,
+4000 samples out of 4000 high. It is the only pin the stock firmware works that this one does
+not, and it is the next thing to chase.
+
+The other difference in those counts is explained and is not a fault. Only one chip select was
+seen to assert here, which looked like two drivers never being addressed -- but a breakpoint on
+the transport shows all three addressed during initialisation, and afterwards only driver 2.
+QMK sends a driver's page only when a colour in it changed, and the effect in use is a static
+one, so after the first frame there is nothing to send. Sparse bus activity is the correct
+behaviour, not a symptom.
+
 ### Where the lighting stands
 
 It does not light. Every layer below it has been compared against Corsair's own firmware while
