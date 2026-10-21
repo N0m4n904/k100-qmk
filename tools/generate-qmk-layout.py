@@ -34,13 +34,18 @@ from k100_firmware import (  # noqa: E402
 # QMK keycodes for the keys that have no HID usage code of their own.
 #
 # G1-G6 use F13-F18, the conventional stand-in since QMK has no macro-key standard, and are
-# trivially remapped in VIA. `profswitch` and `lock` have no QMK equivalent at all and need
-# custom keycodes once their purpose is decided.
+# trivially remapped in VIA.
+#
+# `lock` is the Windows lock key the manual names, between the iCUE wheel and the macro keys,
+# and GU_TOGG is QMK's own version of it: it suppresses the GUI keys, which is what the key is
+# for and what the Win Lock icon above the keys reports. `profswitch` cycles the profiles the
+# stock firmware stores on the keyboard, which this one has no equivalent of, so it has no
+# keycode until it is given a purpose.
 NON_HID_KEYCODES = {
     "g1": "KC_F13", "g2": "KC_F14", "g3": "KC_F15",
     "g4": "KC_F16", "g5": "KC_F17", "g6": "KC_F18",
     "fn": "MO(1)",
-    "profswitch": "KC_NO", "lock": "KC_NO",
+    "profswitch": "KC_NO", "lock": "GU_TOGG",
     "mute": "KC_MUTE", "ctrlwheelb": "KC_MUTE",
     "stop": "KC_MSTP", "prev": "KC_MPRV", "play": "KC_MPLY", "next": "KC_MNXT",
 }
@@ -58,8 +63,13 @@ ENCODERS = [
 # no vendor interface left to flash the keyboard through -- the keymap is one of the three ways
 # back to Corsair's bootloader, and the only one a user can reach deliberately while the
 # keyboard is working. See qmk/keyboards/corsair/k100/bootloader.c.
+#
+# Fn+Backspace clears the settings QMK keeps in the part's EEPROM. Those outlive a reflash,
+# which is the point of keeping them and also means a changed default here reaches a keyboard
+# that has never had settings written, and no other.
 FN_OVERRIDES = {
     (0, 1): "QK_BOOT",
+    (1, 14): "EE_CLR",
 }
 
 LED_FLAG_UNDERGLOW = 0x02
@@ -285,6 +295,12 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {{
     // Fn layer, pass-through except for the overrides below, until the hardware is
     // understood. Fn+Esc is QK_BOOT: see bootloader.c for why a route back to Corsair's
     // bootloader is a requirement rather than a convenience.
+    //
+    // Fn+Backspace clears the settings QMK keeps in the part's EEPROM, which is the only
+    // way back to the defaults compiled in here once something has been stored over them.
+    // It is not a convenience either: the stored settings outlive a reflash, so a new
+    // default -- a colour, a mode, a brightness -- has no effect on a keyboard that has
+    // ever had one written.
     [1] = LAYOUT_k100_iso_de(
 {layer(True)}
     ),
