@@ -81,15 +81,25 @@
  *          firmware never writes. A part whose current control had moved would
  *          explain both.
  *
- *          The static reading of the stock firmware found it writing `0xC0`
- *          or `0x80` from a flag. Read off the running keyboard while it was
- *          lit, the value is `0x80`, so that is what is written here. The
- *          guess that the other one might be the one that mattered was wrong,
- *          and the measurement that settled it also turned up the global
- *          current register above, which is what was actually missing.
+ *          The flag the stock firmware sets it from is **which driver it is**.
+ *          Its whole initialisation, read off the running keyboard, gives the
+ *          first two drivers `0x80` and the last one `0xC0` -- which is what a
+ *          static reading could only report as "one of two values".
+ *
+ *          One of a set differing from the rest is what a sync arrangement
+ *          looks like: these parts can take their scan timing from one of
+ *          their number, and a set in which every one is told to follow has
+ *          nobody leading. Nothing would light however correct the colours
+ *          are, which is the symptom this driver had.
+ *
+ *          A keyboard with a different arrangement defines its own.
  */
 #define IS31FL3743B_REG_UNDOCUMENTED 0x25
-#define IS31FL3743B_UNDOCUMENTED_VALUE 0x80
+
+#ifndef IS31FL3743B_UNDOCUMENTED_VALUES
+#    define IS31FL3743B_UNDOCUMENTED_VALUES \
+        { 0x80, 0x80, 0xC0 }
+#endif
 
 #if defined(RGB_MATRIX_IS31FL3743B)
 #    define IS31FL3743B_LED_COUNT RGB_MATRIX_LED_COUNT

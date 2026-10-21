@@ -17,10 +17,27 @@
  * the tables are still compiled.
  */
 #ifndef RGB_MATRIX_IS31FL3743B
-#    define IS31FL3743B_LED_COUNT 174
+#    define IS31FL3743B_LED_COUNT 179
 #endif
 
 #define IS31FL3743B_DRIVER_COUNT 3
+
+/*
+ * Settings QMK has already stored outlive a reflash, which is the point of
+ * storing them -- and means a changed default here reaches a keyboard that has
+ * never had settings written, and no other. Leaving it at that would make
+ * every default change a manual reset on every keyboard that has ever run.
+ *
+ * QMK's answer is this number: a keyboard whose stored copy does not carry it
+ * initialises its settings once, from the defaults compiled in. So it moves
+ * whenever a default below or in keyboard.json does, and it moves *downwards*,
+ * which is the convention QMK's own definition asks for so that a later
+ * upstream value cannot collide with one chosen here.
+ *
+ * 0xFEE3 is upstream's. This is the first step down from it, taken when the
+ * default lighting became white.
+ */
+#define EECONFIG_MAGIC_NUMBER (uint16_t)0xFEE2
 
 /* Temporary: USB bring-up diagnostic, see bootloader.c. */
 /*

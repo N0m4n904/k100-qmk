@@ -26,9 +26,15 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     // Fn layer, pass-through except for the overrides below, until the hardware is
     // understood. Fn+Esc is QK_BOOT: see bootloader.c for why a route back to Corsair's
     // bootloader is a requirement rather than a convenience.
+    //
+    // Fn+Backspace clears the settings QMK keeps in the part's EEPROM, which is the only
+    // way back to the defaults compiled in here once something has been stored over them.
+    // It is not a convenience either: the stored settings outlive a reflash, so a new
+    // default -- a colour, a mode, a brightness -- has no effect on a keyboard that has
+    // ever had one written.
     [1] = LAYOUT_k100_iso_de(
         /* P1_18 */ KC_TRNS, QK_BOOT, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,
-        /* P1_19 */ KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,
+        /* P1_19 */ KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, EE_CLR , KC_TRNS, KC_TRNS, KC_TRNS,
         /* P1_20 */ KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,
         /* P1_21 */ KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,
         /* P1_22 */ KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,
@@ -37,3 +43,29 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         /* P1_25 */ KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS
     ),
 };
+
+#ifdef RGB_MATRIX_ENABLE
+/*
+ * Which icon is which, asked of the keyboard.
+ *
+ * The six status LEDs above the keys are single-colour -- one channel each, so
+ * they are on or off and nothing else -- and nothing in Corsair's LED map says
+ * which printed icon sits on which. Colour cannot carry the answer, so time
+ * does: each is lit alone for a second and a half, in index order from 173,
+ * with a dark gap before the sequence repeats so that the start can be told.
+ *
+ * Replaced by the real mapping once the order is read off the keyboard.
+ */
+bool rgb_matrix_indicators_kb(void) {
+    static const uint8_t status[] = {173, 174, 175, 176, 177, 178};
+
+    const uint8_t step = (timer_read32() / 1500U) % (ARRAY_SIZE(status) + 1U);
+
+    for (uint8_t i = 0; i < ARRAY_SIZE(status); i++) {
+        const uint8_t level = (i == step) ? 255 : 0;
+        rgb_matrix_set_color(status[i], level, level, level);
+    }
+
+    return true;
+}
+#endif

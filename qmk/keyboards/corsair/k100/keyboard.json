@@ -28,6 +28,15 @@
     },
     "rgb_matrix": {
         "driver": "is31fl3743b",
+        "animations": {
+            "solid_color": true
+        },
+        "default": {
+            "animation": "solid_color",
+            "hue": 0,
+            "sat": 0,
+            "val": 255
+        },
         "layout": [
             {
                 "matrix": [
@@ -1373,7 +1382,32 @@
             {
                 "x": 120,
                 "y": 10,
-                "flags": 2
+                "flags": 0
+            },
+            {
+                "x": 120,
+                "y": 10,
+                "flags": 0
+            },
+            {
+                "x": 120,
+                "y": 10,
+                "flags": 0
+            },
+            {
+                "x": 120,
+                "y": 10,
+                "flags": 0
+            },
+            {
+                "x": 120,
+                "y": 10,
+                "flags": 0
+            },
+            {
+                "x": 120,
+                "y": 10,
+                "flags": 0
             }
         ]
     },

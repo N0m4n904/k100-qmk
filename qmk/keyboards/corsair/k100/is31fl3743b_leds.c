@@ -187,4 +187,9 @@ const is31fl3743b_led_t PROGMEM g_is31fl3743b_leds[IS31FL3743B_LED_COUNT] = {
     [171] = {2, 138, 139, 140},
     [172] = {2, 156, 157, 158},
     [173] = {2, 174, 174, 174},  // single colour
+    [174] = {2, 175, 175, 175},  // single colour
+    [175] = {2, 176, 176, 176},  // single colour
+    [176] = {2, 192, 192, 192},  // single colour
+    [177] = {2, 193, 193, 193},  // single colour
+    [178] = {2, 194, 194, 194},  // single colour
 };
