@@ -119,6 +119,8 @@ git -C "$contrib" apply --whitespace=nowarn \
     "$repo/chibios/patches/0012-endpoint-memory-granules.patch"
 git -C "$contrib" apply --whitespace=nowarn \
     "$repo/chibios/patches/0013-completed-out-transfer-is-not-an-error.patch"
+git -C "$contrib" apply --whitespace=nowarn \
+    "$repo/chibios/patches/0014-disable-endpoints-with-entry-bits.patch"
 git -C "$qmk" init -q .
 git -C "$qmk" apply --whitespace=nowarn \
     "$repo/qmk/patches/0001-mcu-selection-lpc546xx.patch"

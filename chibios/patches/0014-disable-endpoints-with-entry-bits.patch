@@ -1,0 +1,27 @@
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+@@ -617,12 +617,20 @@
+   LPC_USB->INTEN &= (~USB_INT_EP_ALL_INT) | USB_INT_EP(0) | USB_INT_EP(1);
+   { uint32_t spins = USB_EPSKIP_SPINS;
+     while ((LPC_USB->EPSKIP != 0U) && (spins-- > 0U)) {} }
++  /* The entry's own bits, not ChibiOS's endpoint status enum. EP_STATUS_ACTIVE
++     is 2 and EP_STATUS_DISABLED is 0, so what stood here cleared bit 1 of the
++     buffer address and then set nothing at all: every endpoint came out of
++     this still enabled, pointing two granules below its own buffer. Where that
++     landed on another endpoint's buffer the two shared it, and an endpoint
++     reading its neighbour's bytes is a fault with no bad value anywhere to
++     find -- the entry is well formed, the address is inside endpoint memory,
++     and only the arithmetic that produced it was wrong. */
+   for (int i = 1; i < 5; ++i) // 4 EPs needs to be disabled, EP0 can't
+   {
+-    USB_EPLIST->entry[i * 4] &= ~EP_STATUS_ACTIVE;
+-    USB_EPLIST->entry[i * 4] |= EP_STATUS_DISABLED;
+-    USB_EPLIST->entry[i * 4 + 2] &= ~EP_STATUS_ACTIVE;
+-    USB_EPLIST->entry[i * 4 + 2] |= EP_STATUS_DISABLED;
++    USB_EPLIST->entry[i * 4] &= ~EPLIST_ENTRY_ACTIVE;
++    USB_EPLIST->entry[i * 4] |= EPLIST_ENTRY_DISABLE;
++    USB_EPLIST->entry[i * 4 + 2] &= ~EPLIST_ENTRY_ACTIVE;
++    USB_EPLIST->entry[i * 4 + 2] |= EPLIST_ENTRY_DISABLE;
+   }
+ }
+ 
