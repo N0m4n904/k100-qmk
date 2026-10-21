@@ -1,0 +1,28 @@
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+@@ -810,6 +810,17 @@
+   { uint32_t spins = USB_EPSKIP_SPINS;  // Wait for not active, but not forever
+     while (((LPC_USB->EPSKIP & skip_flag) != 0U) && (spins-- > 0U)) {} }
+   USB_EPLIST->entry[ep*4] &= ~EPLIST_ENTRY_STALL;
++
++  /* Clearing a halt also returns the endpoint's data toggle to DATA0. The
++     specification requires it of the device, and the host resets its own at
++     the same moment, so a device that leaves its toggle where it stood
++     disagrees with the host from the very next packet.
++
++     A toggle the two ends disagree about is invisible from the registers: the
++     entry is active, the length is right, the buffer address is right, and the
++     packets are simply not taken. There is nothing to read that is wrong. The
++     bit existed here and was never used. */
++  USB_EPLIST->entry[ep*4] |= EPLIST_ENTRY_TOGGLE_RESET;
+ }
+ 
+ /**
+@@ -830,6 +841,7 @@
+   { uint32_t spins = USB_EPSKIP_SPINS;  // Wait for not active, but not forever
+     while (((LPC_USB->EPSKIP & skip_flag) != 0U) && (spins-- > 0U)) {} }
+   USB_EPLIST->entry[ep * 4 + 2] &= ~EPLIST_ENTRY_STALL;
++  USB_EPLIST->entry[ep * 4 + 2] |= EPLIST_ENTRY_TOGGLE_RESET;
+ }
+ 
+ #endif /* HAL_USE_USB == TRUE */
