@@ -1,0 +1,35 @@
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+@@ -288,15 +288,27 @@
+ 
+   USB_EPLIST->entry[4 * ep] &= ~(0x3FFFFFF | EPLIST_ENTRY_STALL | EPLIST_ENTRY_ACTIVE);
+   if (osp->rxsize > 0) {
+-    // ReSetup for recieve
++    /* More of this transfer still to come, so take the next packet into the
++       same buffer. */
+     USB_EPLIST->entry[4 * ep] |= EPLIST_ENTRY_NBYTES(epcp->out_maxsize) |
+       EPLIST_ADDR(usbp->epn_buffer[ep * 2]) | EPLIST_ENTRY_ACTIVE;
+-  } else {
+-    if (ep != 0) {
+-      USB_EPLIST->entry[4 * ep] |= EPLIST_ENTRY_STALL;
+-    }
+   }
+ 
++  /* A finished transfer leaves the entry inactive, and that is the whole of
++     it. The endpoint then answers NAK, which is what USB flow control is for:
++     NAK tells the host to come back, and it does, until the completion
++     callback has handed the data on and armed the next receive.
++
++     This raised STALL instead. STALL does not mean "busy"; it means the
++     endpoint is halted and stays halted until the host clears the condition.
++     So the first packet a host sent to an OUT endpoint was also the last one
++     it could send, and every attempt after it failed against an endpoint whose
++     entry still read as correctly configured -- active, right length, right
++     buffer -- which is why the fault looks like the host's. Endpoint zero was
++     excluded from the branch and so was spared, and that is the shape of it on
++     a keyboard: the LED report is a control transfer and worked, while a
++     vendor interface on an interrupt OUT endpoint answered exactly once. */
++
+   return n;
+ }
+ 
