@@ -291,41 +291,97 @@ so every later device interrupt re-enters that branch and decides again from
 whatever `DSUP` reads at the time. The patch acknowledges it before acting on
 it.
 
-### The interrupt OUT endpoint has never worked
+### The interrupt OUT endpoint, and what it took to make it answer
 
 No OUT endpoint was used on this driver until VIA was turned on: keystrokes
 only go outwards, and the host's LED state arrives as a control transfer. VIA's
-raw HID interface is the first to need both directions, and it does not answer.
+raw HID interface is the first to need both directions.
 
-What the measurements say, and what they rule out:
+**It answers now.** Read off the keyboard, against values taken independently
+out of its EEPROM:
 
-- **Control transfers with a data stage work.** With Num Lock on, the firmware's
-  own `usb_device_state.leds` reads `0x01`. So the failure is not every transfer
-  that carries data towards the device.
-- **The firmware arms the endpoint correctly.** The entry reads `0x80010008`:
-  active, 32 bytes. Its interrupt is enabled in `INTEN`, `EPINUSE` and
-  `EPBUFCFG` are both zero, and the device is connected and addressed.
-- **The controller never takes the packet.** Every host write ends in
-  `ETIMEDOUT` and the entry's active bit is still set afterwards.
-- **The two directions of that interface share a buffer.** The IN entry and the
-  OUT entry both carry offset 8, which the entry format cannot distinguish --
-  it stores an address divided by 64.
+```
+01           ->  01 00 0d                 protocol version 13
+04 00 07 02  ->  04 00 07 02 70 0b        row 7 column 2 is the Windows lock key
+04 00 03 02  ->  04 00 03 02 00 04        row 3 column 2 is A
+```
 
-`0012-endpoint-memory-granules.patch` makes that impossible for two successive
-reservations: every one takes a whole granule, including a reservation of
-nothing, which is ordinary here because QMK configures each direction
-separately and gives the unused one a maximum packet size of zero.
+Three faults stood in the way, all in the shared LPC USB driver and all on the
+path no keyboard had exercised before.
 
-**It did not change the layout**, which is the useful part of the result. The
-two entries are therefore not two successive reservations. `usb_lld_reset()`
-restarts the allocator and QMK re-initialises endpoints on every configuration
-event, so the likely reading is that these entries were written in different
-rounds, and one kept an address a later round handed to someone else. That is a
-hypothesis, not a measurement, and it is where the next session starts.
+**The driver halted the endpoint for having received something.** On a
+completed transfer `usb_packet_receive()` raised STALL, and cleared it again
+when the next receive was armed. STALL does not mean "busy"; it means the
+endpoint is halted until the host clears the condition. Endpoint zero was
+excluded from the branch, which is why the LED report -- the one OUT transfer a
+plain keyboard receives -- was unaffected. Fixed in
+`0013-completed-out-transfer-is-not-an-error.patch`.
 
-**`FORCE_NEEDCLK` is never set.** NXP sets it unless low-power mode is
-configured. **Tested on the part and refuted**: with the bit set the controller
-still receives nothing, and `USB1CLKSTAT` does not change.
+**`usb_lld_disable_endpoints()` used ChibiOS's status enum as a bit layout.**
+`EP_STATUS_ACTIVE` is 2 and `EP_STATUS_DISABLED` is 0, so it cleared bit 1 of
+the buffer address and then set nothing. Fixed in
+`0014-disable-endpoints-with-entry-bits.patch`. This is where the shared buffer
+below comes from.
+
+**Clearing a halt never reset the data toggle.** The specification requires the
+device to return the toggle to DATA0, and the host resets its own at the same
+moment. `EPLIST_ENTRY_TOGGLE_RESET` was defined in the driver and used nowhere.
+Fixed in `0015-clearing-a-halt-resets-the-toggle.patch`.
+
+An earlier reading of this said *the controller never takes the packet*, on the
+grounds that every write ends in `ETIMEDOUT` and the entry's active bit is
+still set afterwards. **That was wrong**, and wrong in the direction that costs
+the most: the entry is re-armed by the time it can be read, and the keyboard's
+reply proves the packet arrived. Counters compiled into the driver settle it --
+one interrupt and 32 bytes per write, and a reply queued on the IN endpoint.
+
+### What is still wrong
+
+**The host never registers the acknowledgement.** Every write fails for it --
+`ETIMEDOUT`, or `EPROTO`, which in Linux includes *no response packet received
+within the prescribed bus turn-around time* -- while the keyboard takes the
+packet and answers it. So the device advances its data toggle and the host does
+not, and from the next packet onwards the two disagree.
+
+The disagreement was read directly out of the controller: `EPTOGGLE` is zero
+after a restart and `0x60` after one exchange, bit 6 being this endpoint. It is
+also where the fault hides, because a toggle the two ends disagree about is
+invisible in every other register -- the entry is active, the length and
+address are right, nothing is stalled and nothing is skipped.
+
+Setting the toggle-reset bit in the entry over SWD, which changes only the
+keyboard's side, makes the very next exchange work. That is what proves the
+host is still at DATA0 and never saw an acknowledgement.
+
+Ruled out by measurement, each on the running part:
+
+- **Not the host's HID path.** usbdevfs transfers, with the kernel driver
+  detached, fail exactly as hidraw does.
+- **Not control transfers in general.** A `SET_REPORT` carrying one byte is
+  accepted and acknowledged.
+- **Not the arming size.** Arming the endpoint for 64 bytes instead of 32
+  changes nothing.
+- **Not the shared buffer.** The two directions of the interface did come out
+  of the allocator holding the same offset, but pointing the OUT endpoint at an
+  unused one changes nothing. It remains a defect worth fixing on its own.
+- **Not the endpoint being refused outright.** Corsair declare their own vendor
+  OUT endpoint as interrupt too, at 1024 bytes, and ckb-next writes to it.
+
+**The open lead is double buffering.** Corsair's bootloader, measured on this
+silicon while it was running, has `EPBUFCFG = 0x0ffc`: every endpoint buffer
+except endpoint zero's is double buffered, and its list carries populated
+second-buffer entries. This driver leaves `EPBUFCFG` at zero and has no notion
+of the second buffer at all.
+
+That fits what the host sees. A single-buffered endpoint that has just taken a
+packet has nowhere to put the next one, and the high-speed answer for *taken,
+but not ready for another* is NYET -- which is legal for bulk and control and
+not for interrupt, and which a host reports as a protocol error. With the
+second buffer free the controller has no reason to send it.
+
+It could not be settled by poking registers: the firmware re-arms only the
+first buffer, and `EPINUSE` has to be tracked by whoever owns both. Supporting
+double buffering properly is a driver change, and it is where this goes next.
 
 ### Confirmed by reading Corsair's code
 
