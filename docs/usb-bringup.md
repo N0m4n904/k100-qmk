@@ -367,21 +367,64 @@ Ruled out by measurement, each on the running part:
 - **Not the endpoint being refused outright.** Corsair declare their own vendor
   OUT endpoint as interrupt too, at 1024 bytes, and ckb-next writes to it.
 
-**The open lead is double buffering.** Corsair's bootloader, measured on this
-silicon while it was running, has `EPBUFCFG = 0x0ffc`: every endpoint buffer
-except endpoint zero's is double buffered, and its list carries populated
-second-buffer entries. This driver leaves `EPBUFCFG` at zero and has no notion
-of the second buffer at all.
+**Double buffering was the best lead, and it is refuted.** Corsair's
+bootloader, measured on this silicon while it was running, has
+`EPBUFCFG = 0x0ffc`: every endpoint buffer except endpoint zero's is double
+buffered, and its list carries populated second-buffer entries. This driver
+leaves `EPBUFCFG` at zero and has no notion of the second buffer at all.
 
-That fits what the host sees. A single-buffered endpoint that has just taken a
-packet has nowhere to put the next one, and the high-speed answer for *taken,
-but not ready for another* is NYET -- which is legal for bulk and control and
-not for interrupt, and which a host reports as a protocol error. With the
-second buffer free the controller has no reason to send it.
+The reasoning fitted: a single-buffered endpoint that has just taken a packet
+has nowhere to put the next one, and the high-speed answer for *taken, but not
+ready for another* is NYET, which is legal for bulk and control and not for
+interrupt, and which a host reports as a protocol error.
 
-It could not be settled by poking registers: the firmware re-arms only the
-first buffer, and `EPINUSE` has to be tracked by whoever owns both. Supporting
-double buffering properly is a driver change, and it is where this goes next.
+**Tested and refuted.** Straight after a restart, before the firmware has
+received anything and so before it re-arms anything, `EPBUFCFG` was set for
+this endpoint and its second buffer entry armed at an address of its own. The
+write fails exactly as before. An earlier attempt at the same test looked
+different and was worthless: the firmware had overwritten the setup, and the
+reply that arrived was a stale one left over from an earlier exchange.
+
+**Also tested and refuted: the unused direction.** Corsair receive on endpoint
+1, whose IN direction carries the keyboard, so every endpoint number they use
+has both directions live. Ours has endpoint 3 OUT with endpoint 3 IN disabled.
+Taking that entry out of the disabled state changes nothing.
+
+**The packet size is the last structural difference and cannot be tested
+cheaply.** Theirs is 1024 bytes, ours 32. QMK's `raw_hid_receive()` takes its
+length in a `uint8_t`, so a build with a larger report does not compile without
+changing that too.
+
+### Why this is where measuring stops
+
+What the device answers -- ACK, NAK, NYET, STALL or nothing -- is not reported
+by the controller and not reported by the host. `usbmon` does not help: it
+records URB submissions and completions, so it returns the same error code that
+is already in hand, not the handshake that caused it. Seeing the handshake
+needs a hardware analyser on the bus.
+
+### The way out that does not need to see the bus
+
+One thing on this keyboard is known to work in this direction: **a control
+transfer carrying data**. `SET_REPORT` with a one-byte payload is accepted and
+acknowledged, tested three times in a row.
+
+That is also what Linux falls back to when an interface has **no OUT endpoint
+at all**: `usbhid_output_report()` returns `-ENOSYS` without an output URB, and
+hidraw then reissues the write as `SET_REPORT` over endpoint zero. So a VIA
+interface with only its IN endpoint would be written to over the path that
+works, and answered over the interrupt IN endpoint, which has never been in
+doubt.
+
+It needs two things: the OUT endpoint dropped from the raw interface's
+descriptor, and QMK taught to accept `HID_REQ_SetReport` for that interface --
+today it handles the request only for the keyboard interface, where it carries
+the lock lights. Both are ordinary changes; the second wants a patch under
+`qmk/patches/`.
+
+This is not a workaround dressed as a fix. An HID interface without an OUT
+endpoint is an ordinary shape, and the transfer type it uses is the one this
+controller demonstrably gets right.
 
 ### Confirmed by reading Corsair's code
 
