@@ -34,10 +34,20 @@
  * which is the convention QMK's own definition asks for so that a later
  * upstream value cannot collide with one chosen here.
  *
- * 0xFEE3 is upstream's. This is the first step down from it, taken when the
- * default lighting became white.
+ * **The keymap is one of those settings.** VIA is enabled, so the keymap the
+ * firmware reads is the one in EEPROM and the compiled keymaps[] is only what
+ * that copy was first seeded from -- keymap_key_to_keycode goes to
+ * dynamic_keymap_get_keycode, and a changed keycode in the keymap reaches a
+ * keyboard that already holds a stored copy exactly as little as a changed
+ * colour does. eeconfig_init_quantum() reseeds it through eeconfig_init_via(),
+ * so this number carries the keymap too, and forgetting to move it looks like
+ * a key that does nothing at all while every other part of the path measures
+ * correct.
+ *
+ * 0xFEE3 is upstream's. Moved down once when the default lighting became
+ * white, and again when the Windows lock key was given a keycode.
  */
-#define EECONFIG_MAGIC_NUMBER (uint16_t)0xFEE2
+#define EECONFIG_MAGIC_NUMBER (uint16_t)0xFEE1
 
 /* Temporary: USB bring-up diagnostic, see bootloader.c. */
 /*
