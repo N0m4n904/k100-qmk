@@ -41,12 +41,17 @@ from k100_firmware import (  # noqa: E402
 # for and what the Win Lock icon above the keys reports. `profswitch` cycles the profiles the
 # stock firmware stores on the keyboard, which this one has no equivalent of, so it has no
 # keycode until it is given a purpose.
+#
+# `ctrlwheelb` is the button in the middle of the iCUE wheel. It used to carry
+# KC_MUTE, which is what the mute key beside it already does -- two keys for one
+# thing, and nothing for the wheel. It now steps the lighting; see
+# qmk/keyboards/corsair/k100/lighting_profiles.c.
 NON_HID_KEYCODES = {
     "g1": "KC_F13", "g2": "KC_F14", "g3": "KC_F15",
     "g4": "KC_F16", "g5": "KC_F17", "g6": "KC_F18",
     "fn": "MO(1)",
     "profswitch": "KC_NO", "lock": "GU_TOGG",
-    "mute": "KC_MUTE", "ctrlwheelb": "KC_MUTE",
+    "mute": "KC_MUTE", "ctrlwheelb": "K100_RGB_PROFILE",
     "stop": "KC_MSTP", "prev": "KC_MPRV", "play": "KC_MPLY", "next": "KC_MNXT",
 }
 
@@ -290,10 +295,12 @@ def build_keyboard_json(placed: list[Key], all_keys: list[Key], leds: list[Led])
         "usb": {"vid": "0x1B1C", "pid": "0x1B7C", "device_version": "0.0.1"},
         "rgb_matrix": {
             "driver": "is31fl3743b",
-            # One effect. The others are not refused on principle -- none has
-            # been driven on this keyboard, and an animation a definition offers
-            # and nothing has run is a claim rather than a feature.
-            "animations": {"solid_color": True},
+            # The two the wheel button steps through, and no more. An
+            # animation a definition offers and nothing drives is a claim
+            # rather than a feature -- and the ones left out are the ones that
+            # read an LED's position, which this keyboard does not yet have
+            # right. See lighting_profiles.c on why the rainbow is CYCLE_ALL.
+            "animations": {"solid_color": True, "cycle_all": True},
             # White, full brightness. A stored default survives a reflash, so
             # changing this means moving EECONFIG_MAGIC_NUMBER too; that note
             # lives in the keyboard's config.h, beside the number.

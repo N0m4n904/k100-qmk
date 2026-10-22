@@ -15,6 +15,11 @@ SRC += is31fl3743b_leds.c
 # which printed icon is a property of the board, not a preference.
 SRC += indicators.c
 
+# The lighting the wheel button steps through. Keyboard level because the key
+# is one: the button in the middle of the wheel has no HID meaning to fall back
+# on, so without this it does nothing of its own.
+SRC += lighting_profiles.c
+
 # The way back to Corsair's bootloader. Not optional: QMK does not speak Bragi,
 # so without this the first custom image written to the keyboard is the last
 # one. keyboard.json declares `bootloader: custom`, which gives QMK's weak

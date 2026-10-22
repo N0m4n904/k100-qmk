@@ -5,6 +5,17 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/**
+ * @brief Keycodes this keyboard adds, for keys with no HID meaning of their own.
+ *
+ * In QMK's keyboard range, so VIA can remap them like any other and a keymap
+ * that wants the key to do something else is free to say so.
+ */
+enum k100_keycodes {
+    /** Steps the lighting through white, red and rainbow. See lighting_profiles.c. */
+    K100_RGB_PROFILE = QK_KB_0,
+};
+
 /*
  * Matrix internals shared with the bootloader-entry check.
  *
