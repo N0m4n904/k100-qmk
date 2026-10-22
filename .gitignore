@@ -20,3 +20,7 @@ tools/extract-ckb-keymap/extract-ckb-keymap
 # Python bytecode cache
 __pycache__/
 *.pyc
+
+# VIA's definition reader. The lock file is committed, so npm ci installs the
+# versions this was checked against.
+tools/via-definition-check/node_modules/

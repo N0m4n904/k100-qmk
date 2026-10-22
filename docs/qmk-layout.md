@@ -222,6 +222,28 @@ The generated files are checked structurally, not eyeballed:
 - the VIA definition carrying the identical position set and matrix dimensions as
   `keyboard.json`
 
+### The definition is checked with VIA's own reader
+
+Those checks are this project's. They say the definition agrees with the firmware; they do
+not say the application will take it. `@the-via/reader` is the package the application reads
+definitions with, so that question has an answer here rather than in front of an empty Design
+tab:
+
+```sh
+npm ci --prefix tools/via-definition-check
+node tools/via-definition-check/check.mjs
+```
+
+It applies the three gates the application applies -- the schema guard for the file, the
+transform, where the layout, the key bounds and the menus are checked, and the guard for the
+transformed form, which is what gets stored and read back -- and then prints the menu and the
+custom keycodes as the application will see them, with the numbers each control sends. A
+definition that is merely valid can still send the wrong number, so the numbers are the part
+worth reading.
+
+ajv's strict-mode warnings on the way past are about VIA's schema, not about this definition,
+and go to stderr.
+
 The generator also refuses to emit at all if a key lacks a QMK keycode or an LED index, if a
 HID code matches more or fewer than one geometry key, if a key would land at two matrix
 positions, or if the scanning keys missing from the matrix are anything other than the two

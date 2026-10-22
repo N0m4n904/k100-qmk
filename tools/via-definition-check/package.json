@@ -1,0 +1,9 @@
+{
+  "name": "k100-via-definition-check",
+  "private": true,
+  "description": "Checks the generated VIA definition with the reader the VIA application itself uses",
+  "type": "module",
+  "dependencies": {
+    "@the-via/reader": "1.14.4"
+  }
+}
