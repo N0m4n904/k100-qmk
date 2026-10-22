@@ -576,6 +576,53 @@ would settle it instead of testing guesses: reading the mapping off the hardware
 channel at a time from custom firmware and seeing which key lights. That is a few lines once
 anything runs, and it is the same answer as for the SPI pins and the encoders.
 
+#### Six of them have been read off the hardware
+
+That measurement has since been made, for the six single-colour LEDs. Lighting
+`LedInfoMap` indices 173 to 178 one at a time, a second and a half each, named them in order:
+
+| Index | Icon |
+| --- | --- |
+| 173 | Macro |
+| 174 | Mute |
+| 175 | Win Lock |
+| 176 | Num Lock |
+| 177 | Caps Lock |
+| 178 | Scroll Lock |
+
+The order matches the icons printed above the keys, left to right, and the manual's own list.
+`indicators.c` drives them by those indices.
+
+**It also shows the two index spaces do not correspond here.** ckb-next places a name at its
+own index 173 near the right-hand edge of the board; this firmware's index 173 is the Macro
+icon, in the middle of the top edge. So in this range the numbers are not two views of one
+thing, and pairing them by value is wrong rather than merely unverified.
+
+#### The two generated tables are not indexed alike
+
+Worth knowing before either is changed, because the code says the opposite.
+`emit_channel_table()` keys its entries `[led.index]` and its docstring reasons that *"both
+generators order by the same LED index, so the ones with positions are the first `placed` of
+them"*. They do not.
+
+- The **channel** table in `is31fl3743b_leds.c` is indexed by `LedInfoMap` index.
+- The **geometry** table in `rgb_matrix.layout` is dense over the LEDs ckb-next's geometry
+  places, in Bragi order.
+
+Measured against ckb-next: 19 of the indices this firmware declares below 190 are never
+placed -- 0, 1, 2, 3, 49, 103, 104, 112, 113, 115 to 121, 127, 129 and 130 -- and three names
+are placed at indices above 189, which this hardware does not have. So the two tables are
+offset against each other from the very first entry.
+
+What that costs today is **nothing visible**, and that is the trap. The only effect enabled is
+a single flat colour, under which an LED lighting in place of its neighbour cannot be seen,
+and the indicators are addressed by channel-table index rather than through the geometry. The
+first position-aware or key-reactive effect would show it everywhere at once.
+
+Closing it means deciding which index the geometry should carry, and that needs the rest of
+the mapping read off the hardware the way the six above were. Making the tables agree on a
+number without knowing the number is right would only move the error.
+
 ### `LedPresenceFlag` reconciles all three counts
 
 A third table settles it. `checkLedPresence` asserts `index < ELEMENTS(LedPresenceFlag)` with
