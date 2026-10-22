@@ -103,6 +103,13 @@ is the one where US has Z — labelled Y on a German board — and maps to `KC_Z
 labelling is a host-side concern; firmware sees positions. Only two things are genuinely
 physical about ISO here: the two extra keys (`KC_NUBS`, `KC_NUHS`) and the key shapes.
 
+The enter is the one key ckb-next cannot describe. An ISO enter is two rectangles -- 1.5 units
+wide in the row above, 1.25 in the row below, with the key beside it tucking under the
+overhang -- and `18x24` is the box around the pair, which is why the application drew a plain
+tall block. `hash` ends exactly 0.25 units inside that box, which is the overhang measured
+rather than assumed, and the VIA definition carries it as KLE's second rectangle. QMK's own
+layout has no such thing, and nothing in the firmware looks at a key's shape.
+
 ## RGB matrix
 
 The table is **190 entries long, one per LED in the firmware's own `LedInfoMap`**. QMK will
@@ -194,8 +201,10 @@ nothing. It would show under the first effect that reads a position.
   lighting through white, red and rainbow. It used to be `KC_MUTE`, which the mute key beside
   it already was.
 - **`lock`** is `GU_TOGG`: it suppresses the GUI keys, which is what the Windows Lock icon
-  above it reports. **`profswitch`** is `KC_NO` -- the profiles it switched belong to the
-  stock firmware, and this one has nothing equivalent to switch.
+  above it reports. **`profswitch`**, left of the wheel, is `K100_LIGHTS_TOGGLE`: the profiles
+  it switched belong to the stock firmware, and turning the lighting off and on is the nearest
+  thing this one has, beside the wheel that sets the brightness. It was `KC_NO`, which VIA
+  draws as a blank key.
 - **`fn`** is `MO(1)`. Layer 1 passes everything through except Fn+Esc, which is `QK_BOOT`,
   and Fn+Backspace, which is `EE_CLR`.
 

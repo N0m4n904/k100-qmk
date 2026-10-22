@@ -184,8 +184,12 @@
         "2,12",
         "2,13",
         {
-          "w": 1.5,
-          "h": 2.0
+          "x": 0.25,
+          "w": 1.25,
+          "h": 2.0,
+          "w2": 1.5,
+          "h2": 1,
+          "x2": -0.25
         },
         "3,14",
         {
@@ -354,6 +358,11 @@
       "name": "LED Profile",
       "title": "Steps the lighting through white, red and rainbow",
       "shortName": "LED"
+    },
+    {
+      "name": "Lights",
+      "title": "Turns the key lighting off and on, status icons included",
+      "shortName": "Light"
     }
   ],
   "menus": [

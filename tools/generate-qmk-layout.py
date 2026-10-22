@@ -39,8 +39,9 @@ from k100_firmware import (  # noqa: E402
 # `lock` is the Windows lock key the manual names, between the iCUE wheel and the macro keys,
 # and GU_TOGG is QMK's own version of it: it suppresses the GUI keys, which is what the key is
 # for and what the Win Lock icon above the keys reports. `profswitch` cycles the profiles the
-# stock firmware stores on the keyboard, which this one has no equivalent of, so it has no
-# keycode until it is given a purpose.
+# stock firmware stores on the keyboard, which this one has no equivalent of; it turns the
+# lighting off and on instead, which is the nearest thing the keyboard has to a profile and
+# sits beside the wheel that sets the brightness.
 #
 # `ctrlwheelb` is the button in the middle of the iCUE wheel. It used to carry
 # KC_MUTE, which is what the mute key beside it already does -- two keys for one
@@ -50,7 +51,7 @@ NON_HID_KEYCODES = {
     "g1": "KC_F13", "g2": "KC_F14", "g3": "KC_F15",
     "g4": "KC_F16", "g5": "KC_F17", "g6": "KC_F18",
     "fn": "MO(1)",
-    "profswitch": "KC_NO", "lock": "GU_TOGG",
+    "profswitch": "K100_LIGHTS_TOGGLE", "lock": "GU_TOGG",
     "mute": "KC_MUTE", "ctrlwheelb": "K100_RGB_PROFILE",
     "stop": "KC_MSTP", "prev": "KC_MPRV", "play": "KC_MPLY", "next": "KC_MNXT",
 }
@@ -70,6 +71,11 @@ CUSTOM_KEYCODE_LABELS = {
         "name": "LED Profile",
         "title": "Steps the lighting through white, red and rainbow",
         "shortName": "LED",
+    },
+    "K100_LIGHTS_TOGGLE": {
+        "name": "Lights",
+        "title": "Turns the key lighting off and on, status icons included",
+        "shortName": "Light",
     },
 }
 
@@ -144,6 +150,19 @@ QMK_MAX_X, QMK_MAX_Y = 224, 64
 
 # One key unit in ckb-next's 16ths-of-an-inch grid.
 UNIT = 12
+
+# The one key ckb-next cannot describe. An ISO enter is two rectangles, 1.5 units wide in the
+# row above and 1.25 in the row below, where the key beside it tucks under the overhang --
+# measured, not assumed: `hash` ends 0.25 units past where the enter's box begins. ckb-next
+# stores the box around the pair, which is why the application drew a plain tall block.
+#
+# KLE says it with a second rectangle. `indent` moves the key's own rectangle right to where
+# the narrow part starts, and `x2` reaches back out for the wide one. Keyed by ckb-next's
+# name, and only the VIA definition carries it: QMK's layout has no second rectangle, and
+# nothing in the firmware looks at a key's shape.
+L_SHAPED = {
+    "enter": {"indent": 0.25, "props": {"w": 1.25, "w2": 1.5, "h2": 1, "x2": -0.25}},
+}
 
 
 @dataclass
@@ -554,17 +573,21 @@ def build_via_json(placed: list[Key], keycodes: list[dict]) -> dict:
 
         cursor = 0.0
         for key in sorted(rows[row_y], key=lambda k: k.left):
+            shape = L_SHAPED.get(key.name)
             props = {}
-            gap = key.left / UNIT - cursor
+            gap = key.left / UNIT + (shape["indent"] if shape else 0.0) - cursor
             if abs(gap) > 0.001:
                 props["x"] = round(gap, 3)
             if abs(key.width / UNIT - 1) > 0.001:
                 props["w"] = round(key.width / UNIT, 3)
             if abs(key.height / UNIT - 1) > 0.001:
                 props["h"] = round(key.height / UNIT, 3)
+            if shape:
+                props.update(shape["props"])
             if props:
                 segment.append(props)
             segment.append(f"{key.matrix[0]},{key.matrix[1]}")
+            # Past the whole key, overhang included, not past its own rectangle.
             cursor = (key.left + key.width) / UNIT
         kle.append(segment)
 

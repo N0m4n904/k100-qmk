@@ -20,6 +20,9 @@
 enum k100_keycodes {
     /** Steps the lighting through white, red and rainbow. See lighting_profiles.c. */
     K100_RGB_PROFILE = QK_KB_0,
+
+    /** Turns the key lighting off and back on, status icons included. */
+    K100_LIGHTS_TOGGLE,
 };
 
 /*

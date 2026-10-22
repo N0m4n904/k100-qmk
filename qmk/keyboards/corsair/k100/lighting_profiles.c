@@ -72,6 +72,22 @@ static uint8_t next_profile(void) {
     return 0;
 }
 
+/*
+ * What the lighting was showing before it was turned off.
+ *
+ * The one thing this file does keep, and only because it cannot be read back:
+ * once the lighting is off, the mode that is showing *is* the off effect, and
+ * nothing anywhere remembers what it replaced. Mode zero never appears here --
+ * it is RGB_MATRIX_NONE, which this keyboard never selects, see
+ * rgb_matrix_kb.inc -- so it is free to mean "nothing remembered", and a press
+ * after a restart lands on the first profile instead.
+ *
+ * Deliberately not stored in EEPROM. The mode itself already is, so a keyboard
+ * that was off when it was unplugged comes back off, which is what was asked
+ * of it; what it came from is not worth a write on every press.
+ */
+static uint8_t before_off = 0;
+
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     if (keycode == K100_RGB_PROFILE && record->event.pressed) {
         const uint8_t          brightness = rgb_matrix_get_hsv().v;
@@ -79,6 +95,16 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
 
         rgb_matrix_sethsv(profile->hue, profile->sat, brightness);
         rgb_matrix_mode(profile->mode);
+        return false;
+    }
+
+    if (keycode == K100_LIGHTS_TOGGLE && record->event.pressed) {
+        if (rgb_matrix_get_mode() == RGB_MATRIX_CUSTOM_K100_LIGHTS_OFF) {
+            rgb_matrix_mode(before_off ? before_off : profiles[0].mode);
+        } else {
+            before_off = rgb_matrix_get_mode();
+            rgb_matrix_mode(RGB_MATRIX_CUSTOM_K100_LIGHTS_OFF);
+        }
         return false;
     }
 
