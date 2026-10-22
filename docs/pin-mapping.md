@@ -434,8 +434,10 @@ behaviour, not a symptom.
 
 ### Where the lighting stands
 
-It does not light. Every layer below it has been compared against Corsair's own firmware while
-that firmware was running and lighting the keyboard, and every one of them matches:
+**It lights.** 179 LEDs across the three drivers, solid white by default.
+
+Every layer below it had already been compared against Corsair's own firmware while that
+firmware was running and lighting the keyboard, and every one of them matched:
 
 | | Verified against the stock firmware |
 | --- | --- |
@@ -443,25 +445,33 @@ that firmware was running and lighting the keyboard, and every one of them match
 | Pin mux | IOCON port 0 identical under both |
 | Bus | `CFG 0x05`, `DLY 0`, `DIV 0`, `FCLKSEL 0` identical under both |
 | Frames | `0x52`/`0x51`/`0x50` headers, lengths 3 and 200, read out of both by breakpoint |
-| Function registers | `0x2F`←`0xAE`, `0x01`←`0xFF`, `0x25`←`0x80`, `0x00`←`0x09` |
+| Function registers | `0x2F`←`0xAE`, `0x01`←`0xFF`, `0x25`←per driver, `0x00`←`0x09` |
 | Scaling | `0xFF` throughout, read back out of the buffer |
 | Enable outputs | `P0_8` and `P0_29` high, as the stock firmware holds them |
 
-Four defects were found and fixed along the way, each of which alone keeps the keyboard dark
+Five defects were found and fixed along the way, each of which alone keeps the keyboard dark
 while every part of the path reports success: the two LED tables disagreeing on their length,
 the scaling page never being given a value, the global current register never being written,
-and both enable outputs being left low. None of them announced itself.
+both enable outputs being left low, and the function register at `0x25`. None of them
+announced itself.
 
-The enable outputs are the most recent and were the hardest to see: both firmwares configure
-the *same* outputs, and only the level differed. A comparison of GPIO directions -- which is
-the obvious comparison -- shows nothing.
+**`0x25` is not one value, it is one value per driver** -- and the row above used to say
+`0x80`, which is what a static reading could see. The flag the stock firmware writes it from
+is *which driver it is*: their whole initialisation, read off the running keyboard, gives the
+first two drivers `0x80` and the last one `0xC0`. One of a set differing from the rest is what
+a sync arrangement looks like. These parts can take their scan timing from one of their
+number, and a set in which every one is told to follow has nobody leading -- so nothing lights
+however correct the colours are, which was exactly the symptom. A keyboard with a different
+arrangement defines its own; see `IS31FL3743B_UNDOCUMENTED_VALUES`.
 
-What has not been compared yet is the one thing the bus cannot be asked about from the
-processor's side: whether the signals arrive. Flexcomm 3's own status says it transmits, but
-that is the peripheral's account of itself and not a measurement at the pins. The next step is
-to read the pins while a frame is being sent, or to break in the stock firmware's transport and
-compare the state of the whole Flexcomm block word for word at the moment of a transfer rather
-than at rest.
+The enable outputs were the hardest of the rest to see: both firmwares configure the *same*
+outputs, and only the level differed. A comparison of GPIO directions -- which is the obvious
+comparison -- shows nothing.
+
+Whether the signals arrive at the pins was never measured, and did not need to be. It was the
+open question while the keyboard was dark, on the grounds that Flexcomm 3's own status is the
+peripheral's account of itself rather than a measurement; the bus was telling the truth all
+along and the fault was in what was being sent.
 
 The page numbers and the reset magic match the IS31FL3743A, the I2C sibling QMK already drives,
 which is corroboration from an independent source: the two parts share the register model and
