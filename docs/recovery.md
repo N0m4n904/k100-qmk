@@ -502,6 +502,42 @@ particular would spin forever if the endpoint memory were not where the driver t
 Those are exactly the hangs the Escape route has to survive, and it does, because it has
 already run by then.
 
+### What the USB timeout must not do: fire when there is no host
+
+The third route hands the keyboard back to the bootloader when USB never becomes usable. It
+was armed by a clock that started at the first pass of the main loop, which made it fire
+whenever USB had not come up within the timeout -- and *no host yet* reads exactly the same
+as *USB broken* from inside the firmware.
+
+**Measured on a cold boot.** The motherboard powers the keyboard at the start of POST, long
+before the operating system reaches its USB stack. Ten seconds expired in between, so by the
+time the kernel enumerated anything the keyboard had already handed itself over. From the
+host's log, the first sighting after a restart:
+
+```
+usb 10-2: New USB device found, idVendor=1b1c, idProduct=1b7c, bcdDevice= 0.0a
+```
+
+`0.0a` is the bootloader; this firmware is `0.01`. It stayed there for two minutes, until a
+disconnect put it back on `0.01`. So the recovery path fired on every cold boot, and the
+keyboard the user was handed was Corsair's bootloader -- which types, which is why it looks
+like a working keyboard and took a kernel log to tell apart.
+
+**The clock now starts at a bus reset, not at boot.** `USB_DRIVER.state` reaching `USB_READY`
+is ChibiOS entering `_usb_reset()`, which only a host does. That separates the two cases the
+device cannot otherwise tell apart: a host that has reset us is present and talking, so
+failing to become configured after that is this firmware's fault and worth acting on, while a
+bus with nothing on it is not a fault at all.
+
+It is also the weaker claim that survives being wrong. Handing the keyboard to the bootloader
+with no host present achieves nothing anyway -- the bootloader exists to be reflashed by a
+host, and there is none. The timeout went to thirty seconds at the same time, because what is
+left to allow for is a host that resets the keyboard and then takes its time, and a firmware
+that is genuinely broken is broken from the first instant either way.
+
+The other two routes are untouched. A key held at power-on and `QK_BOOT` both still work, and
+neither depends on this.
+
 ### The near miss, and the rule that came out of it
 
 The firmware reached a state no tool in this project could reach: running
