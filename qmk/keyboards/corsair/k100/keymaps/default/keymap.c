@@ -7,8 +7,8 @@
 // is the electrical one. See docs/pin-mapping.md.
 //
 // Not in the matrix, because neither rotation is scanned:
-// iCUE dial: ctrlwheelccw / ctrlwheelcw -- rotation is not matrix-scanned; pins unknown
-// volume roller: voldn / volup -- rotation is not matrix-scanned; pins unknown
+// iCUE dial: ctrlwheelccw / ctrlwheelcw -- not scanned; encoder 0 on P1_28/P1_29
+// volume roller: voldn / volup -- not scanned; encoder 1 on P1_30/P1_31
 #include QMK_KEYBOARD_H
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {

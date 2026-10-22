@@ -161,13 +161,30 @@ class Key:
     led: int | None = None
     matrix: tuple[int, int] | None = field(default=None)
 
+    # ckb-next positions a key by its **centre**, which is what `x` and `y` are
+    # here. QMK's layout and KLE both position one by its top left corner, so
+    # the two have to be told apart: `cx`/`cy` for where the LED sits, and
+    # `left`/`top` for where the key starts.
+    #
+    # Read off the map rather than assumed: adjacent keys differ by half of
+    # both widths, not by the left one's. `lctrl` at 25 is 16 wide and `lwin`
+    # at 39 is 12, and 39 - 25 is 14, which is (16 + 12) / 2.
+
     @property
     def cx(self) -> float:
-        return self.x + self.width / 2
+        return float(self.x)
 
     @property
     def cy(self) -> float:
-        return self.y + self.height / 2
+        return float(self.y)
+
+    @property
+    def left(self) -> float:
+        return self.x - self.width / 2
+
+    @property
+    def top(self) -> float:
+        return self.y - self.height / 2
 
 
 def one_line(label: str) -> str:
@@ -315,8 +332,8 @@ def build_keyboard_json(placed: list[Key], all_keys: list[Key], leds: list[Led])
     layout = [
         {
             "matrix": list(key.matrix),
-            "x": round(key.x / UNIT, 2),
-            "y": round(key.y / UNIT, 2),
+            "x": round(key.left / UNIT, 2),
+            "y": round(key.top / UNIT, 2),
             "w": round(key.width / UNIT, 2),
             "h": round(key.height / UNIT, 2),
             "label": key.label,
@@ -393,8 +410,9 @@ def build_keymap_c(placed: list[Key]) -> str:
         return "\n".join(lines).rstrip(",")
 
     encoders = "\n".join(
-        f"// {label}: {ccw} / {cw} -- rotation is not matrix-scanned; pins unknown"
-        for label, ccw, cw, *_ in ENCODERS
+        f"// {label}: {ccw} / {cw} -- not scanned; encoder {index} on {a}/{b}"
+        for index, ((label, ccw, cw, *_), (a, b))
+        in enumerate(zip(ENCODERS, ENCODER_PINS))
     )
 
     return f"""// Copyright 2026 k100-qmk contributors
@@ -519,9 +537,12 @@ def custom_keycodes(header: Path) -> list[dict]:
 
 def build_via_json(placed: list[Key], keycodes: list[dict]) -> dict:
     """VIA v3 definition. The keymap is KLE, emitted with explicit per-row offsets."""
+    # By the top edge, not the centre: a key two units tall shares its top with
+    # the row it starts in and its centre with nothing, and grouping by the
+    # centre puts the ISO enter in a row of its own.
     rows: dict[float, list[Key]] = {}
     for key in placed:
-        rows.setdefault(key.y / UNIT, []).append(key)
+        rows.setdefault(key.top / UNIT, []).append(key)
 
     kle: list = []
     previous_y = None
@@ -532,9 +553,9 @@ def build_via_json(placed: list[Key], keycodes: list[dict]) -> dict:
         previous_y = row_y
 
         cursor = 0.0
-        for key in sorted(rows[row_y], key=lambda k: k.x):
+        for key in sorted(rows[row_y], key=lambda k: k.left):
             props = {}
-            gap = key.x / UNIT - cursor
+            gap = key.left / UNIT - cursor
             if abs(gap) > 0.001:
                 props["x"] = round(gap, 3)
             if abs(key.width / UNIT - 1) > 0.001:
@@ -544,7 +565,7 @@ def build_via_json(placed: list[Key], keycodes: list[dict]) -> dict:
             if props:
                 segment.append(props)
             segment.append(f"{key.matrix[0]},{key.matrix[1]}")
-            cursor = key.x / UNIT + key.width / UNIT
+            cursor = (key.left + key.width) / UNIT
         kle.append(segment)
 
     return {
