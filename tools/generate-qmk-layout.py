@@ -103,6 +103,28 @@ FN_OVERRIDES = {
     (1, 14): "EE_CLR",
 }
 
+# The RGB effects this firmware is built with, in the order QMK numbers them.
+#
+# The order is not ours to pick. QMK numbers the effects it compiles in the order its own
+# rgb_matrix_effects.inc includes them, starting at 1, and that number is what VIA's menu
+# sends. Checked against the built firmware rather than assumed: the profile table in
+# lighting_profiles.c compiles to modes 1 and 2.
+#
+# Only effects that ignore where an LED is are enabled, because this keyboard's LED
+# positions do not yet agree with the LEDs they are attached to -- see docs/pin-mapping.md.
+# What each one responds to decides which controls VIA offers alongside it.
+ANIMATIONS = {
+    "solid_color": {"label": "Solid Color", "colour": True, "speed": False},
+    "cycle_all": {"label": "Rainbow", "colour": False, "speed": True},
+}
+
+# QMK's channel for the RGB matrix and the prefix VIA's own menu gives its four values,
+# from `enum via_channel_id` and `enum via_qmk_rgb_matrix_value`. The names are VIA's to
+# recognise; the numbers are what reaches the firmware.
+RGB_MATRIX_CHANNEL = 3
+RGB_MATRIX_VALUE = "id_qmk_rgb_matrix_"
+EFFECT_VALUE = f"{RGB_MATRIX_VALUE}effect"
+
 LED_FLAG_NONE = 0x00
 LED_FLAG_UNDERGLOW = 0x02
 LED_FLAG_KEYLIGHT = 0x04
@@ -324,10 +346,9 @@ def build_keyboard_json(placed: list[Key], all_keys: list[Key], leds: list[Led])
             "driver": "is31fl3743b",
             # The two the wheel button steps through, and no more. An
             # animation a definition offers and nothing drives is a claim
-            # rather than a feature -- and the ones left out are the ones that
-            # read an LED's position, which this keyboard does not yet have
-            # right. See lighting_profiles.c on why the rainbow is CYCLE_ALL.
-            "animations": {"solid_color": True, "cycle_all": True},
+            # rather than a feature. See ANIMATIONS for why these two, and
+            # lighting_profiles.c on why the rainbow is CYCLE_ALL.
+            "animations": {name: True for name in ANIMATIONS},
             # White, full brightness. A stored default survives a reflash, so
             # changing this means moving EECONFIG_MAGIC_NUMBER too; that note
             # lives in the keyboard's config.h, beside the number.
@@ -399,6 +420,63 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {{
 """
 
 
+def effect_numbers(responds_to: str) -> list[int]:
+    """The effect numbers that answer to a given control."""
+    return [number for number, animation in enumerate(ANIMATIONS.values(), start=1)
+            if animation[responds_to]]
+
+
+def only_for(effects: list[int]) -> dict:
+    """A `showIf` restricting a control to those effects, or nothing if all of them do.
+
+    VIA shows a control unconditionally when it carries no condition, which is the right
+    answer when every effect responds to it, and keeps the condition out of the definition
+    rather than emitting one that is always true.
+    """
+    if len(effects) == len(ANIMATIONS):
+        return {}
+    return {"showIf": " || ".join(f"{{{EFFECT_VALUE}}} == {number}" for number in effects)}
+
+
+def lighting_menu() -> dict:
+    """VIA's lighting controls, declared here rather than taken from its built-in set.
+
+    VIA ships a `qmk_rgb_matrix` menu that a definition can ask for by name, and it is the
+    wrong menu for any keyboard that does not compile every effect QMK has. Its dropdown
+    lists all 45 of them and sends the position in that list, while QMK numbers only the
+    effects that are *built*. With two compiled, 2 is this keyboard's rainbow and VIA's
+    list has "Breathing" there, so picking breathing would silently start the rainbow.
+
+    Declaring the menu instead means the dropdown holds exactly the effects this firmware
+    has, at the numbers it answers to, and that the colour and speed controls appear only
+    for the effects that read them.
+
+    Zero is not an effect. It disables the matrix, which takes the status icons with it,
+    since QMK draws indicators only while an effect is running.
+    """
+    return {
+        "label": "Lighting",
+        "content": [{
+            "label": "Backlight",
+            "content": [
+                {"label": "Brightness", "type": "range", "options": [0, 255],
+                 "content": [f"{RGB_MATRIX_VALUE}brightness", RGB_MATRIX_CHANNEL, 1]},
+                {"label": "Effect", "type": "dropdown",
+                 "options": [["Off", 0]] + [
+                     [animation["label"], number] for number, animation
+                     in enumerate(ANIMATIONS.values(), start=1)],
+                 "content": [EFFECT_VALUE, RGB_MATRIX_CHANNEL, 2]},
+                {"label": "Effect Speed", "type": "range", "options": [0, 255],
+                 **only_for(effect_numbers("speed")),
+                 "content": [f"{RGB_MATRIX_VALUE}effect_speed", RGB_MATRIX_CHANNEL, 3]},
+                {"label": "Color", "type": "color",
+                 **only_for(effect_numbers("colour")),
+                 "content": [f"{RGB_MATRIX_VALUE}color", RGB_MATRIX_CHANNEL, 4]},
+            ],
+        }],
+    }
+
+
 def custom_keycodes(header: Path) -> list[dict]:
     """VIA's `customKeycodes`, in the order the keyboard's enum declares them.
 
@@ -463,6 +541,7 @@ def build_via_json(placed: list[Key], keycodes: list[dict]) -> dict:
         "matrix": {"rows": STROBES, "cols": SENSES},
         "layouts": {"keymap": kle},
         "customKeycodes": keycodes,
+        "menus": [lighting_menu()],
     }
 
 

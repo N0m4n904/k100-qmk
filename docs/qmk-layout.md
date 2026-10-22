@@ -17,7 +17,7 @@ Outputs:
 | --- | --- |
 | `qmk/keyboards/corsair/k100/keyboard.json` | `LAYOUT_k100_iso_de`, matrix size, `rgb_matrix.layout` |
 | `qmk/keyboards/corsair/k100/keymaps/default/keymap.c` | Default keymap plus an empty Fn layer |
-| `via/k100-iso-de.json` | VIA v3 definition, with the labels for the keycodes this keyboard adds |
+| `via/k100-iso-de.json` | VIA v3 definition: layout, the labels for the keycodes this keyboard adds, and the lighting menu |
 
 ## Where the data comes from
 
@@ -149,6 +149,32 @@ its own**, which is worth knowing when the LightEdge and wheel zones are wired u
   stock firmware, and this one has nothing equivalent to switch.
 - **`fn`** is `MO(1)`. Layer 1 passes everything through except Fn+Esc, which is `QK_BOOT`,
   and Fn+Backspace, which is `EE_CLR`.
+
+## The lighting menu is declared, not VIA's own
+
+VIA ships a `qmk_rgb_matrix` menu that a definition can ask for by name, and it is the
+wrong menu for this keyboard. Its effect dropdown lists all 45 effects QMK has and sends
+the position in that list, while QMK numbers only the effects that are **compiled**. This
+firmware compiles two, so 1 is the solid colour and 2 the rainbow. In VIA's list, 2 is
+"Breathing". Picking breathing would start the rainbow and nothing would say so.
+
+The menu is therefore emitted from the same `ANIMATIONS` table the firmware's animation
+list comes from. The dropdown holds exactly the effects that exist, at the numbers they
+answer to, and the colour and speed controls carry a `showIf` so that each appears only
+for the effects that read it. Zero is not an effect: it disables the matrix, which takes
+the status icons with it, because QMK draws indicators only while an effect is running.
+
+The four controls are QMK's `id_qmk_rgb_matrix_*` values on channel 3.
+`tools/via-lighting.py` drives the same four, which is how the menu is checked against the
+firmware without the application:
+
+```sh
+python3 tools/via-lighting.py                 # read all four
+python3 tools/via-lighting.py --effect 2 --speed 200
+```
+
+Measured on the keyboard: all four are written and read back, and the four it reports
+agree with the same values read out of `rgb_matrix_config` over SWD.
 
 ## Validation
 
