@@ -85,6 +85,30 @@
 #define NO_USB_STARTUP_CHECK
 
 /*
+ * The vendor interface has no OUT endpoint, so VIA's requests arrive as
+ * SET_REPORT on endpoint zero instead.
+ *
+ * Not a preference. An interrupt OUT endpoint on this controller takes the
+ * packet, hands it to the firmware and is answered -- and the host is never
+ * given an acknowledgement it accepts, so its data toggle never advances and
+ * the two ends disagree from the second packet onwards. Every write is reported
+ * as failed, and the VIA application sees a keyboard that never answers.
+ * docs/usb-bringup.md has the measurements, and what has been ruled out: the
+ * host's HID path, the arming size, double buffering, a shared buffer, and the
+ * endpoint type.
+ *
+ * A control transfer carrying data is the one direction on this keyboard that
+ * is known to work -- it is how the host drives the lock lights, and it was
+ * measured answering. A host sends output reports that way when an interface
+ * offers nowhere else, which a HID interface is entitled to do and many are.
+ *
+ * So this is a different transfer type, not a trick played on a broken one. It
+ * stops being necessary the day the endpoint is understood, and nothing else
+ * depends on it.
+ */
+#define RAW_HID_NO_OUT_ENDPOINT
+
+/*
  * Settle time between asserting a strobe and sampling the senses.
  *
  * The driver's own default is 20 us, which was a guess on what an optical

@@ -1,0 +1,157 @@
+--- a/tmk_core/protocol/usb_descriptor.h
++++ b/tmk_core/protocol/usb_descriptor.h
+@@ -75,8 +75,10 @@
+     USB_Descriptor_Interface_t Raw_Interface;
+     USB_HID_Descriptor_HID_t   Raw_HID;
+     USB_Descriptor_Endpoint_t  Raw_INEndpoint;
++#ifndef RAW_HID_NO_OUT_ENDPOINT
+     USB_Descriptor_Endpoint_t  Raw_OUTEndpoint;
+ #endif
++#endif
+ 
+ #ifdef PLOVER_HID_ENABLE
+     // Plover HID Interface
+@@ -231,7 +233,15 @@
+ 
+ #ifdef RAW_ENABLE
+     RAW_IN_EPNUM = NEXT_EPNUM,
+-#    ifdef USB_ENDPOINTS_ARE_REORDERABLE
++/*
++ * RAW_HID_NO_OUT_ENDPOINT gives the interface no OUT endpoint at all, so there
++ * is no number to assign and nothing below it shifts. Output reports then reach
++ * the firmware as SET_REPORT on endpoint zero, which is where a host sends them
++ * when an interface offers nowhere else -- the same path that already carries
++ * the lock lights to a plain keyboard.
++ */
++#    if defined(RAW_HID_NO_OUT_ENDPOINT)
++#    elif defined(USB_ENDPOINTS_ARE_REORDERABLE)
+ #        define RAW_OUT_EPNUM RAW_IN_EPNUM
+ #    else
+     RAW_OUT_EPNUM = NEXT_EPNUM,
+--- a/tmk_core/protocol/usb_descriptor.c
++++ b/tmk_core/protocol/usb_descriptor.c
+@@ -627,7 +627,11 @@
+         },
+         .InterfaceNumber        = RAW_INTERFACE,
+         .AlternateSetting       = 0x00,
++#ifdef RAW_HID_NO_OUT_ENDPOINT
++        .TotalEndpoints         = 1,
++#else
+         .TotalEndpoints         = 2,
++#endif
+         .Class                  = HID_CSCP_HIDClass,
+         .SubClass               = HID_CSCP_NonBootSubclass,
+         .Protocol               = HID_CSCP_NonBootProtocol,
+@@ -654,6 +658,7 @@
+         .EndpointSize           = RAW_EPSIZE,
+         .PollingIntervalMS      = 0x01
+     },
++#ifndef RAW_HID_NO_OUT_ENDPOINT
+     .Raw_OUTEndpoint = {
+         .Header = {
+             .Size               = sizeof(USB_Descriptor_Endpoint_t),
+@@ -665,6 +670,7 @@
+         .PollingIntervalMS      = 0x01
+     },
+ #endif
++#endif
+ 
+ #ifdef PLOVER_HID_ENABLE
+     /*
+--- a/tmk_core/protocol/chibios/usb_endpoints.h
++++ b/tmk_core/protocol/chibios/usb_endpoints.h
+@@ -132,7 +132,7 @@
+ extern usb_endpoint_in_lut_t usb_endpoint_interface_lut[TOTAL_INTERFACES];
+ 
+ typedef enum {
+-#if defined(RAW_ENABLE)
++#if defined(RAW_ENABLE) && !defined(RAW_HID_NO_OUT_ENDPOINT)
+     USB_ENDPOINT_OUT_RAW,
+ #endif
+ 
+--- a/tmk_core/protocol/chibios/usb_endpoints.c
++++ b/tmk_core/protocol/chibios/usb_endpoints.c
+@@ -146,7 +146,7 @@
+ };
+ 
+ usb_endpoint_out_t usb_endpoints_out[USB_ENDPOINT_OUT_COUNT] = {
+-#if defined(RAW_ENABLE)
++#if defined(RAW_ENABLE) && !defined(RAW_HID_NO_OUT_ENDPOINT)
+     [USB_ENDPOINT_OUT_RAW] = QMK_USB_ENDPOINT_OUT(USB_EP_MODE_TYPE_INTR, RAW_EPSIZE, RAW_OUT_EPNUM, RAW_OUT_CAPACITY),
+ #endif
+ 
+--- a/tmk_core/protocol/chibios/usb_main.c
++++ b/tmk_core/protocol/chibios/usb_main.c
+@@ -233,6 +233,31 @@
+ 
+ static uint8_t _Alignas(4) set_report_buf[2];
+ 
++#if defined(RAW_ENABLE) && defined(RAW_HID_NO_OUT_ENDPOINT)
++/*
++ * Output reports for the raw interface, when it has no OUT endpoint to receive
++ * them on and the host sends them as SET_REPORT instead.
++ *
++ * The data stage completes in interrupt context, and what happens next is a
++ * keyboard's own raw_hid_receive() -- which on a VIA build reads and writes the
++ * part's EEPROM. That does not belong in an interrupt handler, so this only
++ * records that a report arrived and raw_hid_task() does the work from the main
++ * loop.
++ *
++ * One report deep. A host that sends another before the loop has drained the
++ * first overwrites it, which this does not try to prevent: the protocols that
++ * use this interface answer one request before sending the next, so a second
++ * report in flight means the host is not waiting for the reply it asked for.
++ */
++static uint8_t _Alignas(4) raw_set_report_buf[RAW_EPSIZE];
++static volatile bool raw_set_report_pending = false;
++
++static void raw_set_report_cb(USBDriver *usbp) {
++    (void)usbp;
++    raw_set_report_pending = true;
++}
++#endif
++
+ static void set_led_transfer_cb(USBDriver *usbp) {
+     usb_control_request_t *setup = (usb_control_request_t *)usbp->setup;
+ 
+@@ -279,6 +304,15 @@
+ #endif
+                                 usbSetupTransfer(usbp, set_report_buf, sizeof(set_report_buf), set_led_transfer_cb);
+                                 return true;
++#if defined(RAW_ENABLE) && defined(RAW_HID_NO_OUT_ENDPOINT)
++                            case RAW_INTERFACE:
++                                /* Cleared first, because a host may send fewer
++                                   bytes than the report holds and the rest would
++                                   otherwise be whatever the last report left. */
++                                memset(raw_set_report_buf, 0, sizeof(raw_set_report_buf));
++                                usbSetupTransfer(usbp, raw_set_report_buf, sizeof(raw_set_report_buf), raw_set_report_cb);
++                                return true;
++#endif
+                         }
+                         break;
+                     case HID_REQ_SetProtocol:
+@@ -522,9 +556,24 @@
+ 
+ void raw_hid_task(void) {
+     uint8_t buffer[RAW_EPSIZE];
++#if defined(RAW_HID_NO_OUT_ENDPOINT)
++    if (!raw_set_report_pending) {
++        return;
++    }
++
++    /* Copied out under the lock, so a report arriving while this one is being
++       handled cannot change it half way through. */
++    osalSysLock();
++    memcpy(buffer, raw_set_report_buf, sizeof(buffer));
++    raw_set_report_pending = false;
++    osalSysUnlock();
++
++    raw_hid_receive(buffer, sizeof(buffer));
++#else
+     while (receive_report(USB_ENDPOINT_OUT_RAW, buffer, sizeof(buffer))) {
+         raw_hid_receive(buffer, sizeof(buffer));
+     }
++#endif
+ }
+ 
+ #endif
