@@ -70,9 +70,14 @@ The generator asserts this rather than trusting it: if the set of scanning keys 
 the matrix is ever anything other than exactly those four rotations, it refuses to emit. That
 is what catches a silently dropped key.
 
-**Their pins are not yet known**, so no `encoder` block is emitted. They are recorded as
-comments in the generated keymap, and QMK's `encoder_map` can be filled in once the pins are
-traced.
+Their pins are `P1_28`/`P1_29` and `P1_30`/`P1_31`, read out of the stock firmware's
+`INPUTMUX` configuration, where they are attached to four pin interrupts and sit outside the
+matrix. The generator emits an `encoder` block for both pairs.
+
+**Which pair is the wheel and which the roller, and which way round, is not established** --
+both need someone to turn one and say what happened. What each does is decided in
+`encoders.c`, where the wheel sets the lighting's brightness and the roller the volume, so
+the rotations are deliberately not remappable and no `encoder_map` is emitted.
 
 ## ISO DE specifics
 
