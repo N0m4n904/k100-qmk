@@ -1,21 +1,28 @@
 # k100-qmk
 
-An attempt to run **QMK and VIA on the Corsair K100 RGB** (OPX optical, ISO DE) in place of
-its stock firmware.
+**QMK and VIA on the Corsair K100 RGB** — OPX optical, ISO DE — in place of Corsair's own
+firmware.
+
+![The K100 drawn by VIA: the ISO DE layout with four layers, the media keys and the keycodes this board adds](docs/images/k100-in-via.png)
+
+That is this firmware, read over USB by the VIA application. The layout it is drawn from is
+generated out of Corsair's own tables and ckb-next's geometry rather than written by hand,
+down to the shape of the ISO enter.
+
+**Working on the hardware:** typing, 190 LEDs, the iCUE wheel setting the brightness and the
+volume roller setting the volume, the six status icons, and VIA reading and writing the
+keymap, the layers and the lighting. Three separate ways back into Corsair's bootloader if a
+flash goes wrong, all three measured.
+
+**Not finished:** eleven LEDs in Corsair's map have no position in the layout, so no effect
+reaches them. Writing a replacement image over USB from the bootloader is not implemented --
+flashing here goes over SWD, with the case open.
 
 ---
 
-## ⚠️ Work in progress — read this before running anything
-
-**This project has already bricked one keyboard.** That keyboard was recovered, but only by
-opening the case and attaching a programmer to the PCB. The firmware now runs, enumerates, types,
-lights and holds up under use, and VIA reads and writes its keymap. Nothing here should be
-mistaken for finished -- the lighting has eleven LEDs with no place in the layout, and the
-vendor interface reaches the firmware by a different route than it was meant to.
+## ⚠️ Read this before writing anything to a keyboard
 
 **Using anything in this repository is entirely at your own risk.**
-
-Specifically, you should understand before you start:
 
 - **This has already bricked a K100.** Not hypothetically. A custom image was flashed whose
   route back to the bootloader had never been observed working, and which called that route
@@ -47,28 +54,35 @@ and the two rules that keep a mistake survivable.
 
 ## Where it stands
 
+### On the keyboard
+
+| Area | State |
+| --- | --- |
+| Working firmware | **Yes.** It runs from flash, enumerates, binds three HID interfaces, types and lights. Typing was measured at 5204 key events across four minutes of continuous use. It used to hang within a second of being used; the cause was a system-timer priority that is not a priority on a part with three priority bits, which put the tick above the kernel's own interrupt mask. [`docs/scheduler-stall.md`](docs/scheduler-stall.md) |
+| ChibiOS LPC546xx port | **Runs on the keyboard.** Boots through `crt0`, `halInit()` and `chSysInit()` into QMK's main loop, from SRAM and from flash alike. |
+| USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0001`, and the kernel binds all three HID interfaces. |
+| QMK layout, keymap and VIA definition | **Generated**, not written, from ckb-next's geometry and the stock firmware's own tables; a fresh run reproduces all three files byte for byte. The definition names the keycodes this board adds and carries a lighting menu holding the effects this firmware is *built* with -- VIA's own menu sends a position in a list of all 45, which is a different number. `tools/via-definition-check` runs it through the same reader the application does before a browser ever sees it. [`docs/qmk-layout.md`](docs/qmk-layout.md) |
+| Key matrix pins | **Proven on hardware**, read against `bcdDevice` so it is this firmware and not the bootloader's own keyboard: 67 presses across 16 keys while the device reported `0.01`. The settle time is 500 us -- these are optical switches, and the 20 us first guessed is far too short for an emitter and phototransistor to answer. [`docs/pin-mapping.md`](docs/pin-mapping.md) |
+| The two rotary controls | **Both work.** Neither rotation is matrix-scanned, so they are encoders on `P1_28`-`P1_31`, read out of the stock firmware's pin-interrupt configuration. Which pair is which was a guess from the order the image's own tables list them in, and turning them confirmed it: wheel to the brightness, roller to the volume. The roller came out inverted, so its two cases are crossed in `encoders.c` -- `ENCODER_DIRECTION_FLIP` would have turned the wheel round with it. |
+| Lighting | **Working.** 190 LEDs across three IS31FL3743B drivers on SPI3, settable like any other QMK keyboard. It stayed dark long after the bus, the pin mux, the frames and the enable outputs had all been matched against Corsair's own firmware while that firmware was lighting the keyboard. What was missing was a function register at `0x25`, written differently for one of the three drivers: these parts take their scan timing from one of their number, and a set in which every one is told to follow has nobody leading. [`docs/pin-mapping.md`](docs/pin-mapping.md) |
+| Status icons | **Four of the six report something true.** Num, Caps and Scroll Lock from the host; Win Lock is the keyboard's own GUI lock, and setting that state over SWD takes the icon's channel to `0xff` and back. Mute stays dark deliberately -- a keyboard is told about locks and nothing else, so lighting it from our own volume keys would report what was last asked for rather than what is so. They survive the lighting being turned off, which took an effect of our own: QMK draws indicators only while an effect runs, and its way of having none stops the lighting task, so "Off" selects an effect that paints black. |
+| Eleven LEDs nobody can name | **Not placed, and not the light bars.** Indices 179 to 189 of Corsair's own LED table are real channels, three each on the third driver, but ckb-next's geometry has neither a position nor a name for them, so no effect reaches them and they have been dark since init. The bars, the ring around the iCUE wheel and the logo are placed and do light. |
+| VIA | **The application configures this keyboard**, as in the picture above. Protocol version 13, over the control endpoint: the interrupt OUT endpoint this keyboard should use takes a packet and answers it but never gives the host an acknowledgement it accepts, so the interface declares none and the host sends `SET_REPORT` instead -- an ordinary shape for an HID interface. Three defects in the shared LPC USB driver were found and fixed on the way, and a fourth was ours: the interface held one request, so a host that sent a second before reading the first answer lost one, and the application then read every answer one question late and gave up. `tools/via-sequence.py` reproduces that in six commands. [`docs/usb-bringup.md`](docs/usb-bringup.md) |
+
+### Getting it on and off the keyboard
+
 | Area | State |
 | --- | --- |
 | Firmware container format | **Proven.** The writer rebuilds both official images byte for byte. |
 | Firmware distribution | **Understood and verified.** Official images download and validate. |
 | Reflashing a *healthy* keyboard | **Proven on hardware.** An official image was written, applied and verified, many times. |
-| Recovery from firmware that will not boot, over USB | **Half of it is proven.** The firmware's own route back to the bootloader works and has been watched doing so -- for a while it worked rather too well, firing on every cold boot because it could not tell a host that had not woken up from USB that was broken. Writing a replacement image from the bootloader over USB is **not implemented**; flashing here goes over SWD. Relying on this route before it had ever been seen to work cost a keyboard. |
-| Recovery from firmware that will not boot, over SWD | **Proven on hardware.** A bricked K100 was dumped, erased and restored to stock with a Raspberry Pi and four jumper wires. See [`swd/`](swd/README.md). |
+| Route back to the bootloader | **Three ways, all measured.** From the keyboard alone: hold `B` and `L` while plugging in, decoded out of the bootloader's own startup matrix scan. From the firmware: `Fn+Esc` forces a watchdog reset, because `WDTOF` — the flag such a reset leaves behind — is what the bootloader keys on, not the EEPROM mode word this project first read it as. Over SWD it is one command. [`docs/recovery.md`](docs/recovery.md) |
+| Recovery from firmware that will not boot, over USB | **Half of it is proven.** The firmware's own route back works and has been watched doing so -- for a while it worked rather too well, firing on every cold boot because it could not tell a host that had not woken up from a broken one. Writing a replacement image from the bootloader over USB is **not implemented**; flashing here goes over SWD. Relying on this route before it had ever been seen to work cost a keyboard. |
+| Recovery from firmware that will not boot, over SWD | **Proven on hardware.** A bricked K100 was dumped, erased and restored to stock with a Raspberry Pi and four jumper wires. [`swd/`](swd/README.md) |
+| Corsair's bootloader | **Dumped.** 64 KB read out over SWD and checked: its vector checksum is valid, so the image is complete. Not redistributable, so not in this repository. |
 | Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |
-| QMK layout, keymap and VIA definition | **Generated** for OPX ISO DE from ckb-next's data and the stock firmware's own tables, lighting included; a fresh run reproduces all three files byte for byte. The VIA definition carries the labels for the keycodes this keyboard adds, in the order the keyboard's header declares them, so the app names them instead of showing a hex code, and a lighting menu holding the effects this firmware is actually built with -- VIA's own menu sends the position in a list of all 45, which is a different number from the one QMK gives a build with two. `tools/via-lighting.py` drives the same four controls, and all four were measured written and read back. The definition is not loaded into the application on trust either: `tools/via-definition-check` runs it through `@the-via/reader`, the package the application reads definitions with, and its schema guard, its transform and the form it stores all accept this one. |
-| ChibiOS LPC546xx port | **Runs on the keyboard.** Boots through `crt0`, `halInit()` and `chSysInit()` into QMK's main loop, from SRAM and from flash alike. |
-| Key matrix pins | **Proven on hardware**, and this time read against `bcdDevice` so it is this firmware and not the bootloader's own keyboard: 67 presses across 16 keys arrived while the device reported `0.01`. The settle time is 500 us: these are optical switches, and the 20 us first guessed was far too short for an emitter and phototransistor to answer. |
-| The two rotary controls | **Both work.** Neither rotation is matrix-scanned, so they are encoders on `P1_28`-`P1_31`, read out of the stock firmware's pin-interrupt configuration. Which pair is the iCUE wheel and which the volume roller was a guess from the order the image's own tables list them in, and turning them confirmed it: the wheel sets the lighting's brightness, the roller the volume. The roller came out inverted and its directions are crossed in `encoders.c`, measured both before and after; `ENCODER_DIRECTION_FLIP` would have turned the wheel round with it. |
-| Lighting | **Working.** 190 LEDs across three IS31FL3743B drivers on SPI3, solid white by default and settable like any other QMK keyboard. It stayed dark long after the Flexcomm, pin mux, bus configuration, frames and enable outputs had all been matched against Corsair's own firmware while that firmware was lighting the keyboard. What was missing was a function register at `0x25` that they write with a different value for one of the three drivers: these parts take their scan timing from one of their number, and a set in which every one is told to follow has nobody leading. Global current and the scaling page were missing with it, and either alone is also a keyboard that stays dark with a working bus. [`docs/pin-mapping.md`](docs/pin-mapping.md) has the comparison. |
-| Status icons | **Four of the six report something true.** Num, Caps and Scroll Lock come from the host; Win Lock is the keyboard's own GUI lock, and the lock key beside the iCUE wheel is mapped to toggle it. The icon follows that state: with the lock set in the running firmware over SWD, its channel in the LED buffer went to `0xff`, and back to `0x00` when the state was put back. **That a press on the key reaches the state is not shown** -- that needs someone at the keyboard. Scroll Lock is driven and may never light, because whether the host reports it is the host's business and a Wayland desktop generally does not. Mute stays dark deliberately -- the host tells a keyboard about its locks and nothing else, so lighting it from our own volume keys would report what was last asked for rather than what is so. They survive the lighting being turned off, which took an effect of our own: QMK draws indicators only while an effect is running, and its way of having none disables the lighting task, so the VIA menu's "Off" selects an effect that paints black instead. |
-| Eleven LEDs nobody can name | **Not placed, and not the light bars.** Indices 179 to 189 of Corsair's own LED table are real channels, three each on the third driver, but ckb-next's geometry has neither a position nor a name for them, so no effect reaches them and they have been dark since init. The bars, the ring around the iCUE wheel and the logo are placed and do light. |
-| VIA | **The application configures this keyboard.** It draws the ISO DE layout, names the keycodes this board adds and shows the lighting menu, at `usevia.app` in a Chromium browser with the definition from `via/` loaded once in the Design tab. Getting there took a fix the command line could not have found: the interface held one request, so a host that sent a second before reading the first answer lost one, and the application then read every answer one question late and gave up. `tools/via-sequence.py` reproduces it; [`docs/usb-bringup.md`](docs/usb-bringup.md) has the measurements. Underneath: reads and writes the keymap on the ordinary HID path, which is the one the application uses: protocol version 13, row 7 column 2 reads `700b` against the same value taken independently out of the keyboard's EEPROM, and a keycode written to a spare entry reads back changed. The interrupt OUT endpoint it would normally use takes the packet and answers it but never gives the host an acknowledgement it accepts, so the interface is given no OUT endpoint and the host sends its requests as `SET_REPORT` instead -- an ordinary shape for a HID interface, and the one direction on this keyboard that was never in doubt. Three defects in the shared LPC USB driver were found and fixed on the way. [`docs/usb-bringup.md`](docs/usb-bringup.md) has the measurements and what was ruled out. |
-| Route back to the bootloader | **Solved twice over.** From the keyboard alone: hold `B` and `L` while plugging in, decoded out of the bootloader's own startup matrix scan and measured. From the firmware: `Fn+Esc` forces a watchdog reset, because `WDTOF` — the flag such a reset leaves behind — is what the bootloader keys on, not the EEPROM mode word this project first read it as. Over SWD it is still one command. [`docs/recovery.md`](docs/recovery.md) has all three, and why the EEPROM reading was wrong. |
-| USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0001`, and the kernel binds all three HID interfaces. |
-| Working firmware | **Yes.** It runs from flash, enumerates, binds three HID interfaces, types and lights. Typing was measured at 5204 key events across four minutes of continuous use. It used to hang within a second of being used; the cause was a system-timer priority that is not a priority on a part with three priority bits, which put the tick above the kernel's own interrupt mask. [`docs/scheduler-stall.md`](docs/scheduler-stall.md) has the measurements, the fix and the eight explanations that were refuted on the way. |
 | Telling our firmware from Corsair's | **Only `bcdDevice` does it.** Corsair's bootloader presents a working keyboard of its own under the same vendor and product id, so typing proves nothing on its own. A whole 104-key sweep was once collected from the bootloader and credited to this firmware. `tools/watch-input.py` now refuses to attribute keystrokes it cannot place. |
 | Test hardware | **One K100**, running this firmware, with its SWD header wired to a Raspberry Pi. |
-| Corsair's bootloader | **Dumped.** 64 KB read out over SWD and checked: its vector checksum is valid, so the image is complete. Not redistributable, so not in this repository. |
 
 Start with [`NOTES.md`](NOTES.md) for the research and
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for the plan.
