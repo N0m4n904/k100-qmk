@@ -366,6 +366,11 @@ Ruled out by measurement, each on the running part:
   unused one changes nothing. It remains a defect worth fixing on its own.
 - **Not the endpoint being refused outright.** Corsair declare their own vendor
   OUT endpoint as interrupt too, at 1024 bytes, and ckb-next writes to it.
+- **Not the endpoint number.** Built again with `USB_ENDPOINTS_ARE_REORDERABLE`,
+  which puts the vendor OUT endpoint on the same number as its IN endpoint --
+  the arrangement Corsair use, where the number they receive on also carries a
+  keyboard. On `0x02` the behaviour is identical: the write times out and the
+  request arrives and is answered.
 
 **Double buffering was the best lead, and it is refuted.** Corsair's
 bootloader, measured on this silicon while it was running, has
@@ -390,10 +395,21 @@ reply that arrived was a stale one left over from an earlier exchange.
 has both directions live. Ours has endpoint 3 OUT with endpoint 3 IN disabled.
 Taking that entry out of the disabled state changes nothing.
 
-**The packet size is the last structural difference and cannot be tested
-cheaply.** Theirs is 1024 bytes, ours 32. QMK's `raw_hid_receive()` takes its
-length in a `uint8_t`, so a build with a larger report does not compile without
-changing that too.
+**The packet size is the last structural difference, and declaring the
+endpoints bulk to reach it does not enumerate.** Theirs is 1024 bytes, ours 32,
+and a high-speed bulk endpoint must be 512 -- which would also have tested the
+NYET reading directly, NYET being legal for bulk and not for interrupt. Built
+that way, with `RAW_EPSIZE` at 512 and both vendor endpoints declared bulk, the
+host never configures the device. A HID interface is not entitled to bulk
+endpoints, so this is not a way in.
+
+That attempt is worth one more thing, though. The firmware handed itself back
+to the bootloader by its own ten-second route, the one
+`housekeeping_task_kb()` carries, with the gate added that morning to stop it
+firing before a host wakes up. So the gate did not narrow the route into
+uselessness: a firmware that genuinely cannot enumerate still reaches the
+bootloader. That half of the change is now measured rather than reasoned about;
+see docs/recovery.md.
 
 ### Why this is where measuring stops
 

@@ -538,6 +538,16 @@ that is genuinely broken is broken from the first instant either way.
 The other two routes are untouched. A key held at power-on and `QK_BOOT` both still work, and
 neither depends on this.
 
+**The narrowed route has since caught a real failure.** An experimental build declared the
+vendor interface's endpoints as bulk, which a HID interface may not do, and the host never
+configured it. The firmware reached its timeout and handed the keyboard to the bootloader,
+which is where it was found -- enumerating as `bcdDevice 0.0a` with no custom firmware in
+sight. Nothing was lost and the working image went back over SWD.
+
+That is the half of this change that could not be reasoned about. Requiring a bus reset before
+the clock starts risked narrowing the route until it never fired at all; it still fires, for
+the case it exists for.
+
 ### The near miss, and the rule that came out of it
 
 The firmware reached a state no tool in this project could reach: running
