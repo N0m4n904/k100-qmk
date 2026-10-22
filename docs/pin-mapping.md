@@ -782,6 +782,46 @@ pins. The matrix by contrast reads `PIN[1]` with a literal `ubfx r4, r4, #0, #18
 its senses were proved. Until the encoder read is located this stays a hypothesis resting on
 pull-up/pull-down configuration alone.
 
+#### Why searching around the dial finds no read
+
+Looked for again, from the strings this time, and the dead end has a reason worth writing down.
+
+The subsystem does name itself: `dialStopSemaphore`, `dialAssignmentMutex`, `dialTimer` and
+`encodersSemaphore` are all in the image, the last two with assertions that name them, and
+their literals sit in one pool at flash `0x000162b0` to `0x0001634c` -- so one function creates
+all of them. That function is the encoder init.
+
+**It contains no pin access at all.** What it does with the dial is create a timer:
+
+```asm
+16038  ldr   r3, [pc, #632]   ; r3 = 0x000156b3, the callback
+1603e  mov.w r1, #2000        ; period
+16042  str   r3, [sp, #0]
+16044  ldr   r0, [pc, #624]   ; "dialTimer"
+16048  bl    0x0001e860       ; xTimerCreate
+```
+
+and the callback at `0x000156b2` reads nothing either:
+
+```asm
+156b2  movs  r0, #6
+156b4  b.w   0x0001563c       ; post event 6
+```
+
+A sibling at `0x000156b8` posts event 7 the same way. So the dial is **event driven**: the
+timer raises an event and something else services it. No read sits near any of the names,
+which is exactly why searching around them -- the technique that settled the matrix -- returns
+nothing here. **The next place to look is the consumer of events 6 and 7**, through the
+dispatcher at `0x0001563c`.
+
+One other thing came out of the same function, about the vendor's EEPROM words rather than the
+pins. The accessor at `0x0001415c` is the EEPROM word reader -- `*(uint32_t *)(0x40108000 +
+index * 4)`, bounded at index 31 and taken under a semaphore, which is the range check
+`LPC546XX_EEPROM_RESERVED_WORDS` is set from. The encoder init reads **words 10, 11, 12 and
+13** through it and hands each to a setter of its own, so four of the vendor's reserved words
+belong to the dial. That is a use for part of the reserved space, and another reason not to
+hand any of it to QMK.
+
 ## Still unknown
 
 - ~~Which `(strobe, sense)` pair is which key.~~ **Answered** by `HidKeyCodes` above. The
