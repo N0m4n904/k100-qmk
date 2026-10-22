@@ -131,20 +131,25 @@ its own**, which is worth knowing when the LightEdge and wheel zones are wired u
 
 - **G1-G6** map to `KC_F13`-`KC_F18`. QMK has no macro-key standard; this is the conventional
   stand-in and is trivially remapped in VIA.
-- **The iCUE wheel** is modelled as three matrix positions (CCW, button, CW) defaulting to
-  volume down/mute/up, because that is how ckb-next sees it reported. If the hardware turns
-  out to expose a quadrature encoder, these should move to QMK's `encoder_map` instead.
-- **`profswitch` and `lock`** are `KC_NO`; they have no QMK equivalent and need custom
-  keycodes once their purpose is decided.
-- **`fn`** is `MO(1)`, and layer 1 is deliberately all `KC_TRNS` until the hardware is
-  understood.
+- **The two rotations are encoders**, not matrix positions. ckb-next reports them as keys, but
+  the stock firmware attaches `P1_28`-`P1_31` to pin interrupts and nothing in the matrix sees
+  a turn. The iCUE wheel sets the lighting's brightness and the volume roller the volume;
+  which pair is which, and which way round, is not established. See `docs/pin-mapping.md`.
+- **The wheel's button** is `K100_RGB_PROFILE`, a keycode this keyboard adds, and steps the
+  lighting through white, red and rainbow. It used to be `KC_MUTE`, which the mute key beside
+  it already was.
+- **`lock`** is `GU_TOGG`: it suppresses the GUI keys, which is what the Windows Lock icon
+  above it reports. **`profswitch`** is `KC_NO` -- the profiles it switched belong to the
+  stock firmware, and this one has nothing equivalent to switch.
+- **`fn`** is `MO(1)`. Layer 1 passes everything through except Fn+Esc, which is `QK_BOOT`,
+  and Fn+Backspace, which is `EE_CLR`.
 
 ## Validation
 
 The generated files are checked structurally, not eyeballed:
 
 - 119 layout entries with unique matrix positions, all inside 8 x 18
-- 174 RGB entries with coordinates inside QMK's 224 x 64 space, every `matrix` reference
+- 190 RGB entries with coordinates inside QMK's 224 x 64 space, every `matrix` reference
   resolving to a real key
 - the VIA definition carrying the identical position set and matrix dimensions as
   `keyboard.json`
