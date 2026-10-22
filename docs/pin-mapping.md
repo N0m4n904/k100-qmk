@@ -885,6 +885,64 @@ What is left of the trail: the other ids this queue carries, and whichever calle
 thunk and not the command handler. Nothing in any of it has touched a pin yet, and the
 hypothesis at the top of this section still rests on the pull-down configuration alone.
 
+#### Answered: the pins are P1_28 to P1_31
+
+The rotations go through **pin interrupts**, and the four pins are named in the image.
+
+`INPUTMUX` is configured from the function at flash `0x00011a62`, which reaches it by taking
+`0x87000` off the GPIO base. It attaches four connections, each a literal in NXP's
+`(mux id << 20) | input` form:
+
+| Literal | Mux | Input | Pin |
+| --- | --- | --- | --- |
+| `0x0c00003f` | `0x0c0`, `PINTSEL` | 63 | **`P1_31`** |
+| `0x0c00003e` | `0x0c0`, `PINTSEL` | 62 | **`P1_30`** |
+| `0x0c00003c` | `0x0c0`, `PINTSEL` | 60 | **`P1_28`** |
+| `0x0c00003d` | `0x0c0`, `PINTSEL` | 61 | **`P1_29`** |
+
+They go to `PINTSEL0` through `PINTSEL3`, and the four are outside the matrix, which ends at
+`P1_25`. Four inputs is what two quadrature encoders need.
+
+**The interrupts are serviced.** The vector table at flash `0x00034800` gives `PIN_INT0` to
+`PIN_INT4` five distinct handlers, eight bytes apart, each tailing into a channel routine of
+its own. Those routines are NXP's: read the status, dispatch a callback registered at run time,
+clear the edge flag.
+
+Read back off the running board, with this firmware leaving those pins alone: `P1_28` low and
+`P1_29`, `P1_30`, `P1_31` high, steady across sixty samples while the matrix bits below them
+change every scan. No pull is configured on any of the four, so steady levels mean something
+drives them.
+
+**This supersedes the `P1_26`/`P1_27` reading at the top of this section.** That rested on
+those being the only pull-down pins on port 1, which is still true and is still not evidence:
+two pins cannot carry two quadrature encoders, and nothing routes them anywhere.
+
+##### Why every search missed it
+
+The handlers build the PINT base like this:
+
+```asm
+23a62  mov.w r0, #0x40004000
+```
+
+An immediate, not a literal. **Nothing in the image contains the bytes of that address**, so
+every method that looks for it fails -- the earlier attempt recorded in the table above, which
+concluded there is no pin-interrupt path, and the census below, which counts four-byte values
+and found no PINT either. Both were looking for a number that is never stored.
+
+The lesson is narrow and worth keeping: on Thumb-2 a peripheral base in the form `0xabcd0000`
+or similar costs one instruction as an immediate and no literal at all, so **absence from a
+literal scan is not absence from the image**. Where a conclusion rests on not finding an
+address, it needs the disassembly to agree.
+
+##### What is left
+
+Which of the four is which channel of which encoder, and which way round. That is the
+measurement that was always going to be needed: watch `PIN[1]` -- or QMK's `matrix` is no help
+here, these are not matrix pins -- while the wheel and the roller are turned, and read the
+quadrature off the bit pattern. `swd/watch-memory.sh 0x4008E104 1` shows it, and the four bits
+to watch are 28 to 31.
+
 #### A census of what the image addresses at all
 
 Following names is one way in; counting addresses is the other, and it is the one that gives a
@@ -970,7 +1028,7 @@ hand any of it to QMK.
 
   | Finding | Evidence |
   | --- | --- |
-  | No pin-interrupt path | **No reference to PINT** (`0x40004000`) anywhere in the image |
+  | ~~No pin-interrupt path~~ | **Wrong, and see below.** PINT is used; its base is built as an immediate rather than loaded from a literal, so searching for the address could not find it |
   | `INPUTMUX` *is* configured | reached by `sub.w r5, r5, #0x87000` from the GPIO base, giving `0x40005000` — consistent with timer-capture or pin-interrupt input selection |
   | Not polled via a literal port-0 read | no access to `PIN[0]` (`0x2100`); the matrix reads `PIN[1]` (`0x2104`) with a literal, so the encoders use a different path |
   | Pin configuration goes through helpers | functions at flash `0x1381c` and `0x13858` take port and pin arguments, so pin numbers are call arguments rather than greppable constants |
