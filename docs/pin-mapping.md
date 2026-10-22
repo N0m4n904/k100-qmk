@@ -713,6 +713,45 @@ look strong, and a matching count is not evidence.
 That the K100 carries an external serial flash is unsurprising: 190 LEDs of stored animation is
 more than is comfortable in 512 KB alongside the application.
 
+#### Where the LED bus is: read back off a running board
+
+This section used to end by saying the bus pins are not in the application image and would
+have to be read out of IOCON from custom firmware. That firmware exists now, and lights the
+keyboard, so IOCON was read back over SWD -- ports 0 and 1, all 64 pins, no one at the
+keyboard needed.
+
+**Every pin on port 0 that is not plain GPIO:**
+
+| Pins | FUNC | |
+| --- | --- | --- |
+| `P0_0`, `P0_1` | 2 | |
+| `P0_2`, `P0_3`, `P0_7`, `P0_9` | 1 | |
+| `P0_11`, `P0_12` | 6 | |
+| `P0_23`-`P0_28` | 6 | SPIFI, settled above |
+
+Port 1 has none: eighteen senses at `0x120`, eight strobes at `0x300`, `P1_26` and `P1_27`
+pulled down, and the rest idle.
+
+The bootloader writes exactly this, and its own code says so. It is a run of read-modify-writes
+on consecutive IOCON registers from `0x000009f8` in the dumped image -- `0x102` to `P0_0` and
+`P0_1`, `0x101` to `P0_2`, `P0_3`, `P0_7` and `P0_9`, `0x106` to `P0_23` through `P0_28`,
+`0x100` to `P0_8`, `P0_14`, `P0_17` and `P0_29`, `0x110` to `P0_18`, and `0x120` to the port 1
+senses. So the application image not containing them was right, and the reason was right too.
+
+**That leaves six pins for the bus, and the bus needs six signals.** `P0_8` and `P0_29` are the
+driver enables, which this firmware drives as GPIO. `P0_23`-`P0_28` are SPIFI. `P0_11` and
+`P0_12` are two, not six, and are where a debugger would sit. What is left is
+**`P0_0`, `P0_1`, `P0_2`, `P0_3`, `P0_7` and `P0_9`** -- and Flexcomm 3 driving three
+IS31FL3743Bs on hardware chip selects needs a clock, a data line each way and `SSEL0` to
+`SSEL2`, which is six.
+
+Which signal is on which of them is not settled by this, and nothing here assigns them: that
+needs NXP's FUNC tables, read the careful way the note below insists on. The **set** is
+measured.
+
+There is a lesson in the shape of it. The rejected hypothesis above argued from arity -- six
+consecutive pins, six signals -- and the arity was right. It was applied to the wrong six.
+
 #### A trap in NXP's pin lists, recorded because it produced a wrong answer
 
 NXP's `pin_mux.c` files carry a `pin_signal:` string per pin, listing its functions. **The
