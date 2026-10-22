@@ -454,6 +454,22 @@ endpoint anywhere: `0x81` for the keyboard, `0x82` for the vendor interface,
 `0x83` for the consumer keys, which moved down a number when the OUT endpoint
 stopped taking one.
 
+**The one-report buffer holds under the traffic VIA actually makes.** It
+records a single report and lets the main loop take it, because
+`raw_hid_receive()` reads and writes EEPROM on a VIA build and an interrupt
+handler is no place for that -- so a host that sent another before the loop
+drained the first would lose one. Reading a whole keymap on connect is exactly
+that burst, and it was measured rather than argued about: 288 reads, then the
+same again with every entry written back unchanged, 576 exchanges in all.
+
+```
+asked 576, answered 288, no reply 0, wrong reply 0
+```
+
+Nothing lost and nothing answered out of turn, the writes included, where each
+one carries the EEPROM latency the reads do not. The protocol waits for its
+answer before asking again, which is what makes one report deep enough.
+
 This is not a workaround dressed as a fix. An HID interface without an OUT
 endpoint is an ordinary shape, and the transfer type it uses is the one this
 controller demonstrably gets right. What it does leave is the endpoint fault
