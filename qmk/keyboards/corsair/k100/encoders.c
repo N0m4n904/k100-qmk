@@ -9,16 +9,14 @@
  * would undo this on every press. The volume roller does what it is printed
  * to do.
  *
- * **Which of the two is which is not yet established.** The pins are:
- * P1_28/P1_29 and P1_30/P1_31, read out of the stock firmware's INPUTMUX
- * configuration, where they are attached to four pin interrupts and sit
- * outside the matrix. That is solid. Which pair is the wheel and which the
- * roller is not, and neither is the direction, because both need someone to
- * turn one and say what happened. docs/pin-mapping.md has the measurements
- * and the test.
+ * The pins are P1_28/P1_29 and P1_30/P1_31, read out of the stock firmware's
+ * INPUTMUX configuration, where they are attached to four pin interrupts and
+ * sit outside the matrix.
  *
- * So the assignment below is a guess that costs one turn to check, and
- * swapping it is swapping two cases.
+ * **Which pair is which was measured by turning them**, and the pairing below
+ * is the one the hardware has: the first pair is the wheel and the second the
+ * roller. The wheel's directions came out right the first time; the roller's
+ * did not, which is why the two cases below are not written the same way.
  */
 
 #include "quantum.h"
@@ -45,7 +43,12 @@ bool encoder_update_kb(uint8_t index, bool clockwise) {
             return false;
 
         case K100_ENCODER_ROLLER:
-            tap_code(clockwise ? KC_VOLU : KC_VOLD);
+            /* Rolled away from the user, which is the direction that has to
+               raise the volume, this one reports anticlockwise. Measured; it
+               was the other way round here first and came out inverted on the
+               keyboard. QMK's ENCODER_DIRECTION_FLIP would turn both round,
+               and the wheel above is already right. */
+            tap_code(clockwise ? KC_VOLD : KC_VOLU);
             return false;
     }
 

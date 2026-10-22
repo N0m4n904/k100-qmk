@@ -78,9 +78,10 @@ CUSTOM_KEYCODE_LABELS = {
 #
 # The pins come from the stock firmware's INPUTMUX configuration, which attaches exactly four
 # pins to pin interrupts -- P1_28 to P1_31, all outside the matrix, which is what two
-# quadrature encoders need. Which pair is which control, and which way round, is not
-# established; see docs/pin-mapping.md. The pairing below groups them adjacently, which is how
-# the firmware's own index-to-channel table groups them.
+# quadrature encoders need. The pairing below groups them adjacently, which is how the
+# firmware's own index-to-channel table groups them, and turning them confirmed it: the first
+# pair is the iCUE wheel and the second the volume roller. What each one does, and which way
+# round, is in the keyboard's encoders.c rather than here.
 ENCODER_PINS = [("P1_28", "P1_29"), ("P1_30", "P1_31")]
 
 ENCODERS = [

@@ -74,10 +74,16 @@ Their pins are `P1_28`/`P1_29` and `P1_30`/`P1_31`, read out of the stock firmwa
 `INPUTMUX` configuration, where they are attached to four pin interrupts and sit outside the
 matrix. The generator emits an `encoder` block for both pairs.
 
-**Which pair is the wheel and which the roller, and which way round, is not established** --
-both need someone to turn one and say what happened. What each does is decided in
-`encoders.c`, where the wheel sets the lighting's brightness and the roller the volume, so
-the rotations are deliberately not remappable and no `encoder_map` is emitted.
+**Which pair is which was settled by turning them**, which is the only way it could be: the
+first pair is the iCUE wheel and the second the volume roller, as the order above guessed.
+What each does is decided in `encoders.c`, where the wheel sets the lighting's brightness and
+the roller the volume, so the rotations are deliberately not remappable and no `encoder_map`
+is emitted.
+
+The directions had to be measured the same way, and only one of them was right: rolling the
+volume roller away from the user reports *anticlockwise*, so its two cases are crossed in
+`encoders.c`. QMK's `ENCODER_DIRECTION_FLIP` is no use for that, because it would turn the
+wheel round with it.
 
 ## ISO DE specifics
 
@@ -181,8 +187,9 @@ nothing. It would show under the first effect that reads a position.
   stand-in and is trivially remapped in VIA.
 - **The two rotations are encoders**, not matrix positions. ckb-next reports them as keys, but
   the stock firmware attaches `P1_28`-`P1_31` to pin interrupts and nothing in the matrix sees
-  a turn. The iCUE wheel sets the lighting's brightness and the volume roller the volume;
-  which pair is which, and which way round, is not established. See `docs/pin-mapping.md`.
+  a turn. The iCUE wheel sets the lighting's brightness and the volume roller the volume,
+  both confirmed by turning them; the roller's directions are crossed because it reports the
+  opposite way round from the wheel.
 - **The wheel's button** is `K100_RGB_PROFILE`, a keycode this keyboard adds, and steps the
   lighting through white, red and rainbow. It used to be `KC_MUTE`, which the mute key beside
   it already was.

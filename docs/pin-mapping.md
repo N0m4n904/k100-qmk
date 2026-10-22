@@ -937,11 +937,17 @@ address, it needs the disassembly to agree.
 
 ##### What is left
 
-Which of the four is which channel of which encoder, and which way round. That is the
-measurement that was always going to be needed: watch `PIN[1]` -- or QMK's `matrix` is no help
-here, these are not matrix pins -- while the wheel and the roller are turned, and read the
-quadrature off the bit pattern. `swd/watch-memory.sh 0x4008E104 1` shows it, and the four bits
-to watch are 28 to 31.
+Which of the four is which channel of which encoder, and which way round. **Settled from the
+other end**: the firmware was built with the pairs grouped adjacently and in the order the
+image's own tables list them, and turning both controls showed the grouping is right -- the
+wheel sets the brightness and the roller the volume, each from its own pair. Only the roller's
+direction came out inverted, which `encoders.c` crosses. So the quadrature was never read off
+`PIN[1]`; one turn of each answered it instead.
+
+The measurement is still the way to settle it on another unit, or if a pairing ever looks
+wrong: watch `PIN[1]` -- QMK's `matrix` is no help here, these are not matrix pins -- while
+the wheel and the roller are turned, and read the quadrature off the bit pattern.
+`swd/watch-memory.sh 0x4008E104 1` shows it, and the four bits to watch are 28 to 31.
 
 #### A census of what the image addresses at all
 
