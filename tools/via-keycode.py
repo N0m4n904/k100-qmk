@@ -20,82 +20,13 @@ udev/99-corsair-k100.rules.
 from __future__ import annotations
 
 import argparse
-import os
-import select
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from k100_usb import PRODUCT, VENDOR, device, hidraw_nodes, identity  # noqa: E402
-
-# VIA's report is 32 bytes each way, and hidraw wants the report number in
-# front of what it sends -- zero, because these reports are not numbered.
-REPORT_SIZE = 32
-
-VIA_GET_PROTOCOL_VERSION = 0x01
-VIA_GET_KEYCODE = 0x04
-VIA_SET_KEYCODE = 0x05
-
-# An unsupported command comes back with this in the first byte, which is how
-# an interface that is not VIA's answers.
-VIA_UNHANDLED = 0xFF
-
-TIMEOUT_S = 1.0
-
-
-def exchange(node: Path, request: bytes) -> bytes | None:
-    """One command and its reply, or None when the node does not answer."""
-    padded = request.ljust(REPORT_SIZE, b"\x00")
-    try:
-        fd = os.open(node, os.O_RDWR)
-    except OSError as error:
-        print(f"  {node.name}: cannot be opened: {error}", file=sys.stderr)
-        return None
-
-    try:
-        # Blocking, and the error is reported rather than swallowed. A write
-        # the device never takes and a reply that never comes are different
-        # faults -- one says the host could not deliver the command, the other
-        # that the firmware did not answer it -- and a probe that cannot tell
-        # them apart sends the reader looking in the wrong half.
-        try:
-            os.write(fd, b"\x00" + padded)
-        except OSError as error:
-            print(f"  {node.name}: the write was not accepted: {error}",
-                  file=sys.stderr)
-            return None
-
-        ready, _, _ = select.select([fd], [], [], TIMEOUT_S)
-        if not ready:
-            return None
-        return os.read(fd, REPORT_SIZE)
-    except OSError as error:
-        print(f"  {node.name}: {error}", file=sys.stderr)
-        return None
-    finally:
-        os.close(fd)
-
-
-def via_node(entry: Path) -> tuple[Path, int] | None:
-    """The interface that speaks VIA, found by asking each one in turn.
-
-    Nothing the host can read says which interface carries VIA, and guessing by
-    number breaks the moment a feature is added or removed in front of it.
-    """
-    nodes = hidraw_nodes(entry)
-    # Said out loud, because "nothing answered" and "there was nothing to ask"
-    # are different faults and look identical from the outside.
-    print(f"asking {len(nodes)} HID interface(s): "
-          f"{' '.join(node.name for node in nodes) or 'none'}")
-
-    for node in nodes:
-        reply = exchange(node, bytes([VIA_GET_PROTOCOL_VERSION]))
-        if reply:
-            print(f"  {node.name} answered {reply[0]:#04x}")
-        if reply and reply[0] == VIA_GET_PROTOCOL_VERSION:
-            return (node, int.from_bytes(reply[1:3], "big"))
-    return None
+from k100_usb import PRODUCT, VENDOR, device, identity  # noqa: E402
+from k100_via import GET_KEYCODE, SET_KEYCODE, exchange, interface  # noqa: E402
 
 
 def main() -> int:
@@ -118,7 +49,7 @@ def main() -> int:
     version, product = identity(entry)
     print(f"running  bcdDevice {version}  {product}")
 
-    found = via_node(entry)
+    found = interface(entry)
     if found is None:
         print("none of this device's HID interfaces answered VIA's protocol "
               "version request. Either VIA is not in this firmware, or it is "
@@ -131,11 +62,11 @@ def main() -> int:
     where = bytes([args.layer, args.row, args.col])
 
     if args.keycode is not None:
-        exchange(node, bytes([VIA_SET_KEYCODE]) + where +
+        exchange(node, bytes([SET_KEYCODE]) + where +
                  args.keycode.to_bytes(2, "big"))
 
-    reply = exchange(node, bytes([VIA_GET_KEYCODE]) + where)
-    if reply is None or reply[0] != VIA_GET_KEYCODE:
+    reply = exchange(node, bytes([GET_KEYCODE]) + where)
+    if reply is None or reply[0] != GET_KEYCODE:
         print("the keymap read was not answered.", file=sys.stderr)
         return 1
 
