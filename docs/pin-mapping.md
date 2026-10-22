@@ -811,8 +811,33 @@ and the callback at `0x000156b2` reads nothing either:
 A sibling at `0x000156b8` posts event 7 the same way. So the dial is **event driven**: the
 timer raises an event and something else services it. No read sits near any of the names,
 which is exactly why searching around them -- the technique that settled the matrix -- returns
-nothing here. **The next place to look is the consumer of events 6 and 7**, through the
-dispatcher at `0x0001563c`.
+nothing here. The dispatcher at `0x0001563c` was followed, and it is not the consumer that
+matters -- it is the producer side of something else again.
+
+`0x0001563c` posts one byte to the queue whose handle lives at `0x20001074`, by
+`xQueueSendFromISR` or `xQueueSend` depending on `IPSR`. That queue is **`keyQueue`**, created
+in the same init, so these are key events rather than an encoder channel of their own. A row
+of thunks feeds it fixed ids -- 0, 2, 4, 5, 6, 7 and 8 -- and the dial timer's callback is one
+of them.
+
+Two real callers rather than thunks. One, at `0x000158c8`, takes an index of 0 to 3 and reads
+a four-entry table at flash `0x0002fb20`:
+
+| index | bits | id |
+| --- | --- | --- |
+| 0 | `0x01` | 0 |
+| 1 | `0x02` | 1 |
+| 2 | `0x08` | 3 |
+| 3 | `0x04` | 2 |
+
+It sets those bits in an event group and posts the id. Four of something, which is what two
+quadrature encoders need, so this looked like the answer. **It is not.** Its only caller is a
+host-command handler, which picks the index out of a byte table by a value the host sent. So
+those four inputs are *commanded* rather than sensed, and the table is a command mapping.
+
+What is left of the trail: the other ids this queue carries, and whichever caller is not a
+thunk and not the command handler. Nothing in any of it has touched a pin yet, and the
+hypothesis at the top of this section still rests on the pull-down configuration alone.
 
 One other thing came out of the same function, about the vendor's EEPROM words rather than the
 pins. The accessor at `0x0001415c` is the EEPROM word reader -- `*(uint32_t *)(0x40108000 +
