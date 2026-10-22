@@ -403,28 +403,46 @@ records URB submissions and completions, so it returns the same error code that
 is already in hand, not the handshake that caused it. Seeing the handshake
 needs a hardware analyser on the bus.
 
-### The way out that does not need to see the bus
+### The way out that does not need to see the bus, and it works
 
 One thing on this keyboard is known to work in this direction: **a control
 transfer carrying data**. `SET_REPORT` with a one-byte payload is accepted and
 acknowledged, tested three times in a row.
 
-That is also what Linux falls back to when an interface has **no OUT endpoint
-at all**: `usbhid_output_report()` returns `-ENOSYS` without an output URB, and
-hidraw then reissues the write as `SET_REPORT` over endpoint zero. So a VIA
-interface with only its IN endpoint would be written to over the path that
-works, and answered over the interrupt IN endpoint, which has never been in
-doubt.
+That is also what Linux does when an interface has **no OUT endpoint at all**:
+without an output URB the HID layer reissues the write as `SET_REPORT` over
+endpoint zero. Measured before anything was built on it -- a write to the
+*keyboard* interface's hidraw node, which has no OUT endpoint, is accepted. An
+earlier write to the same node had failed, which is what made this worth
+checking rather than assuming: that one sent thirty-three bytes at a report
+that holds one.
 
-It needs two things: the OUT endpoint dropped from the raw interface's
-descriptor, and QMK taught to accept `HID_REQ_SetReport` for that interface --
-today it handles the request only for the keyboard interface, where it carries
-the lock lights. Both are ordinary changes; the second wants a patch under
-`qmk/patches/`.
+So the vendor interface is given no OUT endpoint, and
+`RAW_HID_NO_OUT_ENDPOINT` in `qmk/patches/0004-raw-hid-without-an-out-endpoint.patch`
+drops it from the descriptor and accepts `HID_REQ_SetReport` for that interface
+instead. The report is recorded in the request's own callback and handed to
+`raw_hid_receive()` from the main loop, because on a VIA build that call reads
+and writes the part's EEPROM and interrupt context is no place for it.
+
+**Proven over the ordinary HID path**, which is the one the VIA application
+uses:
+
+```
+VIA on /dev/hidraw14, protocol 0x000d
+layer 0 row 7 col 2: 0x700b          the Windows lock key, as the EEPROM has it
+layer 1 row 7 col 0: 0x0001 -> 0x0004 -> read back 0x0004 -> 0x0001
+```
+
+The descriptor that comes out of it has one endpoint per interface and no OUT
+endpoint anywhere: `0x81` for the keyboard, `0x82` for the vendor interface,
+`0x83` for the consumer keys, which moved down a number when the OUT endpoint
+stopped taking one.
 
 This is not a workaround dressed as a fix. An HID interface without an OUT
 endpoint is an ordinary shape, and the transfer type it uses is the one this
-controller demonstrably gets right.
+controller demonstrably gets right. What it does leave is the endpoint fault
+itself, unexplained and now unexercised -- written down above so that it is
+findable, and not in the way of anything.
 
 ### Confirmed by reading Corsair's code
 
