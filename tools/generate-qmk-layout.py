@@ -28,7 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from k100_firmware import (  # noqa: E402
-    BRAGI_NAMES, QMK_KEYCODES, SENSES, STROBES, STROBE_PIN_BASE, Firmware,
+    BRAGI_NAMES, QMK_KEYCODES, SENSES, STROBES, STROBE_PIN_BASE, Firmware, Led,
 )
 
 # QMK keycodes for the keys that have no HID usage code of their own.
@@ -72,8 +72,13 @@ FN_OVERRIDES = {
     (1, 14): "EE_CLR",
 }
 
+LED_FLAG_NONE = 0x00
 LED_FLAG_UNDERGLOW = 0x02
 LED_FLAG_KEYLIGHT = 0x04
+
+# What an entry carries when nothing places it. Its flags keep every effect
+# away, so the coordinates are not wrong -- nothing reads them.
+UNPLACED_POSITION = (0, 0)
 
 QMK_MAX_X, QMK_MAX_Y = 224, 64
 
@@ -200,7 +205,50 @@ def scale(keys: list[Key]):
     return to_qmk
 
 
-def build_keyboard_json(placed: list[Key], all_keys: list[Key]) -> dict:
+def rgb_layout(lit: list[Key], to_qmk, leds: list[Led]) -> list[dict]:
+    """The lighting table: a position for each LED, as far as either source knows one.
+
+    Two rules, and both come from somewhere rather than from taste.
+
+    **It is as long as the firmware's own LED map.** QMK will not address an LED
+    past the end of this table, and the keyboard addresses some that ckb-next's
+    geometry never places -- the status icons among them. Stopping at what has
+    coordinates is what made the length a number someone had to choose, and a
+    chosen length is one that drifts.
+
+    **An entry whose LED has one channel carries no flags.** The channel table in
+    is31fl3743b_leds.c is indexed by the firmware's LED index, so position *n*
+    here drives whatever LED *n* is there -- and six of them are single-channel
+    status icons. Colouring one is meaningless: it is on or off, and what it
+    means is decided by what the keyboard is reporting. See indicators.c.
+
+    The positions themselves come from ckb-next and are dense over what it
+    places, which does **not** line up with the firmware's index space. That is
+    a real disagreement and it is not settled here; docs/pin-mapping.md has the
+    measurements. It costs nothing under one flat colour and would show under
+    the first effect that reads a position.
+    """
+    single_colour = {led.index for led in leds if not led.is_rgb}
+
+    def entry(key: Key) -> dict:
+        x, y = to_qmk(key)
+        if key.matrix:
+            return {"matrix": list(key.matrix), "x": x, "y": y, "flags": LED_FLAG_KEYLIGHT}
+        return {"x": x, "y": y, "flags": LED_FLAG_UNDERGLOW}
+
+    unplaced_x, unplaced_y = UNPLACED_POSITION
+    table = [entry(key) for key in lit]
+    table += [{"x": unplaced_x, "y": unplaced_y, "flags": LED_FLAG_NONE}
+              for _ in range(len(leds) - len(table))]
+
+    for index in single_colour:
+        table[index]["flags"] = LED_FLAG_NONE
+        table[index].pop("matrix", None)
+
+    return table
+
+
+def build_keyboard_json(placed: list[Key], all_keys: list[Key], leds: list[Led]) -> dict:
     to_qmk = scale(all_keys)
     lit = sorted((k for k in all_keys if k.has_led), key=lambda k: k.led)
 
@@ -237,17 +285,20 @@ def build_keyboard_json(placed: list[Key], all_keys: list[Key]) -> dict:
         "features": {
             "bootmagic": False, "command": False, "console": False,
             "extrakey": True, "mousekey": False, "nkro": True, "rgb_matrix": True,
+            "via": True,
         },
         "usb": {"vid": "0x1B1C", "pid": "0x1B7C", "device_version": "0.0.1"},
         "rgb_matrix": {
-            "driver": "custom",
-            "layout": [
-                ({"matrix": list(k.matrix), "x": to_qmk(k)[0], "y": to_qmk(k)[1],
-                  "flags": LED_FLAG_KEYLIGHT}
-                 if k.matrix else
-                 {"x": to_qmk(k)[0], "y": to_qmk(k)[1], "flags": LED_FLAG_UNDERGLOW})
-                for k in lit
-            ],
+            "driver": "is31fl3743b",
+            # One effect. The others are not refused on principle -- none has
+            # been driven on this keyboard, and an animation a definition offers
+            # and nothing has run is a claim rather than a feature.
+            "animations": {"solid_color": True},
+            # White, full brightness. A stored default survives a reflash, so
+            # changing this means moving EECONFIG_MAGIC_NUMBER too; that note
+            # lives in the keyboard's config.h, beside the number.
+            "default": {"animation": "solid_color", "hue": 0, "sat": 0, "val": 255},
+            "layout": rgb_layout(lit, to_qmk, leds),
         },
         "layouts": {"LAYOUT_k100_iso_de": {"layout": layout}},
     }
@@ -398,6 +449,7 @@ def main() -> int:
         raise SystemExit(f"no Bragi LED index for: {', '.join(missing)}")
 
     firmware = Firmware(args.firmware.read_bytes())
+    leds = firmware.leds()
     placed = join_matrix(keys, firmware, args.layout)
 
     # Everything that scans but did not land in the matrix must be an encoder, or the join
@@ -412,7 +464,7 @@ def main() -> int:
 
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "keyboard.json").write_text(
-        json.dumps(build_keyboard_json(placed, list(keys.values())), indent=2) + "\n")
+        json.dumps(build_keyboard_json(placed, list(keys.values()), leds), indent=2) + "\n")
 
     keymap_dir = args.out / "keymaps" / "default"
     keymap_dir.mkdir(parents=True, exist_ok=True)
@@ -424,8 +476,11 @@ def main() -> int:
     lit = [k for k in keys.values() if k.has_led]
     print(f"matrix      {STROBES} x {SENSES} electrical, {len(placed)} positions")
     print(f"encoders    {len(ENCODERS)} (rotations are not matrix-scanned)")
-    print(f"rgb matrix  {len(lit)} LEDs "
-          f"({sum(1 for k in lit if k.matrix)} key, {sum(1 for k in lit if not k.matrix)} underglow)")
+    print(f"rgb matrix  {len(leds)} LEDs in the firmware's map "
+          f"({sum(1 for k in lit if k.matrix)} key, "
+          f"{sum(1 for k in lit if not k.matrix)} underglow placed by ckb-next, "
+          f"{sum(1 for led in leds if not led.is_rgb)} single colour, "
+          f"{len(leds) - len(lit)} with no position)")
     print(f"written     {args.out / 'keyboard.json'}")
     print(f"            {keymap_dir / 'keymap.c'}")
     print(f"            {args.via_out}")

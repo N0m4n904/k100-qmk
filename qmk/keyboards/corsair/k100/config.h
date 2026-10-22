@@ -4,12 +4,19 @@
 
 /*
  * 190 LEDs across three IS31FL3743B drivers, as the firmware's LedInfoMap
- * declares: 184 RGB keys and bars plus 6 single-colour indicators. The table
- * itself is generated; see tools/generate-led-tables.py.
+ * declares: 184 RGB keys and bars plus 6 single-colour indicators. Both tables
+ * are generated and both are this long -- the lighting table by
+ * tools/generate-qmk-layout.py and the channel table by
+ * tools/generate-led-tables.py.
  *
- * Not yet RGB_MATRIX_LED_COUNT, because the generated QMK layout covers the 174
- * positions that have a key or a known place on the board, and reconciling the
- * two is its own piece of work -- see docs/pin-mapping.md on the LED counts.
+ * It used to be 179, which was the length someone chose: far enough to reach
+ * the status icons and no further. The firmware's own count is the one number
+ * here that nobody picked, and QMK will not address an LED past the end of the
+ * table, so a shorter one silently puts some of this keyboard out of reach.
+ *
+ * Sixteen of them have no position, so no effect reaches them and they stay
+ * dark. What position each LED has is a separate and unsettled question; see
+ * docs/pin-mapping.md on the LED counts.
  */
 /*
  * With rgb_matrix driving them the count is RGB_MATRIX_LED_COUNT, which the
@@ -17,7 +24,7 @@
  * the tables are still compiled.
  */
 #ifndef RGB_MATRIX_IS31FL3743B
-#    define IS31FL3743B_LED_COUNT 179
+#    define IS31FL3743B_LED_COUNT 190
 #endif
 
 #define IS31FL3743B_DRIVER_COUNT 3
