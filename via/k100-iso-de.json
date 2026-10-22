@@ -365,5 +365,12 @@
         "6,1"
       ]
     ]
-  }
+  },
+  "customKeycodes": [
+    {
+      "name": "LED Profile",
+      "title": "Steps the lighting through white, red and rainbow",
+      "shortName": "LED"
+    }
+  ]
 }

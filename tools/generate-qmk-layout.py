@@ -55,6 +55,24 @@ NON_HID_KEYCODES = {
     "stop": "KC_MSTP", "prev": "KC_MPRV", "play": "KC_MPLY", "next": "KC_MNXT",
 }
 
+# How VIA names this keyboard's own keycodes.
+#
+# VIA knows every standard QMK keycode and none of these, so without an entry here the key
+# reads as a bare `0x7e00` in the app and cannot be picked from the list at all -- it has to be
+# typed as a hex code into `Any`.
+#
+# Keyed by the C name rather than ordered, because the order VIA needs is k100.h's: its
+# `customKeycodes` array is positional, entry 0 being the first `QK_KB` keycode. Taking the
+# order from the header instead of from here is what stops the two drifting apart, and a
+# drifted order is silent -- the app would simply label the wrong keycode.
+CUSTOM_KEYCODE_LABELS = {
+    "K100_RGB_PROFILE": {
+        "name": "LED Profile",
+        "title": "Steps the lighting through white, red and rainbow",
+        "shortName": "LED",
+    },
+}
+
 # The two rotary controls. Neither rotation is matrix-scanned, so they are encoders rather
 # than keys; the wheel's *button* is in the matrix.
 #
@@ -381,7 +399,34 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {{
 """
 
 
-def build_via_json(placed: list[Key]) -> dict:
+def custom_keycodes(header: Path) -> list[dict]:
+    """VIA's `customKeycodes`, in the order the keyboard's enum declares them.
+
+    The enum is the source of truth for the order because it is the source of truth for the
+    keycodes: the first enumerator *is* `CUSTOM(0)`. A keycode the header declares and
+    CUSTOM_KEYCODE_LABELS does not is an error rather than an unnamed entry in the app, and so
+    is a label for a keycode no longer declared, which would shift every entry after it.
+    """
+    declaration = re.search(r"enum\s+k100_keycodes\s*\{(.*?)\}", header.read_text(), re.S)
+    if declaration is None:
+        raise SystemExit(f"{header} declares no enum k100_keycodes")
+
+    declared = re.findall(r"^\s*(K100_\w+)\s*(?:=|,)", declaration.group(1), re.M)
+    if not declared:
+        raise SystemExit(f"{header}'s enum k100_keycodes declares nothing")
+
+    unlabelled = [name for name in declared if name not in CUSTOM_KEYCODE_LABELS]
+    if unlabelled:
+        raise SystemExit(f"no VIA label for: {', '.join(unlabelled)}")
+
+    stale = sorted(set(CUSTOM_KEYCODE_LABELS) - set(declared))
+    if stale:
+        raise SystemExit(f"labelled but not declared in {header.name}: {', '.join(stale)}")
+
+    return [CUSTOM_KEYCODE_LABELS[name] for name in declared]
+
+
+def build_via_json(placed: list[Key], keycodes: list[dict]) -> dict:
     """VIA v3 definition. The keymap is KLE, emitted with explicit per-row offsets."""
     rows: dict[float, list[Key]] = {}
     for key in placed:
@@ -417,6 +462,7 @@ def build_via_json(placed: list[Key]) -> dict:
         "productId": "0x1B7C",
         "matrix": {"rows": STROBES, "cols": SENSES},
         "layouts": {"keymap": kle},
+        "customKeycodes": keycodes,
     }
 
 
@@ -448,6 +494,10 @@ QMK_KEYCODES_BY_NAME = {
 }
 
 
+#: Where the keyboard lives. Both an output directory and, for the keycode enum, an input.
+KEYBOARD_DIR = Path("qmk/keyboards/corsair/k100")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -457,7 +507,9 @@ def main() -> int:
                         default=Path("tools/extract-ckb-keymap/k100-de.json"))
     parser.add_argument("--ckb", type=Path, required=True, help="a ckb-next checkout")
     parser.add_argument("--layout", default="iso")
-    parser.add_argument("--out", type=Path, default=Path("qmk/keyboards/corsair/k100"))
+    parser.add_argument("--out", type=Path, default=KEYBOARD_DIR)
+    parser.add_argument("--keycodes", type=Path, default=KEYBOARD_DIR / "k100.h",
+                        help="the header declaring enum k100_keycodes, read for VIA's labels")
     parser.add_argument("--via-out", type=Path, default=Path("via/k100-iso-de.json"))
     args = parser.parse_args()
 
@@ -473,6 +525,7 @@ def main() -> int:
     firmware = Firmware(args.firmware.read_bytes())
     leds = firmware.leds()
     placed = join_matrix(keys, firmware, args.layout)
+    keycodes = custom_keycodes(args.keycodes)
 
     # Everything that scans but did not land in the matrix must be an encoder, or the join
     # has silently dropped a key.
@@ -493,7 +546,8 @@ def main() -> int:
     (keymap_dir / "keymap.c").write_text(build_keymap_c(placed))
 
     args.via_out.parent.mkdir(parents=True, exist_ok=True)
-    args.via_out.write_text(json.dumps(build_via_json(placed), indent=2) + "\n")
+    args.via_out.write_text(
+        json.dumps(build_via_json(placed, keycodes), indent=2) + "\n")
 
     lit = [k for k in keys.values() if k.has_led]
     print(f"matrix      {STROBES} x {SENSES} electrical, {len(placed)} positions")

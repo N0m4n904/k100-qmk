@@ -17,11 +17,11 @@ Outputs:
 | --- | --- |
 | `qmk/keyboards/corsair/k100/keyboard.json` | `LAYOUT_k100_iso_de`, matrix size, `rgb_matrix.layout` |
 | `qmk/keyboards/corsair/k100/keymaps/default/keymap.c` | Default keymap plus an empty Fn layer |
-| `via/k100-iso-de.json` | VIA v3 definition |
+| `via/k100-iso-de.json` | VIA v3 definition, with the labels for the keycodes this keyboard adds |
 
 ## Where the data comes from
 
-Three sources, joined:
+Four sources, joined:
 
 - **The electrical matrix**, read from an official firmware image by `tools/k100_firmware.py`,
   which both this generator and `extract-matrix-map.py` share.
@@ -33,6 +33,12 @@ Three sources, joined:
 - **LED ordering** from ckb-next's `keymap_bragi` array in `src/daemon/keymap.c`, where the
   array index *is* the Bragi LED index. `N_KEYS_BRAGI_PATCH` is 194, matching the 193 LEDs
   that `led_bragi.c` reports for the K100.
+- **The keycodes this keyboard adds**, from `enum k100_keycodes` in the keyboard's own
+  `k100.h`, read for the order it declares them in. VIA's `customKeycodes` is positional --
+  its first entry labels the first `QK_KB` keycode -- so the enum is what fixes that order,
+  and taking it from the header is what keeps the two from drifting apart. A keycode declared
+  there with no label in the generator stops it, rather than reaching the app as a bare hex
+  code nobody can pick from a list.
 
 The generator refuses to emit anything if a key lacks a QMK keycode or an LED index, so
 silent gaps are not possible.

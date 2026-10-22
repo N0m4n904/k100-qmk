@@ -10,6 +10,12 @@
  *
  * In QMK's keyboard range, so VIA can remap them like any other and a keymap
  * that wants the key to do something else is free to say so.
+ *
+ * This enum is also where the VIA definition gets its labels' *order*: VIA's
+ * `customKeycodes` array is positional, its first entry describing the first
+ * `QK_KB` keycode. tools/generate-qmk-layout.py reads the declarations below
+ * for that order and refuses to emit a definition that leaves one of them
+ * unlabelled, so adding a keycode here means adding its label there.
  */
 enum k100_keycodes {
     /** Steps the lighting through white, red and rainbow. See lighting_profiles.c. */
