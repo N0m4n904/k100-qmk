@@ -839,6 +839,47 @@ What is left of the trail: the other ids this queue carries, and whichever calle
 thunk and not the command handler. Nothing in any of it has touched a pin yet, and the
 hypothesis at the top of this section still rests on the pull-down configuration alone.
 
+#### A census of what the image addresses at all
+
+Following names is one way in; counting addresses is the other, and it is the one that gives a
+bound rather than another lead. Every four-byte value in the image was classified by which
+peripheral's register block it falls in:
+
+| | |
+| --- | --- |
+| GPIO | 9, and **all of them are the matrix** |
+| Flexcomm 3 | 5, the LED bus |
+| EEPROM controller, MRT, DMA, IOCON, RIT, SYSCON | a handful each |
+| the other Flexcomms, CTIMER0 to 2 | threes and pairs that sit consecutively: base tables |
+| **PINT, INPUTMUX, ADC** | **none at all** |
+
+The GPIO count is the useful one. Four distinct addresses: the port base, `PIN[1]`, and two
+byte registers -- one of which reads as `B[0][18]` and had to be looked at, `P0_18` being a
+pull-down pin and a candidate. It is not one. The code adds a loop counter and then **32**, the
+port stride, so `B[0][18] + n + 32` is `B[1][18 + n]`: the eight matrix strobes, written zero
+to assert. The other byte register is the same row of strobes reached directly.
+
+The two singleton timer references are SDK boilerplate -- a helper that turns a CTIMER base
+into an instance index, and an SCT reset that is called through a function pointer. Neither
+configures a capture.
+
+**So no pin-level mechanism in this image reads a rotation.** No pin interrupt, no input mux,
+no analogue input, and no GPIO access that is not the matrix. That does not say where the
+rotations come from; it says where they do not come from, which is most of the places worth
+guessing.
+
+#### What that leaves, and the test for it
+
+The one reading that survives is that the contacts are **on the matrix** and the firmware takes
+them straight out of the scan by position, rather than through `HidKeyCodes` and `BragiKeyIds`
+-- which name every position they cover, and do not cover these.
+
+That is cheap to test and the test is specific. Strobe 7 has nine senses, 4 to 12, that no
+table names and that read as permanently pressed on this firmware; any of them, or any other
+bit that sits still, changing while the wheel is turned would settle it and name the position
+at the same time. `swd/watch-memory.sh` on QMK's `matrix` array does it, and it needs someone
+at the keyboard for ten seconds rather than another pass through the image.
+
 One other thing came out of the same function, about the vendor's EEPROM words rather than the
 pins. The accessor at `0x0001415c` is the EEPROM word reader -- `*(uint32_t *)(0x40108000 +
 index * 4)`, bounded at index 31 and taken under a semaphore, which is the range check
