@@ -186,6 +186,10 @@ hook keeps being called, and the keyboard goes dark with its icons still lit. QM
 keyboard's own effects after every built-in, which makes it 3 here, and a `_Static_assert`
 in that file holds the number against what the generated definition sends.
 
+Measured on the keyboard, reading the LED output buffer over SWD while the firmware ran:
+with "Off" selected the key channels hold `0x00` and the lit indicator's channel still holds
+`0xff`, where before the switch both held `0xff`.
+
 The same asymmetry works in the firmware's favour one level down. An effect's colour goes
 through the brightness, so brightness zero is dark keys; the icons are written with
 `rgb_matrix_set_color()`, which hands its three bytes to the driver unscaled, so they are
