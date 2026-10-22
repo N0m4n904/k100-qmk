@@ -99,12 +99,40 @@ physical about ISO here: the two extra keys (`KC_NUBS`, `KC_NUHS`) and the key s
 
 ## RGB matrix
 
-**174 LEDs**: 119 under keys (`LED_FLAG_KEYLIGHT`), 55 in the three-sided LightEdge and
-lightbars (`LED_FLAG_UNDERGLOW`). Positions are scaled from ckb-next's 16ths-of-an-inch grid
-onto QMK's 224x64 space, preserving the bounding box so the negative coordinates of the left
-bar and top bar land correctly.
+The table is **190 entries long, one per LED in the firmware's own `LedInfoMap`**. QMK will
+not address an LED past the end of it, and this keyboard has LEDs that ckb-next's geometry
+never places, so stopping at what has coordinates would make the length a number someone
+chose. It is read out of the keyboard instead.
 
-Four keys carry a scancode but no LED, which is why 123 keys yield only 119 key LEDs.
+| Entries | Flag | What they are |
+| --- | --- | --- |
+| 119 | `LED_FLAG_KEYLIGHT` | under keys |
+| 54 | `LED_FLAG_UNDERGLOW` | the bars of the three-sided LightEdge, the ring around the iCUE wheel, the logo |
+| 17 | none | the six status icons, and eleven that nothing places |
+
+Positions are scaled from ckb-next's 16ths-of-an-inch grid onto QMK's 224x64 space,
+preserving the bounding box so the negative coordinates of the left bar and top bar land
+correctly. Four keys carry a scancode but no LED, which is why 123 keys yield only 119 key
+LEDs.
+
+### The seventeen entries that carry no flag
+
+A flag of zero keeps every effect away, and that is what these entries are for: they exist so
+that the indices after them line up, not to be drawn on. It is also why the coordinate they
+carry is harmless -- nothing reads it.
+
+**Six are the status icons.** Single-channel LEDs, on or off with nothing in between, so a
+colour would be meaningless and what they mean is decided by what the keyboard is reporting.
+`indicators.c` drives them by index and is the only thing that does. The channel table in
+`is31fl3743b_leds.c` marks which LEDs have one channel, so the generator finds them rather
+than being told. The first of the six does carry a position from ckb-next, which nothing
+reads; the other five have none.
+
+**Eleven, indices 179 to 189, nothing places and nothing drives.** They are real channels --
+three each on the third driver, so RGB-capable -- and they have been dark since init.
+ckb-next's geometry has neither a position nor a name for them, so what they light is not
+established. The bars, the wheel's ring and the logo are **not** among them: all three are
+placed and carry the underglow flag.
 
 ### The 174 versus 193 question, resolved
 
@@ -123,6 +151,13 @@ count 193 is confirmed from the other side too: OpenRGB's LED indices run to a m
 **So 174 is correct for this board, not deficient.** Four are padding, one is ANSI-only, and
 six are unknown to every public source.
 
+The counts also agree across the two projects, which is worth noting because they were read
+from different places: ckb-next's array holds 194 entries of which the first four are
+padding, leaving 190 real LEDs, and 190 is exactly what the firmware's own `LedInfoMap`
+holds. The two sources agree on *how many* LEDs exist. Whether they agree **index for index**
+is the open question above, and the four padding entries at ckb-next's head are the first
+reason to doubt it.
+
 The middle group needs a second look though. Those eight carry LED indices in
 `keymap_bragi` but are flagged `hasLed == false` in ckb-next's GUI geometry — the two tables
 in the same project disagree. `volup`, `voldn` and the two wheel-rotation entries are real
@@ -134,9 +169,11 @@ Useful corroboration from OpenRGB for later: it names indices our map already co
 including `Lock` at 114, the media keys at 123–126, `Profile` at 128, `iCue` at 137,
 `Wheel 1`–`8` at 182–189 and `Logo L` at 190. The iCUE wheel therefore has **eight LEDs of
 its own**, which is worth knowing when the LightEdge and wheel zones are wired up.
-- The LED **order** here follows Corsair's own Bragi indexing. That is a well-founded
-  starting assumption, but the index to hardware mapping depends on how the LED driver ICs
-  are actually wired, which is still unknown. Expect to revisit once the RGB bus is traced.
+**Which driver and channels light LED *n* is known**, because `is31fl3743b_leds.c` is read
+out of the firmware's own table. What is not established is whether entry *n*'s **coordinate**
+belongs to LED *n*: the positions are dense over what ckb-next places, in ckb-next's order,
+and that order is not guaranteed to be the firmware's. Under one flat colour this costs
+nothing. It would show under the first effect that reads a position.
 
 ## Keycode choices worth knowing
 
