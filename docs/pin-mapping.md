@@ -736,7 +736,14 @@ The bootloader writes exactly this, and its own code says so. It is a run of rea
 on consecutive IOCON registers from `0x000009f8` in the dumped image -- `0x102` to `P0_0` and
 `P0_1`, `0x101` to `P0_2`, `P0_3`, `P0_7` and `P0_9`, `0x106` to `P0_23` through `P0_28`,
 `0x100` to `P0_8`, `P0_14`, `P0_17` and `P0_29`, `0x110` to `P0_18`, and `0x120` to the port 1
-senses. So the application image not containing them was right, and the reason was right too.
+senses.
+
+**The application configures some of them too**, which an earlier version of this paragraph
+denied. Its three IOCON functions between them write `P0_0`, `P0_1`, `P0_2`, `P0_13`, `P0_14`,
+`P0_17`, `P0_18`, `P0_23` to `P0_26` and a run of port 1 pins. What they do **not** touch is
+`P0_3`, `P0_7`, `P0_9`, `P0_27`, `P0_28` and `P0_29`. So three of the six below are set by the
+bootloader alone, which is the shape the original claim was reaching for, and `P0_2` is set by
+both.
 
 **That leaves six pins for the bus, and the bus needs six signals.** `P0_8` and `P0_29` are the
 driver enables, which this firmware drives as GPIO. `P0_23`-`P0_28` are SPIFI. `P0_11` and
@@ -890,7 +897,7 @@ peripheral's register block it falls in:
 | Flexcomm 3 | 5, the LED bus |
 | EEPROM controller, MRT, DMA, IOCON, RIT, SYSCON | a handful each |
 | the other Flexcomms, CTIMER0 to 2 | threes and pairs that sit consecutively: base tables |
-| **PINT, INPUTMUX, ADC** | **none at all** |
+| **PINT, ADC** | no literal anywhere |
 
 The GPIO count is the useful one. Four distinct addresses: the port base, `PIN[1]`, and two
 byte registers -- one of which reads as `B[0][18]` and had to be looked at, `P0_18` being a
@@ -902,10 +909,18 @@ The two singleton timer references are SDK boilerplate -- a helper that turns a 
 into an instance index, and an SCT reset that is called through a function pointer. Neither
 configures a capture.
 
-**So no pin-level mechanism in this image reads a rotation.** No pin interrupt, no input mux,
-no analogue input, and no GPIO access that is not the matrix. That does not say where the
-rotations come from; it says where they do not come from, which is most of the places worth
-guessing.
+**What this census cannot see, and a correction.** It reads four-byte values, so it finds a
+peripheral only when its base is a literal. A base reached by arithmetic is invisible to it --
+and this image has one: `sub.w r5, r5, #0x87000` at flash `0x00011a62` takes the GPIO base to
+`0x40005000`, which is `INPUTMUX`. An earlier version of this paragraph said INPUTMUX does not
+appear in the image. It does, the list above already said so, and counting literals is exactly
+the method that could not have found it.
+
+So what the census supports is narrower than it first looked: there is **no literal reference
+to PINT or the ADC**, and **every GPIO literal is the matrix**. It does not establish that no
+pin-level mechanism reads a rotation, because the mechanism it would most likely use --
+`INPUTMUX` selecting an input for a timer capture -- is reached the one way this method cannot
+follow.
 
 #### What that leaves, and the test for it
 
