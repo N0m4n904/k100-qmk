@@ -398,16 +398,16 @@
               "type": "dropdown",
               "options": [
                 [
-                  "Off",
-                  0
-                ],
-                [
                   "Solid Color",
                   1
                 ],
                 [
                   "Rainbow",
                   2
+                ],
+                [
+                  "Off",
+                  3
                 ]
               ],
               "content": [

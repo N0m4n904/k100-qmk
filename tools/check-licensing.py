@@ -24,7 +24,7 @@ from pathlib import Path
 
 # Suffixes worth checking. Generated output and vendored third-party trees are
 # not in the repository at all, so there is nothing to exclude.
-SOURCE_SUFFIXES = {".c", ".h", ".cpp", ".py", ".rs", ".sh", ".mk", ".ld"}
+SOURCE_SUFFIXES = {".c", ".h", ".cpp", ".inc", ".py", ".rs", ".sh", ".mk", ".ld"}
 
 # Longest matching prefix wins, so a single file can override its directory.
 # This mirrors the table in LICENSING.md; if one changes the other must.

@@ -113,9 +113,15 @@ FN_OVERRIDES = {
 # Only effects that ignore where an LED is are enabled, because this keyboard's LED
 # positions do not yet agree with the LEDs they are attached to -- see docs/pin-mapping.md.
 # What each one responds to decides which controls VIA offers alongside it.
+#
+# `custom` marks the keyboard's own, in rgb_matrix_kb.inc, which QMK numbers after every
+# built-in and enables through rules.mk rather than through keyboard.json -- so each is
+# keyed by the name its own kind is known by: a built-in by the lowercase name
+# keyboard.json takes, ours by the C name the effect is declared with.
 ANIMATIONS = {
     "solid_color": {"label": "Solid Color", "colour": True, "speed": False},
     "cycle_all": {"label": "Rainbow", "colour": False, "speed": True},
+    "K100_LIGHTS_OFF": {"label": "Off", "colour": False, "speed": False, "custom": True},
 }
 
 # QMK's channel for the RGB matrix and the prefix VIA's own menu gives its four values,
@@ -347,8 +353,11 @@ def build_keyboard_json(placed: list[Key], all_keys: list[Key], leds: list[Led])
             # The two the wheel button steps through, and no more. An
             # animation a definition offers and nothing drives is a claim
             # rather than a feature. See ANIMATIONS for why these two, and
-            # lighting_profiles.c on why the rainbow is CYCLE_ALL.
-            "animations": {name: True for name in ANIMATIONS},
+            # lighting_profiles.c on why the rainbow is CYCLE_ALL. The
+            # keyboard's own effect is not named here: QMK takes that one
+            # through rules.mk, and the schema knows only its own.
+            "animations": {name: True for name, animation in ANIMATIONS.items()
+                           if not animation.get("custom")},
             # White, full brightness. A stored default survives a reflash, so
             # changing this means moving EECONFIG_MAGIC_NUMBER too; that note
             # lives in the keyboard's config.h, beside the number.
@@ -451,8 +460,12 @@ def lighting_menu() -> dict:
     has, at the numbers it answers to, and that the colour and speed controls appear only
     for the effects that read them.
 
-    Zero is not an effect. It disables the matrix, which takes the status icons with it,
-    since QMK draws indicators only while an effect is running.
+    Zero is not offered at all, although VIA's own menu offers it as "All Off". Sending it
+    does not select an effect, it disables the matrix, and QMK draws the status icons only
+    while an effect is running -- so turning the key lighting off from the app would take
+    Num Lock with it. "Off" here is an effect that paints black, in rgb_matrix_kb.inc, and
+    the icons stay lit under it. The entries are in the order QMK numbers them, which puts
+    that one last, since it is the keyboard's own.
     """
     return {
         "label": "Lighting",
@@ -462,9 +475,8 @@ def lighting_menu() -> dict:
                 {"label": "Brightness", "type": "range", "options": [0, 255],
                  "content": [f"{RGB_MATRIX_VALUE}brightness", RGB_MATRIX_CHANNEL, 1]},
                 {"label": "Effect", "type": "dropdown",
-                 "options": [["Off", 0]] + [
-                     [animation["label"], number] for number, animation
-                     in enumerate(ANIMATIONS.values(), start=1)],
+                 "options": [[animation["label"], number] for number, animation
+                             in enumerate(ANIMATIONS.values(), start=1)],
                  "content": [EFFECT_VALUE, RGB_MATRIX_CHANNEL, 2]},
                 {"label": "Effect Speed", "type": "range", "options": [0, 255],
                  **only_for(effect_numbers("speed")),

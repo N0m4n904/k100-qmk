@@ -24,6 +24,11 @@ SRC += lighting_profiles.c
 # reason: which rotary is which is a property of the board.
 SRC += encoders.c
 
+# Our own RGB effect, in rgb_matrix_kb.inc, which QMK includes into
+# rgb_matrix.c rather than compiling on its own -- so no SRC entry, just this.
+# The file says why an effect that paints black has to exist at all.
+RGB_MATRIX_CUSTOM_KB = yes
+
 # The way back to Corsair's bootloader. Not optional: QMK does not speak Bragi,
 # so without this the first custom image written to the keyboard is the last
 # one. keyboard.json declares `bootloader: custom`, which gives QMK's weak

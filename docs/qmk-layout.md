@@ -161,8 +161,35 @@ firmware compiles two, so 1 is the solid colour and 2 the rainbow. In VIA's list
 The menu is therefore emitted from the same `ANIMATIONS` table the firmware's animation
 list comes from. The dropdown holds exactly the effects that exist, at the numbers they
 answer to, and the colour and speed controls carry a `showIf` so that each appears only
-for the effects that read it. Zero is not an effect: it disables the matrix, which takes
-the status icons with it, because QMK draws indicators only while an effect is running.
+for the effects that read it.
+
+### Why "Off" is effect 3 and not zero
+
+VIA's own menu offers "All Off" as value zero, and zero is not an effect. It disables the
+matrix, and QMK draws the status icons from inside the lighting task:
+
+```c
+rgb_task_render(effect);
+if (effect) {
+    rgb_matrix_indicators();
+    rgb_matrix_indicators_advanced(&rgb_effect_params);
+}
+```
+
+With no effect running there is no call, and the task then stops sending frames at all --
+*"we only need to flush once if we are `RGB_MATRIX_NONE`"* -- so no other hook can paint
+them either. Turning the key lighting off from the app would take Num Lock with it.
+
+So the menu does not offer zero. Its "Off" selects `K100_LIGHTS_OFF` in
+`rgb_matrix_kb.inc`, an effect that paints black: the task keeps running, the indicator
+hook keeps being called, and the keyboard goes dark with its icons still lit. QMK numbers a
+keyboard's own effects after every built-in, which makes it 3 here, and a `_Static_assert`
+in that file holds the number against what the generated definition sends.
+
+The same asymmetry works in the firmware's favour one level down. An effect's colour goes
+through the brightness, so brightness zero is dark keys; the icons are written with
+`rgb_matrix_set_color()`, which hands its three bytes to the driver unscaled, so they are
+lit either way.
 
 The four controls are QMK's `id_qmk_rgb_matrix_*` values on channel 3.
 `tools/via-lighting.py` drives the same four, which is how the menu is checked against the
