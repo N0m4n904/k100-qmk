@@ -20,6 +20,10 @@ SRC += indicators.c
 # on, so without this it does nothing of its own.
 SRC += lighting_profiles.c
 
+# What the wheel and the roller do when they turn. Keyboard level for the same
+# reason: which rotary is which is a property of the board.
+SRC += encoders.c
+
 # The way back to Corsair's bootloader. Not optional: QMK does not speak Bragi,
 # so without this the first custom image written to the keyboard is the last
 # one. keyboard.json declares `bootloader: custom`, which gives QMK's weak

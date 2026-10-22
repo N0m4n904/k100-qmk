@@ -16,6 +16,7 @@
     "bootmagic": false,
     "command": false,
     "console": false,
+    "encoder": true,
     "extrakey": true,
     "mousekey": false,
     "nkro": true,
@@ -1465,6 +1466,18 @@
         "x": 0,
         "y": 0,
         "flags": 0
+      }
+    ]
+  },
+  "encoder": {
+    "rotary": [
+      {
+        "pin_a": "P1_28",
+        "pin_b": "P1_29"
+      },
+      {
+        "pin_a": "P1_30",
+        "pin_b": "P1_31"
       }
     ]
   },

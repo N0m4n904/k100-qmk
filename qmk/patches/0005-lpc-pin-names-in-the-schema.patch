@@ -1,0 +1,13 @@
+--- a/data/schemas/definitions.jsonschema
++++ b/data/schemas/definitions.jsonschema
+@@ -151,6 +151,10 @@
+                 "type": "string",
+                 "pattern": "^GP\\d{1,2}$"
+             },
++            {
++                "type": "string",
++                "pattern": "^P\\d_\\d{1,2}$"
++            },
+             {"type": "integer"},
+             {"type": "null"}
+         ]

@@ -56,7 +56,15 @@ NON_HID_KEYCODES = {
 }
 
 # The two rotary controls. Neither rotation is matrix-scanned, so they are encoders rather
-# than keys; the wheel's *button* is in the matrix. Their pins are not yet known.
+# than keys; the wheel's *button* is in the matrix.
+#
+# The pins come from the stock firmware's INPUTMUX configuration, which attaches exactly four
+# pins to pin interrupts -- P1_28 to P1_31, all outside the matrix, which is what two
+# quadrature encoders need. Which pair is which control, and which way round, is not
+# established; see docs/pin-mapping.md. The pairing below groups them adjacently, which is how
+# the firmware's own index-to-channel table groups them.
+ENCODER_PINS = [("P1_28", "P1_29"), ("P1_30", "P1_31")]
+
 ENCODERS = [
     ("iCUE dial", "ctrlwheelccw", "ctrlwheelcw", "KC_VOLD", "KC_VOLU"),
     ("volume roller", "voldn", "volup", "KC_VOLD", "KC_VOLU"),
@@ -289,6 +297,7 @@ def build_keyboard_json(placed: list[Key], all_keys: list[Key], leds: list[Led])
         ),
         "features": {
             "bootmagic": False, "command": False, "console": False,
+            "encoder": True,
             "extrakey": True, "mousekey": False, "nkro": True, "rgb_matrix": True,
             "via": True,
         },
@@ -306,6 +315,12 @@ def build_keyboard_json(placed: list[Key], all_keys: list[Key], leds: list[Led])
             # lives in the keyboard's config.h, beside the number.
             "default": {"animation": "solid_color", "hue": 0, "sat": 0, "val": 255},
             "layout": rgb_layout(lit, to_qmk, leds),
+        },
+        # What each one does is decided in encoders.c, not here: one sets the
+        # lighting's brightness and the other the volume, and neither is a
+        # keycode a keymap would want to carry.
+        "encoder": {
+            "rotary": [{"pin_a": a, "pin_b": b} for a, b in ENCODER_PINS],
         },
         "layouts": {"LAYOUT_k100_iso_de": {"layout": layout}},
     }
