@@ -454,21 +454,40 @@ endpoint anywhere: `0x81` for the keyboard, `0x82` for the vendor interface,
 `0x83` for the consumer keys, which moved down a number when the OUT endpoint
 stopped taking one.
 
-**The one-report buffer holds under the traffic VIA actually makes.** It
-records a single report and lets the main loop take it, because
-`raw_hid_receive()` reads and writes EEPROM on a VIA build and an interrupt
-handler is no place for that -- so a host that sent another before the loop
-drained the first would lose one. Reading a whole keymap on connect is exactly
-that burst, and it was measured rather than argued about: 288 reads, then the
-same again with every entry written back unchanged, 576 exchanges in all.
+**The report is queued, and a single buffer was not enough.** The main loop has
+to take it, because `raw_hid_receive()` reads and writes EEPROM on a VIA build
+and an interrupt handler is no place for that. The first version recorded one
+report, on the reasoning that this protocol waits for each answer before asking
+again, and a burst of 576 exchanges agreed: 288 keymap reads and 288 writes,
+nothing lost, nothing answered out of turn.
+
+**That measurement could not see the fault, because it waited.** The
+application does not, always. What it showed instead was every reply arriving
+one command late -- `8 3 3` answered with `8 3 1 ff`, `8 3 4` with `8 3 3 7f`,
+the keymap buffer at offset 56 answered with the one at 0 -- so each answer
+looked wrong to it, and it gave up after exhausting its retries. Every value in
+those replies was correct; they were one question behind.
+
+Two faults, both from holding one report. A second report arriving before the
+loop drained the first overwrote it, which loses a command. Worse, the buffer is
+cleared when the next SETUP arrives, so a report that was waiting could be
+zeroed before the loop read it -- and command zero is a command QMK does not
+have, which is the `ff` in `ff 00 00 ...`, an answer to a question nobody asked.
+One of those is enough to put a host permanently one reply behind.
+
+`tools/via-sequence.py` is the reproduction, because the fault is invisible to a
+caller that waits:
 
 ```
-asked 576, answered 288, no reply 0, wrong reply 0
+$ python3 tools/via-sequence.py --pipeline      # six commands, no reads between
+6 commands, 4 replies
 ```
 
-Nothing lost and nothing answered out of turn, the writes included, where each
-one carries the EEPROM latency the reads do not. The protocol waits for its
-answer before asking again, which is what makes one report deep enough.
+The fix is a queue of eight slots, drained in a loop, which is what the OUT
+endpoint it stands in for would have done -- `while (receive_report(...))` is
+upstream's own shape. An arriving report never touches a slot that is still
+waiting, and when the queue is full the host's newest report is discarded
+rather than an older unanswered one.
 
 This is not a workaround dressed as a fix. An HID interface without an OUT
 endpoint is an ordinary shape, and the transfer type it uses is the one this

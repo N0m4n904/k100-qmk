@@ -82,7 +82,7 @@
  
 --- a/tmk_core/protocol/chibios/usb_main.c
 +++ b/tmk_core/protocol/chibios/usb_main.c
-@@ -233,6 +233,31 @@
+@@ -233,6 +233,54 @@
  
  static uint8_t _Alignas(4) set_report_buf[2];
  
@@ -93,60 +93,87 @@
 + *
 + * The data stage completes in interrupt context, and what happens next is a
 + * keyboard's own raw_hid_receive() -- which on a VIA build reads and writes the
-+ * part's EEPROM. That does not belong in an interrupt handler, so this only
-+ * records that a report arrived and raw_hid_task() does the work from the main
-+ * loop.
++ * part's EEPROM. That does not belong in an interrupt handler, so the report is
++ * queued here and raw_hid_task() drains it from the main loop.
 + *
-+ * One report deep. A host that sends another before the loop has drained the
-+ * first overwrites it, which this does not try to prevent: the protocols that
-+ * use this interface answer one request before sending the next, so a second
-+ * report in flight means the host is not waiting for the reply it asked for.
++ * A queue, because the OUT endpoint this stands in for is one: the host is free
++ * to send a command before it has read the answer to the one before, and an
++ * interface that drops a report under that is worse than one that is merely
++ * slow. The host is then one reply behind for the rest of its session, reading
++ * each answer when it asks the next question, and every answer looks wrong to
++ * it. A single buffer did exactly that to the VIA application.
++ *
++ * Single producer in interrupt context, single consumer in the main loop, and
++ * one slot always kept free, so the two never hold the same slot and no lock is
++ * needed: the producer fills the slot at raw_set_report_in while the consumer
++ * reads the one at raw_set_report_out, and those are equal only when there is
++ * nothing to read.
 + */
-+static uint8_t _Alignas(4) raw_set_report_buf[RAW_EPSIZE];
-+static volatile bool raw_set_report_pending = false;
++#define RAW_SET_REPORT_SLOTS 8
++
++/* One past the ring is where a report lands that there is no room for. The
++   host's newest question is dropped rather than an unanswered older one being
++   overwritten, because the data stage has to be given somewhere to write. */
++#define RAW_SET_REPORT_DISCARD RAW_SET_REPORT_SLOTS
++
++static uint8_t _Alignas(4) raw_set_report_queue[RAW_SET_REPORT_SLOTS + 1][RAW_EPSIZE];
++static volatile uint8_t raw_set_report_in  = 0;
++static volatile uint8_t raw_set_report_out = 0;
++static uint8_t          raw_set_report_filling = RAW_SET_REPORT_DISCARD;
++
++static inline uint8_t raw_set_report_next(uint8_t slot) {
++    return (uint8_t)((slot + 1u) % RAW_SET_REPORT_SLOTS);
++}
 +
 +static void raw_set_report_cb(USBDriver *usbp) {
 +    (void)usbp;
-+    raw_set_report_pending = true;
++    /* Published only now, because only now does the slot hold a whole report. */
++    if (raw_set_report_filling != RAW_SET_REPORT_DISCARD) {
++        raw_set_report_in = raw_set_report_next(raw_set_report_filling);
++    }
 +}
 +#endif
 +
  static void set_led_transfer_cb(USBDriver *usbp) {
      usb_control_request_t *setup = (usb_control_request_t *)usbp->setup;
  
-@@ -279,6 +304,15 @@
+@@ -279,6 +327,21 @@
  #endif
                                  usbSetupTransfer(usbp, set_report_buf, sizeof(set_report_buf), set_led_transfer_cb);
                                  return true;
 +#if defined(RAW_ENABLE) && defined(RAW_HID_NO_OUT_ENDPOINT)
-+                            case RAW_INTERFACE:
++                            case RAW_INTERFACE: {
++                                uint8_t slot = raw_set_report_in;
++                                if (raw_set_report_next(slot) == raw_set_report_out) {
++                                    slot = RAW_SET_REPORT_DISCARD;
++                                }
++                                raw_set_report_filling = slot;
 +                                /* Cleared first, because a host may send fewer
 +                                   bytes than the report holds and the rest would
-+                                   otherwise be whatever the last report left. */
-+                                memset(raw_set_report_buf, 0, sizeof(raw_set_report_buf));
-+                                usbSetupTransfer(usbp, raw_set_report_buf, sizeof(raw_set_report_buf), raw_set_report_cb);
++                                   otherwise be whatever last used this slot. */
++                                memset(raw_set_report_queue[slot], 0, RAW_EPSIZE);
++                                usbSetupTransfer(usbp, raw_set_report_queue[slot], RAW_EPSIZE, raw_set_report_cb);
 +                                return true;
++                            }
 +#endif
                          }
                          break;
                      case HID_REQ_SetProtocol:
-@@ -522,9 +556,24 @@
+@@ -522,9 +585,22 @@
  
  void raw_hid_task(void) {
      uint8_t buffer[RAW_EPSIZE];
 +#if defined(RAW_HID_NO_OUT_ENDPOINT)
-+    if (!raw_set_report_pending) {
-+        return;
++    /* Every report that has arrived, not one, so that a host which sent two
++       before reading either gets two answers. Copied out before the slot is
++       released, because handling one report can take as long as an EEPROM
++       write and the slot is free for the next the moment it is released. */
++    while (raw_set_report_out != raw_set_report_in) {
++        memcpy(buffer, raw_set_report_queue[raw_set_report_out], sizeof(buffer));
++        raw_set_report_out = raw_set_report_next(raw_set_report_out);
++
++        raw_hid_receive(buffer, sizeof(buffer));
 +    }
-+
-+    /* Copied out under the lock, so a report arriving while this one is being
-+       handled cannot change it half way through. */
-+    osalSysLock();
-+    memcpy(buffer, raw_set_report_buf, sizeof(buffer));
-+    raw_set_report_pending = false;
-+    osalSysUnlock();
-+
-+    raw_hid_receive(buffer, sizeof(buffer));
 +#else
      while (receive_report(USB_ENDPOINT_OUT_RAW, buffer, sizeof(buffer))) {
          raw_hid_receive(buffer, sizeof(buffer));
