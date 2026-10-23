@@ -1025,10 +1025,13 @@ which needs no command sent at all:
 | --- | --- |
 | `0.23` | Corsair's application, firmware 0.35.288 |
 | `0.0a` | Corsair's bootloader, 0.10.45 |
-| `0.10` | **this project's firmware** — `DEVICE_VER 0x0010`, version 0.1.0, from `keyboard.json` |
+| `0.21` | **this project's firmware** — `DEVICE_VER 0x0021`, version 0.2.1, from `keyboard.json` |
+| `0.20` | this project's firmware, version 0.2.0 |
+| `0.10` | this project's firmware, version 0.1.0 |
 
 Builds before version 0.1.0 said `0.01`, and measurements quoted further up this document are
-from those. Read the hex rather than the printed form if the two are easy to confuse: `0x0010`
+from those. Every version this project has shipped is listed in `tools/k100_usb.py`, so that a
+keyboard waiting for an update is recognised rather than called unknown. Read the hex rather than the printed form if the two are easy to confuse: `0x0010`
 is this firmware and `0x000a` is Corsair's bootloader, whose own version number happens to
 begin 0.10 as well.
 

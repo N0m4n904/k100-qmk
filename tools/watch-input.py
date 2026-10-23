@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from k100_usb import OURS, PRODUCT, VENDOR, identity  # noqa: E402
+from k100_usb import PRODUCT, VENDOR, identity, is_ours  # noqa: E402
 
 # struct input_event on a 64-bit kernel: two longs of timestamp, then the type,
 # code and value.
@@ -162,7 +162,7 @@ def main() -> int:
               f"nothing about either.")
         return 1
 
-    if after[0] != OURS:
+    if not is_ours(after[0]):
         print(f"\nThese keystrokes came from bcdDevice {after[0]}, which is "
               f"not this project's firmware. Corsair's bootloader types too.")
         return 1

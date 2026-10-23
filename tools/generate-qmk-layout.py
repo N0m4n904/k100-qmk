@@ -277,9 +277,9 @@ QMK_MAX_X, QMK_MAX_Y = 224, 64
 # firmware version. And `tools/pack-firmware.py` reads it back out of the generated
 # keyboard.json for the container header, which is what Corsair's bootloader reads.
 #
-# QMK encodes it as BCD: 0.1.0 becomes 0x0010. Corsair's container carries only the minor and
+# QMK encodes it as BCD: 0.2.1 becomes 0x0021. Corsair's container carries only the minor and
 # the patch, so the leading number stays where it is whatever this says.
-FIRMWARE_VERSION = "0.1.0"
+FIRMWARE_VERSION = "0.2.1"
 
 # One key unit in ckb-next's 16ths-of-an-inch grid.
 UNIT = 12

@@ -69,10 +69,13 @@ def main() -> int:
     parser.add_argument("--colour", type=colour, help="hue,saturation, each 0 to 255")
     parser.add_argument("--brightness", type=int,
                         help="0 to 255, what the next painted key is given; 0 is off")
+    parser.add_argument("--all", type=int, metavar="N", nargs="?", const=190,
+                        help="read the first N LEDs and report the ones that carry a "
+                             "colour, which is what a stored picture looks like from here")
     args = parser.parse_args()
 
-    if args.led is None and args.brightness is None:
-        raise SystemExit("--led, --brightness, or both")
+    if args.led is None and args.brightness is None and args.all is None:
+        raise SystemExit("--led, --brightness, --all, or a combination")
 
     entry = device(args.vid, args.pid)
     if entry is None:
@@ -95,6 +98,21 @@ def main() -> int:
             return 1
         brush = exchange(node, bytes([CUSTOM_GET_VALUE, K100_CHANNEL, PAINT_VALUE]))
         print(f"brush: brightness {brush[3] if brush else '?'}")
+
+    if args.all is not None:
+        painted = []
+        for led in range(args.all):
+            reply = exchange(node, bytes([CUSTOM_GET_VALUE, K100_CHANNEL, PER_KEY_COLOUR,
+                                          led, ONE]))
+            if reply is None:
+                print(f"LED {led}: no answer", file=sys.stderr)
+                return 1
+            if (reply[5], reply[6]) != (0, 0):
+                painted.append((led, reply[5], reply[6]))
+
+        print(f"{len(painted)} of {args.all} LEDs carry a colour")
+        for led, hue, sat in painted:
+            print(f"  LED {led:<3} hue {hue:<3} saturation {sat}")
 
     if args.led is None:
         return 0

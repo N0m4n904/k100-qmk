@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from k100_usb import (  # noqa: E402
     ABSENT,
     BOOTLOADER,
-    OURS,
+    is_ours,
     PRODUCT,
     VENDOR,
     device,
@@ -68,7 +68,7 @@ def main() -> int:
     # Refused rather than reported, because the question has no meaning from
     # anywhere else: the bootloader cannot hand itself to the bootloader, and
     # the stock application has Bragi and does not need this route.
-    if before[0] != OURS:
+    if not is_ours(before[0]):
         print(f"the keyboard is running {program(before[0])}, and this route "
               f"only exists in this project's firmware. Start it first.",
               file=sys.stderr)
@@ -108,7 +108,7 @@ def main() -> int:
                   "was pressed.")
             return 0
 
-        if now[0] == OURS:
+        if is_ours(now[0]):
             print("\nIt reset and came straight back to itself, so the reset "
                   "works and the mode does not.")
             print("\nThat narrows it to the bootloader's side. "

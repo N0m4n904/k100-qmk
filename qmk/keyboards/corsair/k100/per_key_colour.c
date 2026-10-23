@@ -23,6 +23,10 @@
  * It scales the brightness the wheel sets rather than replacing it, so the wheel
  * still dims the whole keyboard.
  *
+ * **A painted keyboard outlives an update**, which is the whole point of storing
+ * it: only a change to the shape of this region clears it, and that is the one
+ * case where what is in it cannot be read back. See via_init_kb().
+ *
  * **Both lights under a key get the colour.** Four keys have two LEDs -- the
  * wheel button, the profile-switch key, the lock key and the mute key -- and
  * the application paints one index, so the other would stay as it was and the
@@ -97,20 +101,22 @@ static void forget(void) {
 }
 
 /*
- * What is stored, if anything is.
+ * What is stored, and it is read whatever VIA makes of its own data.
  *
- * VIA's stored data carries the build date, so a firmware built on another day
- * resets the keymap and the macros -- and the colours go with them, because
- * nothing here can tell "same region, new build" from "the region moved". One
- * rule is easier to live with than a guess: what resets, resets together.
+ * VIA's stored data carries the *build date*, so a firmware built on another
+ * day resets the keymap and the macros -- which is VIA's decision and not one
+ * this keyboard can argue with. The colours do not follow it. They live in a
+ * region of this keyboard's own, whose shape is governed by
+ * EECONFIG_MAGIC_NUMBER, and nothing about a new build date makes what is in it
+ * wrong. Resetting them with the keymap is what happened first, and losing a
+ * painted keyboard to a build on the next day is not a thing to ship.
+ *
+ * So the only thing that clears them is the thing that has to: a change to the
+ * shape of what is stored, which erases the EEPROM and arrives in
+ * eeconfig_init_kb() below.
  */
 void via_init_kb(void) {
-    if (via_eeprom_is_valid()) {
-        via_read_custom_config(colours, 0, sizeof(colours));
-        return;
-    }
-
-    forget();
+    via_read_custom_config(colours, 0, sizeof(colours));
 }
 
 /*

@@ -38,6 +38,10 @@ CUSTOM_SET_VALUE = 0x07
 CUSTOM_GET_VALUE = 0x08
 CUSTOM_SAVE = 0x09
 
+#: VIA's `id_bootloader_jump`, which this firmware answers and QMK does not; see
+#: qmk/keyboards/corsair/k100/bootloader.c.
+BOOTLOADER_JUMP = 0x0B
+
 #: What an unsupported command comes back as, which is how an interface that is
 #: not VIA's answers one.
 UNHANDLED = 0xFF
@@ -91,6 +95,21 @@ def exchange(node: Path, request: bytes) -> bytes | None:
     except OSError as error:
         print(f"  {node.name}: {error}", file=sys.stderr)
         return None
+    finally:
+        os.close(fd)
+
+
+def ask_to_jump(node: Path) -> None:
+    """Sends the bootloader jump, and does not wait for an answer.
+
+    Nothing replies: the keyboard resets inside the command, so silence is what
+    success sounds like and a read here would wait for a firmware that has
+    already gone. What came of it is read off the bus instead -- see
+    `k100_usb.wait_for`.
+    """
+    fd = os.open(node, os.O_RDWR)
+    try:
+        os.write(fd, b"\x00" + bytes([BOOTLOADER_JUMP]).ljust(REPORT_SIZE, b"\x00"))
     finally:
         os.close(fd)
 

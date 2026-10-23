@@ -66,7 +66,7 @@ and the two rules that keep a mistake survivable.
 | --- | --- |
 | Working firmware | **Yes.** It runs from flash, enumerates, binds three HID interfaces, types and lights. Typing was measured at 5204 key events across four minutes of continuous use. It used to hang within a second of being used; the cause was a system-timer priority that is not a priority on a part with three priority bits, which put the tick above the kernel's own interrupt mask. [`docs/scheduler-stall.md`](docs/scheduler-stall.md) |
 | ChibiOS LPC546xx port | **Runs on the keyboard.** Boots through `crt0`, `halInit()` and `chSysInit()` into QMK's main loop, from SRAM and from flash alike. |
-| USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0010` for version 0.1.0, and the kernel binds all three HID interfaces. |
+| USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0021` for version 0.2.1, and the kernel binds all three HID interfaces. |
 | QMK layout, keymap and VIA definition | **Generated**, not written, from ckb-next's geometry and the stock firmware's own tables; a fresh run reproduces all three files byte for byte. The definition names the keycodes this board adds and carries a lighting menu holding the effects this firmware is *built* with -- VIA's own menu sends a position in a list of all 45, which is a different number. `tools/via-definition-check` runs it through the same reader the application does before a browser ever sees it. [`docs/qmk-layout.md`](docs/qmk-layout.md) |
 | Key matrix pins | **Proven on hardware**, read against `bcdDevice` so it is this firmware and not the bootloader's own keyboard: 67 presses across 16 keys while the device reported `0.01`. The settle time is 500 us -- these are optical switches, and the 20 us first guessed is far too short for an emitter and phototransistor to answer. [`docs/pin-mapping.md`](docs/pin-mapping.md) |
 | The two rotary controls | **Both work.** Neither rotation is matrix-scanned, so they are encoders on `P1_28`-`P1_31`, read out of the stock firmware's pin-interrupt configuration. Which pair is which was a guess from the order the image's own tables list them in, and turning them confirmed it: wheel to the brightness, roller to the volume. The roller came out inverted, so its two cases are crossed in `encoders.c` -- `ENCODER_DIRECTION_FLIP` would have turned the wheel round with it. |
@@ -148,29 +148,37 @@ definition with the same reader the application reads it with, before a browser 
 
 ## Installing it
 
-One key press and one command, with the case shut. This does not replace Corsair's
-bootloader; it uses Corsair's own update path, which is the same one their software uses.
+**One command, no key press, and nothing to type while the keyboard is away.** With the case
+shut. This does not replace Corsair's bootloader; it uses Corsair's own update path, which is
+the same one their software uses.
 
-1. **`Fn+Esc`.** The keyboard restarts into the bootloader and comes back as `bcdDevice 0.0a`,
-   still typing -- the bootloader presents a keyboard of its own. VIA's **Bootloader Jump**
-   button, under Connected Device Debugging in its settings, does the same thing.
-2. **Write the image**, built and wrapped as under Building, or taken from a release:
+```sh
+python3 tools/k100-update.py k100-qmk-0.2.1.bin
+```
 
-   ```sh
-   tools/k100-bragi/target/release/k100-bragi flash k100-0.1.0.bin --device 0x1b7c --commit
-   ```
+It checks the image before it touches the keyboard, asks whatever is running to hand itself to
+the bootloader -- this firmware answers VIA's bootloader jump, Corsair's own application speaks
+Bragi, and a keyboard already in the bootloader needs nothing -- waits for it to come back, and
+writes. `--dry-run` does the checking and says which route it would take.
 
-   Without `--commit` it is a dry run: it checks the image against the keyboard and prints
-   what it would write, and sends nothing.
+That matters on a desk with one keyboard. The two steps it replaces are fine with a spare and
+impossible without: the first takes the keyboard away and the second has to be typed on it.
+The steps are still there to be taken by hand, which is what to do when something in the middle
+needs watching: `tools/via-bootloader.py` for the jump, then `k100-bragi flash <image>
+--device 0x1b7c --commit`, which without `--commit` is a dry run that checks the image against
+the keyboard and sends nothing.
 
-The keyboard reboots itself and comes back as `bcdDevice 0010`, which is this firmware's
-version 0.1.0. The keymap, the lighting and everything else VIA stores live in the keyboard's
-EEPROM and survive the write.
+The keyboard reboots itself and comes back as `bcdDevice 0021`, which is this firmware's
+version 0.2.1. The keymap, the lighting and everything else VIA stores live in the keyboard's
+EEPROM and survive the write -- except when a release says otherwise, which it does when the
+shape of what is stored has changed.
 
 Install `udev/99-corsair-k100.rules` first, or run the write as root; see `udev/README.md`.
 
 **If it does not come back**, hold `B` and `L` while plugging it in. Corsair's bootloader keeps
-the keyboard, and the same command writes a working image over the broken one.
+the keyboard -- it reads those two keys itself, before any firmware of ours runs -- and the
+same command writes a working image over the broken one, finding the keyboard already where it
+needs to be.
 [`docs/recovery.md`](docs/recovery.md) has the whole account, and [`swd/`](swd/README.md) the
 route for a keyboard that reaches neither -- that one needs a programmer and an open case.
 

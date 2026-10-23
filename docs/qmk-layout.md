@@ -403,6 +403,14 @@ One consequence worth writing down: the default is no longer what an erased regi
 Zero bytes mean *off everywhere* now, so the defaults are written rather than assumed, in both
 places that reset them.
 
+**What a painted keyboard survives.** The colours are read back whatever VIA makes of its own
+stored data. VIA's marker carries the *build date*, so a firmware built on another day resets
+the keymap and the macros -- that is VIA's decision and not one a keyboard can argue with --
+but nothing about a new build date makes the colours in this region wrong. They were tied to
+it at first, and a painted keyboard went white on the next day's build. Only a change to the
+shape of what is stored clears them now, which is the one case where what is in the region
+cannot be read back, and it arrives through `eeconfig_init_kb()`.
+
 **What shows them is an effect of the keyboard's own**, `K100_PER_KEY`, which gives every LED
 the colour stored for it at the brightness the wheel sets. It is the fifth entry in the
 dropdown and the last of the four effects declared in `rgb_matrix_kb.inc`, because the numbers
