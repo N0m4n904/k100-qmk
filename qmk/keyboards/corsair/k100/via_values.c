@@ -120,6 +120,9 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 case K100_VIA_LED_INDEX:
                     value_data[0] = probe_index;
                     return;
+                case K100_VIA_PAINT_VALUE:
+                    k100_paint_value_get(value_data);
+                    return;
             }
             break;
 
@@ -134,6 +137,9 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                     return;
                 case K100_VIA_LED_INDEX:
                     probe_index = value_data[0];
+                    return;
+                case K100_VIA_PAINT_VALUE:
+                    k100_paint_value_set(value_data);
                     return;
             }
             break;

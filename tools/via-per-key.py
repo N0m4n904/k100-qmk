@@ -9,8 +9,13 @@ can be read back before trusting it:
     python3 tools/via-per-key.py --led 0                  # what is stored
     python3 tools/via-per-key.py --led 0 --colour 170,255 # paint it blue
 
-Hue and saturation only. Brightness is not part of a per-key colour: it stays
-the one the wheel sets, for the whole keyboard at once.
+Hue and saturation are what the application sends. The brightness is the
+keyboard's own addition -- the only way to say that one key is off, since zero
+saturation is white -- and it belongs to the brush rather than to the stroke, so
+`--brightness` sets what the *next* painted key gets:
+
+    python3 tools/via-per-key.py --brightness 0 --led 0 --colour 0,0  # off
+    python3 tools/via-per-key.py --brightness 255                     # brush back to full
 
 The LED is the index in the firmware's own map -- the same number the LED probe
 in VIA's Diagnostics menu uses, and the one the definition gives each key. A key
@@ -39,6 +44,12 @@ from k100_via import CUSTOM_GET_VALUE, CUSTOM_SET_VALUE, exchange, interface  # 
 K100_CHANNEL = 0
 PER_KEY_COLOUR = 1
 
+#: The brush's brightness, which *is* one of this keyboard's own numbers --
+#: `K100_VIA_PAINT_VALUE` in k100.h, where the generated definition reads it
+#: from. Written down again here because a test tool that generated its own
+#: definition would be testing itself.
+PAINT_VALUE = 5
+
 #: A byte the application always sends as one, after the index. Nothing in the
 #: firmware reads it; it is here because the reports have to match.
 ONE = 1
@@ -54,9 +65,14 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--vid", default=VENDOR, help="USB vendor id, hex")
     parser.add_argument("--pid", default=PRODUCT, help="USB product id, hex")
-    parser.add_argument("--led", type=int, required=True, help="which LED, by index")
+    parser.add_argument("--led", type=int, help="which LED, by index")
     parser.add_argument("--colour", type=colour, help="hue,saturation, each 0 to 255")
+    parser.add_argument("--brightness", type=int,
+                        help="0 to 255, what the next painted key is given; 0 is off")
     args = parser.parse_args()
+
+    if args.led is None and args.brightness is None:
+        raise SystemExit("--led, --brightness, or both")
 
     entry = device(args.vid, args.pid)
     if entry is None:
@@ -71,6 +87,17 @@ def main() -> int:
         return 1
     node, protocol = found
     print(f"VIA on {node}, protocol {protocol:#06x}")
+
+    if args.brightness is not None:
+        if exchange(node, bytes([CUSTOM_SET_VALUE, K100_CHANNEL, PAINT_VALUE,
+                                 args.brightness])) is None:
+            print("the brush was not set", file=sys.stderr)
+            return 1
+        brush = exchange(node, bytes([CUSTOM_GET_VALUE, K100_CHANNEL, PAINT_VALUE]))
+        print(f"brush: brightness {brush[3] if brush else '?'}")
+
+    if args.led is None:
+        return 0
 
     if args.colour is not None:
         hue, sat = args.colour

@@ -691,7 +691,16 @@ def only_for(effects: list[int]) -> dict:
     return {"showIf": " || ".join(f"{{{EFFECT_VALUE}}} == {number}" for number in effects)}
 
 
-def lighting_menu(per_key_value: int) -> dict:
+# How bright a painted key is, and the one way to turn a single key off.
+#
+# A dropdown rather than a range, for the reason the LED probe has one: VIA draws a range with
+# no number beside it, and "how bright is the brush" is a question a control has to be able to
+# answer. These are the steps, as the byte each sends -- 255 is what an unpainted key already
+# is, and 0 is the off this exists for.
+PAINT_VALUES = [("Full", 255), ("Bright", 192), ("Half", 128), ("Dim", 64), ("Off", 0)]
+
+
+def lighting_menu(per_key_value: int, paint_value: int) -> dict:
     """VIA's lighting controls, declared here rather than taken from its built-in set.
 
     VIA ships a `qmk_rgb_matrix` menu that a definition can ask for by name, and it is the
@@ -718,6 +727,12 @@ def lighting_menu(per_key_value: int) -> dict:
     the keyboard's own values start at two. Only the keys can be painted, because only keys
     are drawn; the bars, the logo and the wheel's ring have no key to click. See
     per_key_colour.c.
+
+    Beside it is the one thing the palette cannot send: how bright a painted key is. The
+    application's palette carries a hue and a saturation, and neither can say "off" -- zero
+    saturation is white. So the brightness belongs to the brush: it is picked here and every
+    key painted afterwards takes it, with `Off` at the bottom of the same control, because a
+    key that is off is a key whose brightness is zero.
     """
     return {
         "label": "Lighting",
@@ -742,6 +757,9 @@ def lighting_menu(per_key_value: int) -> dict:
             "content": [
                 {"label": "Paint", "type": "color-palette",
                  "content": [f"{K100_VALUE}per_key_colour", K100_CHANNEL, per_key_value]},
+                {"label": "Brightness", "type": "dropdown",
+                 "options": [[label, value] for label, value in PAINT_VALUES],
+                 "content": [f"{K100_VALUE}paint_value", K100_CHANNEL, paint_value]},
             ],
         }],
     }
@@ -934,7 +952,8 @@ def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, in
         "matrix": {"rows": STROBES, "cols": SENSES},
         "layouts": {"keymap": kle},
         "customKeycodes": keycodes,
-        "menus": [lighting_menu(values["K100_VIA_PER_KEY_COLOUR"]),
+        "menus": [lighting_menu(values["K100_VIA_PER_KEY_COLOUR"],
+                                values["K100_VIA_PAINT_VALUE"]),
                   firmware_menu(values["K100_VIA_VERSION"],
                                 values["K100_VIA_LED_PROBE"],
                                 values["K100_VIA_LED_INDEX"],
@@ -1004,7 +1023,8 @@ def main() -> int:
     keycodes = custom_keycodes(args.keycodes)
     values = {name: via_value(args.keycodes, name) for name in
               ("K100_VIA_PER_KEY_COLOUR", "K100_VIA_VERSION",
-               "K100_VIA_LED_PROBE", "K100_VIA_LED_INDEX")}
+               "K100_VIA_LED_PROBE", "K100_VIA_LED_INDEX",
+               "K100_VIA_PAINT_VALUE")}
 
     # Everything that scans but did not land in the matrix must be an encoder, or the join
     # has silently dropped a key.

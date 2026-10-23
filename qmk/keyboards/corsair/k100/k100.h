@@ -49,6 +49,8 @@ enum k100_via_value {
     K100_VIA_LED_PROBE = 3,
     /** Which LED it lights, by the index an effect would use. */
     K100_VIA_LED_INDEX = 4,
+    /** How bright the next painted key is, which is also how one is turned off. */
+    K100_VIA_PAINT_VALUE = 5,
 };
 
 /**
@@ -68,10 +70,18 @@ void k100_via_sync_value(uint8_t channel, uint8_t value);
 /** How many LEDs carry a colour of their own: every LED the firmware has. */
 #define K100_PER_KEY_LEDS 190
 
-/** One LED's stored colour. Brightness is not part of it -- the wheel sets that. */
+/**
+ * One LED's stored colour, including how bright it is.
+ *
+ * The brightness is what makes a single key dark, which is the one thing a hue
+ * and a saturation cannot say: zero saturation is white, not off. It scales the
+ * one the wheel sets rather than replacing it, so the wheel still dims the whole
+ * keyboard and a key set to half stays half of whatever that is.
+ */
 typedef struct {
     uint8_t hue;
     uint8_t sat;
+    uint8_t val;
 } k100_colour_t;
 
 /** @brief What the key painter has put on this LED. See per_key_colour.c. */
@@ -85,6 +95,18 @@ k100_colour_t k100_per_key_colour(uint8_t led);
  */
 void k100_per_key_colour_get(uint8_t *value_data);
 void k100_per_key_colour_set(uint8_t *value_data);
+
+/**
+ * @brief   The brightness a painted key is given, which VIA cannot send.
+ *
+ * @details Its palette carries a hue and a saturation and nothing else, so the
+ *          brightness is a setting of the brush rather than of the stroke: it
+ *          is picked once and every key painted after it takes it. Off is the
+ *          bottom of the same control, because a key that is off is a key whose
+ *          brightness is zero and no second mechanism is needed to say so.
+ */
+void k100_paint_value_get(uint8_t *value_data);
+void k100_paint_value_set(uint8_t *value_data);
 
 /**
  * Lights the one LED the probe names, if it is on.

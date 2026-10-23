@@ -118,27 +118,25 @@ bool K100_RAINBOW_SWEEP(effect_params_t* params) {
  * @brief   What the key painter put on each LED.
  *
  * @details The colours come from per_key_colour.c, which is where they are
- *          stored and how the application sets them. Brightness is not one of
- *          them: it is the one the wheel sets, so the whole keyboard dims
- *          together and a painted colour keeps its hue while it does.
+ *          stored and how the application sets them. Each carries its own
+ *          brightness, and the wheel's scales it rather than replacing it: the
+ *          whole keyboard dims together, a key set to half stays half of
+ *          whatever that is, and a key set to zero is off at any setting.
  *
- *          A key nobody has painted is white, because an untouched colour is
- *          zero and zero saturation is white -- the same thing the keyboard
- *          shows with no per-key colour set at all.
+ *          A key nobody has painted is white and fully lit, which is the same
+ *          thing the keyboard shows with no per-key colour set at all.
  */
 bool K100_PER_KEY(effect_params_t* params) {
     RGB_MATRIX_USE_LIMITS(led_min, led_max);
-
-    hsv_t hsv = {.v = rgb_matrix_config.hsv.v};
 
     for (uint8_t i = led_min; i < led_max; i++) {
         RGB_MATRIX_TEST_LED_FLAGS();
 
         const k100_colour_t colour = k100_per_key_colour(i);
-
-        hsv.h     = colour.hue;
-        hsv.s     = colour.sat;
-        rgb_t rgb = rgb_matrix_hsv_to_rgb(hsv);
+        const hsv_t         hsv    = {.h = colour.hue,
+                                      .s = colour.sat,
+                                      .v = scale8(colour.val, rgb_matrix_config.hsv.v)};
+        const rgb_t         rgb    = rgb_matrix_hsv_to_rgb(hsv);
 
         rgb_matrix_set_color(i, rgb.r, rgb.g, rgb.b);
     }

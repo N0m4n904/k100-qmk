@@ -14,8 +14,14 @@
  *     set  [0x07, 0, 1, led, 1, hue, sat]
  *
  * The one after the index is a byte the application always sends as one and
- * nothing here reads. Brightness is not part of a colour: it stays the one the
- * wheel sets, which is what a keyboard with a brightness wheel wants.
+ * nothing here reads.
+ *
+ * **Brightness is not in what the application sends**, and a hue and a
+ * saturation cannot say "off" -- zero saturation is white. So each LED stores a
+ * brightness as well, and the one a painted key gets is a setting of the brush:
+ * `K100_VIA_PAINT_VALUE`, a step from full down to off, picked before painting.
+ * It scales the brightness the wheel sets rather than replacing it, so the wheel
+ * still dims the whole keyboard.
  *
  * **Both lights under a key get the colour.** Four keys have two LEDs -- the
  * wheel button, the profile-switch key, the lock key and the mute key -- and
@@ -46,16 +52,24 @@
 
 _Static_assert(K100_PER_KEY_LEDS == RGB_MATRIX_LED_COUNT,
                "the colour table is per LED, so it is as long as the LED map");
-_Static_assert(sizeof(k100_colour_t) == 2,
+_Static_assert(sizeof(k100_colour_t) == 3,
                "a colour is stored by its offset in the region, so it may not be padded");
 _Static_assert(VIA_EEPROM_CUSTOM_CONFIG_SIZE >= K100_PER_KEY_LEDS * sizeof(k100_colour_t),
                "the custom config region is too small for one colour per LED; see config.h");
 
-/*
- * Zero is white, which is what an erased region reads as and what the compiled
- * default colour is, so an untouched keyboard needs nothing seeded here.
- */
+/** What an unpainted LED is: white, and as bright as the wheel is set. */
+#define K100_COLOUR_DEFAULT ((k100_colour_t){.hue = 0, .sat = 0, .val = UINT8_MAX})
+
 static k100_colour_t colours[K100_PER_KEY_LEDS];
+
+/*
+ * The brightness the next painted key is given.
+ *
+ * Deliberately not stored. It is a brush and not a property of the keyboard, and
+ * a brush that came back set to off after a power cycle would make the next
+ * stroke look like a keyboard that had stopped working.
+ */
+static uint8_t paint_value = UINT8_MAX;
 
 /** Where one LED's colour sits in the region. */
 static uint16_t offset_of(uint8_t led) {
@@ -66,9 +80,20 @@ static void store(uint8_t led) {
     via_update_custom_config(&colours[led], offset_of(led), sizeof(colours[led]));
 }
 
-/** Back to white everywhere, which is what an erased region reads as. */
+/**
+ * @brief   Back to white and fully lit everywhere, in RAM and in the region.
+ *
+ * @details Written and not merely remembered, because the default is no longer
+ *          what an erased region reads as: a colour carries a brightness now,
+ *          and zero everywhere is a keyboard that is off everywhere. The driver
+ *          skips words that already hold what is being written, so this costs
+ *          nothing on a region that is already in this state.
+ */
 static void forget(void) {
-    memset(colours, 0, sizeof(colours));
+    for (uint16_t led = 0; led < K100_PER_KEY_LEDS; led++) {
+        colours[led] = K100_COLOUR_DEFAULT;
+    }
+    via_update_custom_config(colours, 0, sizeof(colours));
 }
 
 /*
@@ -86,11 +111,14 @@ void via_init_kb(void) {
     }
 
     forget();
-    via_update_custom_config(colours, 0, sizeof(colours));
 }
 
 /*
  * The other way the stored state goes away, and the reason this hook exists.
+ *
+ * Also where the defaults are put back after the EEPROM is wiped under our
+ * feet, which the erase leaves as zeros -- off, for a colour that has a
+ * brightness.
  *
  * `via_init()` runs *before* `quantum_init()`, which is where QMK notices that
  * EECONFIG_MAGIC_NUMBER has moved and erases the whole EEPROM. So on the boot
@@ -100,8 +128,8 @@ void via_init_kb(void) {
  * address: LED 1 came back with saturation 41, which is 0x29, which is the
  * low byte of KC_ESC where the old dynamic keymap's second keycode had been.
  *
- * This runs from inside that erase, so it is where the RAM copy is put back in
- * step with a region that has just been zeroed.
+ * This runs from inside that erase, after it, so it is where both the RAM copy
+ * and the region are put back to what an unpainted keyboard is.
  */
 void eeconfig_init_kb(void) {
     forget();
@@ -114,7 +142,15 @@ void eeconfig_init_kb(void) {
 }
 
 k100_colour_t k100_per_key_colour(uint8_t led) {
-    return led < K100_PER_KEY_LEDS ? colours[led] : (k100_colour_t){0, 0};
+    return led < K100_PER_KEY_LEDS ? colours[led] : K100_COLOUR_DEFAULT;
+}
+
+void k100_paint_value_get(uint8_t *value_data) {
+    value_data[0] = paint_value;
+}
+
+void k100_paint_value_set(uint8_t *value_data) {
+    paint_value = value_data[0];
 }
 
 void k100_per_key_colour_get(uint8_t *value_data) {
@@ -133,7 +169,8 @@ void k100_per_key_colour_set(uint8_t *value_data) {
         return;
     }
 
-    const k100_colour_t wanted = {value_data[2], value_data[3]};
+    const k100_colour_t wanted = {.hue = value_data[2], .sat = value_data[3],
+                                  .val = paint_value};
 
     colours[led] = wanted;
     store(led);

@@ -377,9 +377,31 @@ Like the UI sync request, this is read out of VIA's bundle: `getPerKeyRGBMatrix`
 
 **The colours have to go somewhere.** `VIA_EEPROM_CUSTOM_CONFIG_SIZE` is what QMK gives a
 keyboard for its own stored state, and declaring a size is what creates the region. 190 LEDs
-at two bytes -- a hue and a saturation each; brightness is not part of a per-key colour and
-stays the one the wheel sets. The region comes out of what the dynamic keymap leaves, so the
-macro buffer shrinks by the same 380 bytes, from 855.
+at three bytes -- a hue, a saturation and a brightness each. The region comes out of what the
+dynamic keymap leaves, so the macro buffer shrinks by the same 570 bytes, from 855.
+
+### Turning one key off, and the brush that does it
+
+The painter sends a hue and a saturation, and neither can say *off*: zero saturation is white.
+So each stored colour carries a **brightness** of its own, and the one a painted key gets is a
+property of the brush rather than of the stroke -- `K100_VIA_PAINT_VALUE`, a dropdown beside
+the palette with `Full`, `Bright`, `Half`, `Dim` and `Off`. Pick one, paint, and every key
+painted afterwards takes it. A dropdown and not a range for the same reason the LED probe has
+one: VIA draws a range with no number beside it, and "how bright is the brush" is a question a
+control has to be able to answer.
+
+The brush is not stored. It is not a property of the keyboard, and one that came back set to
+off after a power cycle would make the next stroke look like a keyboard that had stopped
+working.
+
+In the effect, a stored brightness **scales** the one the wheel sets rather than replacing it:
+the wheel still dims the whole keyboard, a key set to half stays half of whatever that is, and
+a key set to zero is off at any setting. The application cannot see any of this -- it reads a
+hue and a saturation -- so a key that is off still shows its colour in VIA's drawing.
+
+One consequence worth writing down: the default is no longer what an erased region reads as.
+Zero bytes mean *off everywhere* now, so the defaults are written rather than assumed, in both
+places that reset them.
 
 **What shows them is an effect of the keyboard's own**, `K100_PER_KEY`, which gives every LED
 the colour stored for it at the brightness the wheel sets. It is the fifth entry in the
