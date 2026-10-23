@@ -435,6 +435,25 @@
           ]
         }
       ]
+    },
+    {
+      "label": "Firmware",
+      "content": [
+        {
+          "label": "Installed",
+          "content": [
+            {
+              "label": "Version",
+              "type": "label",
+              "content": [
+                "id_k100_version",
+                0,
+                1
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }

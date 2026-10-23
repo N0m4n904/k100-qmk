@@ -24,6 +24,10 @@ SRC += lighting_profiles.c
 # reason: which rotary is which is a property of the board.
 SRC += encoders.c
 
+# The firmware version, as an answer to VIA, because the application displays no
+# version it is not handed as text by the keyboard.
+SRC += version.c
+
 # Our own RGB effect, in rgb_matrix_kb.inc, which QMK includes into
 # rgb_matrix.c rather than compiling on its own -- so no SRC entry, just this.
 # The file says why an effect that paints black has to exist at all.

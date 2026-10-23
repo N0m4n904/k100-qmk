@@ -134,6 +134,12 @@ ANIMATIONS = {
 # QMK's channel for the RGB matrix and the prefix VIA's own menu gives its four values,
 # from `enum via_channel_id` and `enum via_qmk_rgb_matrix_value`. The names are VIA's to
 # recognise; the numbers are what reaches the firmware.
+# This keyboard's own channel -- `id_custom_channel`, the one VIA leaves to keyboards -- and
+# the prefix the application knows its values by. The numbers on it are read from the
+# keyboard's own header; see via_value().
+K100_CHANNEL = 0
+K100_VALUE = "id_k100_"
+
 RGB_MATRIX_CHANNEL = 3
 RGB_MATRIX_VALUE = "id_qmk_rgb_matrix_"
 EFFECT_VALUE = f"{RGB_MATRIX_VALUE}effect"
@@ -540,6 +546,45 @@ def lighting_menu() -> dict:
     }
 
 
+def via_value(header: Path, name: str) -> int:
+    """The number the keyboard answers a custom value on, read from its own enum.
+
+    The same reasoning as the keycodes below: the firmware decides the number and the
+    definition can only repeat it, so it is taken from the header rather than written down
+    twice and hoped about.
+    """
+    declaration = re.search(r"enum\s+k100_via_value\s*\{(.*?)\}", header.read_text(), re.S)
+    if declaration is None:
+        raise SystemExit(f"{header} declares no enum k100_via_value")
+
+    declared = re.search(rf"^\s*{name}\s*=\s*(\d+)", declaration.group(1), re.M)
+    if declared is None:
+        raise SystemExit(f"{header}'s enum k100_via_value does not declare {name} with a "
+                         f"number of its own")
+    return int(declared.group(1))
+
+
+def firmware_menu(version_value: int) -> dict:
+    """A menu that shows which firmware is on the keyboard, asked of the keyboard.
+
+    VIA displays no firmware version anywhere. It reads one, and uses it only to hide menu
+    entries a firmware is too old for. What it does display is a `label` item bound to a
+    value, which it renders as the text the keyboard returns -- so the version shown here is
+    one the keyboard was asked for, not a number this file claims. A definition loaded against
+    a different build says so by showing that build's version. See version.c.
+    """
+    return {
+        "label": "Firmware",
+        "content": [{
+            "label": "Installed",
+            "content": [
+                {"label": "Version", "type": "label",
+                 "content": [f"{K100_VALUE}version", K100_CHANNEL, version_value]},
+            ],
+        }],
+    }
+
+
 def custom_keycodes(header: Path) -> list[dict]:
     """VIA's `customKeycodes`, in the order the keyboard's enum declares them.
 
@@ -567,7 +612,7 @@ def custom_keycodes(header: Path) -> list[dict]:
     return [CUSTOM_KEYCODE_LABELS[name] for name in declared]
 
 
-def build_via_json(placed: list[Key], keycodes: list[dict]) -> dict:
+def build_via_json(placed: list[Key], keycodes: list[dict], version_value: int) -> dict:
     """VIA v3 definition. The keymap is KLE, emitted with explicit per-row offsets."""
     # By the top edge, not the centre: a key two units tall shares its top with
     # the row it starts in and its centre with nothing, and grouping by the
@@ -611,7 +656,7 @@ def build_via_json(placed: list[Key], keycodes: list[dict]) -> dict:
         "matrix": {"rows": STROBES, "cols": SENSES},
         "layouts": {"keymap": kle},
         "customKeycodes": keycodes,
-        "menus": [lighting_menu()],
+        "menus": [lighting_menu(), firmware_menu(version_value)],
     }
 
 
@@ -675,6 +720,7 @@ def main() -> int:
     leds = firmware.leds()
     placed = join_matrix(keys, firmware, args.layout)
     keycodes = custom_keycodes(args.keycodes)
+    version_value = via_value(args.keycodes, "K100_VIA_VERSION")
 
     # Everything that scans but did not land in the matrix must be an encoder, or the join
     # has silently dropped a key.
@@ -696,7 +742,7 @@ def main() -> int:
 
     args.via_out.parent.mkdir(parents=True, exist_ok=True)
     args.via_out.write_text(
-        json.dumps(build_via_json(placed, keycodes), indent=2) + "\n")
+        json.dumps(build_via_json(placed, keycodes, version_value), indent=2) + "\n")
 
     lit = [k for k in keys.values() if k.has_led]
     print(f"matrix      {STROBES} x {SENSES} electrical, {len(placed)} positions")

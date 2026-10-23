@@ -25,6 +25,19 @@ enum k100_keycodes {
     K100_LIGHTS_TOGGLE,
 };
 
+/**
+ * @brief Values this keyboard answers on VIA's custom channel. See version.c.
+ *
+ * The numbers are VIA's to send and ours to choose, and the generated
+ * definition sends them as literals -- tools/generate-qmk-layout.py reads them
+ * out of this enum rather than carrying its own copy, so there is one place
+ * where each is decided.
+ */
+enum k100_via_value {
+    /** The firmware version, as text for VIA to display. */
+    K100_VIA_VERSION = 1,
+};
+
 /*
  * Matrix internals shared with the bootloader-entry check.
  *
