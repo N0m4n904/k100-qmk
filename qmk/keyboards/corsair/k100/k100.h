@@ -36,7 +36,19 @@ enum k100_keycodes {
 enum k100_via_value {
     /** The firmware version, as text for VIA to display. */
     K100_VIA_VERSION = 1,
+    /** Whether the LED probe is lighting one LED. */
+    K100_VIA_LED_PROBE = 2,
+    /** Which LED it lights, by the index an effect would use. */
+    K100_VIA_LED_INDEX = 3,
 };
+
+/**
+ * Lights the one LED the probe names, if it is on.
+ *
+ * Called from the indicator hook rather than from an effect, so that it shows
+ * under any lighting including none; see via_values.c for what it is for.
+ */
+void k100_led_probe_paint(void);
 
 /*
  * Matrix internals shared with the bootloader-entry check.

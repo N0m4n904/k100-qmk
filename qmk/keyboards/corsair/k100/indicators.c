@@ -18,6 +18,8 @@
 
 #include "quantum.h"
 
+#include "k100.h"
+
 /**
  * @brief The status LEDs, in the order they appear in the LED map.
  *
@@ -69,6 +71,10 @@ bool rgb_matrix_indicators_kb(void) {
        its own volume keys would be reporting what it last asked for rather
        than what is so. */
     indicator(K100_INDICATOR_MUTE, false);
+
+    /* Last, so that a probed LED shows even where an icon would otherwise sit:
+       the point of it is to find out what a given index lights. */
+    k100_led_probe_paint();
 
     return rgb_matrix_indicators_user();
 }

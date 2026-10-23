@@ -452,6 +452,34 @@
               ]
             }
           ]
+        },
+        {
+          "label": "Diagnostics",
+          "content": [
+            {
+              "label": "LED probe",
+              "type": "toggle",
+              "content": [
+                "id_k100_led_probe",
+                0,
+                2
+              ]
+            },
+            {
+              "label": "LED index",
+              "type": "range",
+              "options": [
+                0,
+                189
+              ],
+              "showIf": "{id_k100_led_probe} == 1",
+              "content": [
+                "id_k100_led_index",
+                0,
+                3
+              ]
+            }
+          ]
         }
       ]
     }

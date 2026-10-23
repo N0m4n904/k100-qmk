@@ -564,24 +564,52 @@ def via_value(header: Path, name: str) -> int:
     return int(declared.group(1))
 
 
-def firmware_menu(version_value: int) -> dict:
+def diagnostics_group(probe_value: int, index_value: int, leds: int) -> dict:
+    """The LED probe: light one LED by index, and see what lights.
+
+    Which index lights which LED is not settled on this keyboard. The channel table comes
+    from Corsair's own firmware and the positions from ckb-next, and the two number the same
+    hardware differently -- the right light bar is eleven real LEDs that no effect reaches,
+    because they sit where this layout keeps the entries it cannot place. Finding out what
+    sits where needs a way to light one and look at it, and that is what this is.
+
+    The slider appears only while the probe is on, which is `showIf` pointed at this
+    keyboard's own value rather than at the lighting's.
+    """
+    return {
+        "label": "Diagnostics",
+        "content": [
+            {"label": "LED probe", "type": "toggle",
+             "content": [f"{K100_VALUE}led_probe", K100_CHANNEL, probe_value]},
+            {"label": "LED index", "type": "range", "options": [0, leds - 1],
+             "showIf": f"{{{K100_VALUE}led_probe}} == 1",
+             "content": [f"{K100_VALUE}led_index", K100_CHANNEL, index_value]},
+        ],
+    }
+
+
+def firmware_menu(version_value: int, probe_value: int, index_value: int,
+                  leds: int) -> dict:
     """A menu that shows which firmware is on the keyboard, asked of the keyboard.
 
     VIA displays no firmware version anywhere. It reads one, and uses it only to hide menu
     entries a firmware is too old for. What it does display is a `label` item bound to a
     value, which it renders as the text the keyboard returns -- so the version shown here is
     one the keyboard was asked for, not a number this file claims. A definition loaded against
-    a different build says so by showing that build's version. See version.c.
+    a different build says so by showing that build's version. See via_values.c.
     """
     return {
         "label": "Firmware",
-        "content": [{
-            "label": "Installed",
-            "content": [
-                {"label": "Version", "type": "label",
-                 "content": [f"{K100_VALUE}version", K100_CHANNEL, version_value]},
-            ],
-        }],
+        "content": [
+            {
+                "label": "Installed",
+                "content": [
+                    {"label": "Version", "type": "label",
+                     "content": [f"{K100_VALUE}version", K100_CHANNEL, version_value]},
+                ],
+            },
+            diagnostics_group(probe_value, index_value, leds),
+        ],
     }
 
 
@@ -612,7 +640,8 @@ def custom_keycodes(header: Path) -> list[dict]:
     return [CUSTOM_KEYCODE_LABELS[name] for name in declared]
 
 
-def build_via_json(placed: list[Key], keycodes: list[dict], version_value: int) -> dict:
+def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, int],
+                   leds: int) -> dict:
     """VIA v3 definition. The keymap is KLE, emitted with explicit per-row offsets."""
     # By the top edge, not the centre: a key two units tall shares its top with
     # the row it starts in and its centre with nothing, and grouping by the
@@ -656,7 +685,10 @@ def build_via_json(placed: list[Key], keycodes: list[dict], version_value: int) 
         "matrix": {"rows": STROBES, "cols": SENSES},
         "layouts": {"keymap": kle},
         "customKeycodes": keycodes,
-        "menus": [lighting_menu(), firmware_menu(version_value)],
+        "menus": [lighting_menu(), firmware_menu(values["K100_VIA_VERSION"],
+                                                 values["K100_VIA_LED_PROBE"],
+                                                 values["K100_VIA_LED_INDEX"],
+                                                 leds)],
     }
 
 
@@ -720,7 +752,8 @@ def main() -> int:
     leds = firmware.leds()
     placed = join_matrix(keys, firmware, args.layout)
     keycodes = custom_keycodes(args.keycodes)
-    version_value = via_value(args.keycodes, "K100_VIA_VERSION")
+    values = {name: via_value(args.keycodes, name) for name in
+              ("K100_VIA_VERSION", "K100_VIA_LED_PROBE", "K100_VIA_LED_INDEX")}
 
     # Everything that scans but did not land in the matrix must be an encoder, or the join
     # has silently dropped a key.
@@ -742,7 +775,7 @@ def main() -> int:
 
     args.via_out.parent.mkdir(parents=True, exist_ok=True)
     args.via_out.write_text(
-        json.dumps(build_via_json(placed, keycodes, version_value), indent=2) + "\n")
+        json.dumps(build_via_json(placed, keycodes, values, len(leds)), indent=2) + "\n")
 
     lit = [k for k in keys.values() if k.has_led]
     print(f"matrix      {STROBES} x {SENSES} electrical, {len(placed)} positions")
