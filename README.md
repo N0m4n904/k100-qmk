@@ -18,11 +18,11 @@ flash goes wrong, all three measured.
 Corsair's own bootloader, and `k100-bragi flash` writes this firmware through Corsair's own
 update path. See [Installing it](#installing-it).
 
-**Not finished:** every LED is measured except for two things -- which end of the left and
-right bars index 157 and 179 are, and which way round the wheel's ring runs. An effect that
-moves across the keyboard is right everywhere else. A keyboard that will not boot still needs
-the programmer, because writing from the bootloader is only proven on a keyboard that got
-there on purpose.
+**Not finished:** one thing in the lighting is still open -- in which order the eleven
+segments of each side bar run -- and no effect this firmware has can show it, because every
+segment of a side bar carries the same horizontal position. Recovering a keyboard whose
+firmware does not boot has never been exercised on a keyboard that was actually in that
+state: both halves of it are proven separately, and nobody has yet had to put them together.
 
 ---
 
@@ -84,7 +84,7 @@ and the two rules that keep a mistake survivable.
 | Firmware distribution | **Understood and verified.** Official images download and validate. |
 | Reflashing a *healthy* keyboard | **Proven on hardware**, in both directions. Corsair's own images, many times; and this firmware, over USB through Corsair's update path, with no programmer: `Fn+Esc` into the bootloader, 33828 bytes in 555 chunks, applied, and the keyboard came back as `bcdDevice 0010` with its three interfaces. |
 | Route back to the bootloader | **Three ways, all measured.** From the keyboard alone: hold `B` and `L` while plugging in, decoded out of the bootloader's own startup matrix scan. From the firmware: `Fn+Esc` forces a watchdog reset, because `WDTOF` — the flag such a reset leaves behind — is what the bootloader keys on, not the EEPROM mode word this project first read it as. Over SWD it is one command. [`docs/recovery.md`](docs/recovery.md) |
-| Recovery from firmware that will not boot, over USB | **Half of it is proven.** The firmware's own route back works and has been watched doing so -- for a while it worked rather too well, firing on every cold boot because it could not tell a host that had not woken up from a broken one. Writing a replacement image from the bootloader over USB is **not implemented**; flashing here goes over SWD. Relying on this route before it had ever been seen to work cost a keyboard. |
+| Recovery from firmware that will not boot, over USB | **Both halves are proven, the whole has never been needed.** Getting into the bootloader without working firmware is holding `B` and `L` while plugging in, decoded out of the bootloader's own startup scan and then watched on the bus. Writing from there is `k100-bragi flash`, which has replaced this firmware over USB many times over. What nobody has done is the two together on a keyboard that really would not boot -- every write so far was to a keyboard that reached the bootloader on purpose. The firmware's own route back also works, and for a while worked rather too well, firing on every cold boot because it could not tell a host that had not woken up from a broken one. Relying on any of this before it had ever been seen to work cost a keyboard. |
 | Recovery from firmware that will not boot, over SWD | **Proven on hardware.** A bricked K100 was dumped, erased and restored to stock with a Raspberry Pi and four jumper wires. [`swd/`](swd/README.md) |
 | Corsair's bootloader | **Dumped.** 64 KB read out over SWD and checked: its vector checksum is valid, so the image is complete. Not redistributable, so not in this repository. |
 | Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |

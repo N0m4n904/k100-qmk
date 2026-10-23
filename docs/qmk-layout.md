@@ -216,9 +216,15 @@ the top row**, where they are printed, rather than with the other keys of their 
 profile-switch key, the lock key and the mute key -- have **two LEDs each**, which is why 119
 keys take 123 slots.
 
-What is still assumed rather than measured is the **direction** of the left and right bars
-and the **rotation** of the wheel's ring: which index is which end was not checked one at a
-time. A sweep running backwards along one bar alone is what that would look like.
+One thing is still open: **in which order the eleven segments of each side bar run.** The
+ring is not among them -- ckb-next names its segments by angle, 22.5 degrees through 337.5
+clockwise from the top, and the probe found 120 at the top with 127 to the left of it, which
+is the same way round -- and neither is the top bar, whose order was walked segment by segment.
+
+It is also the one open question that no effect here can answer. Every segment of a side bar
+carries the same x, so a sweep across the keyboard lights the whole bar at once whichever end
+157 and 179 are; only an effect that reads y would show a bar running backwards. Settling it
+means lighting all 22 with the probe and writing down what comes up, as the rest was settled.
 
 The generator refuses to emit if the measured table and the keys the matrix scans are not the
 same set, so a renamed or added key stops the build instead of shifting every LED after it.
