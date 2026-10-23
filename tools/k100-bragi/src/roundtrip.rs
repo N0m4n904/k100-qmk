@@ -69,21 +69,32 @@ pub fn exit_bootloader(device: Device) -> Result<()> {
     }
 
     println!("Leaving bootloader for self-operated mode...");
+    let product = device.product;
     device.request_operating_mode(OperatingMode::SelfOperated)?;
     drop(device);
     sleep(SETTLE);
 
-    let device = reconnect().context("keyboard did not come back after leaving bootloader")?;
-    let landed = device.operating_mode()?;
+    match wait_for_return(product)
+        .context("keyboard did not come back after leaving bootloader")?
+    {
+        Returned::Vendor(device) => {
+            let landed = device.operating_mode()?;
+            if landed == OperatingMode::Bootloader {
+                bail!("keyboard is still in bootloader mode");
+            }
 
-    if landed == OperatingMode::Bootloader {
-        bail!("keyboard is still in bootloader mode");
-    }
-
-    println!("Operating mode is now {landed:?}, {}-byte reports.", device.report_size);
-    match device.firmware_version() {
-        Ok(version) => println!("Running firmware {version}."),
-        Err(error) => println!("Could not read the firmware version: {error:#}"),
+            println!("Operating mode is now {landed:?}, {}-byte reports.", device.report_size);
+            match device.firmware_version() {
+                Ok(version) => println!("Running firmware {version}."),
+                Err(error) => println!("Could not read the firmware version: {error:#}"),
+            }
+        }
+        // Which is what leaving the bootloader is for: the application started, and
+        // the application this project installs has no Corsair protocol in it.
+        Returned::Foreign(version) => {
+            println!("The application started: version {version}, and nothing answering \
+                      Corsair's protocol.");
+        }
     }
     Ok(())
 }
@@ -242,22 +253,43 @@ pub fn confirm_after_apply(product: u16) -> Result<Running> {
     println!("  waiting up to {}s for the keyboard to reboot", APPLY_TIMEOUT.as_secs());
     sleep(APPLY_TIMEOUT);
 
-    match reconnect() {
-        Ok(device) => {
+    match wait_for_return(product).context("the keyboard did not come back after the apply")? {
+        Returned::Vendor(device) => {
             println!("  back on the bus, operating mode {:?}", device.operating_mode()?);
             device.firmware_version().map(Running::Bragi)
         }
+        Returned::Foreign(version) => {
+            println!("  back on the bus, and not answering Corsair's protocol");
+            Ok(Running::Foreign(version))
+        }
+    }
+}
+
+/// What answered after a transition that makes the keyboard re-enumerate.
+enum Returned {
+    /// Corsair's protocol, on an open handle.
+    Vendor(Device),
+    /// Something that came back and does not answer it, declaring this version.
+    Foreign(String),
+}
+
+/// Waits for the keyboard to come back, and says what it came back as.
+///
+/// [`reconnect`] only recognises a program that answers Corsair's protocol, and the
+/// application this project installs does not implement it at all. Its silence is
+/// therefore not absence, and reading it as absence reports a working keyboard as a
+/// missing one -- so when nothing answers, what is on the bus is looked at instead.
+fn wait_for_return(product: u16) -> Result<Returned> {
+    match reconnect() {
+        Ok(device) => Ok(Returned::Vendor(device)),
         Err(silent) => {
-            // Nothing answered, so the question is whether anything came back at all.
             let version = transport::find(protocol::CORSAIR_VID, &[product])?
                 .into_iter()
                 .next()
                 .and_then(|found| found.version)
-                .ok_or(silent)
-                .context("the keyboard did not come back after the apply")?;
+                .ok_or(silent)?;
 
-            println!("  back on the bus, and not answering Corsair's protocol");
-            Ok(Running::Foreign(describe_version(version)))
+            Ok(Returned::Foreign(describe_version(version)))
         }
     }
 }
