@@ -232,10 +232,11 @@ same set, so a renamed or added key stops the build instead of shifting every LE
   a turn. The iCUE wheel sets the lighting's brightness and the volume roller the volume,
   both confirmed by turning them; the roller's directions are crossed because it reports the
   opposite way round from the wheel.
-- **The wheel's button** is `K100_RGB_PROFILE`, a keycode this keyboard adds, and steps the
-  lighting through white, red, a rainbow that moves the whole board through the hues together
-  and one that sweeps them across it. It used to be `KC_MUTE`, which the mute key beside it
-  already was.
+- **The wheel's button** is `K100_RGB_EFFECT`, a keycode this keyboard adds, and steps
+  through the effects this firmware is built with, skipping the one that paints black because
+  the key beside it turns the lighting off. It sets no colour: that one piece of state belongs
+  to whoever is configuring the keyboard, and a key that wrote it fought the application for
+  it. It used to be `KC_MUTE`, which the mute key beside it already was.
 - **`lock`** is `GU_TOGG`: it suppresses the GUI keys, which is what the Windows Lock icon
   above it reports. **`profswitch`**, left of the wheel, is `K100_LIGHTS_TOGGLE`: the profiles
   it switched belong to the stock firmware, and turning the lighting off and on is the nearest

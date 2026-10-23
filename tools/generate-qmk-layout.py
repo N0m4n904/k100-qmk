@@ -45,14 +45,14 @@ from k100_firmware import (  # noqa: E402
 #
 # `ctrlwheelb` is the button in the middle of the iCUE wheel. It used to carry
 # KC_MUTE, which is what the mute key beside it already does -- two keys for one
-# thing, and nothing for the wheel. It now steps the lighting; see
-# qmk/keyboards/corsair/k100/lighting_profiles.c.
+# thing, and nothing for the wheel. It now steps the lighting effect; see
+# qmk/keyboards/corsair/k100/lighting_keys.c.
 NON_HID_KEYCODES = {
     "g1": "KC_F13", "g2": "KC_F14", "g3": "KC_F15",
     "g4": "KC_F16", "g5": "KC_F17", "g6": "KC_F18",
     "fn": "MO(1)",
     "profswitch": "K100_LIGHTS_TOGGLE", "lock": "GU_TOGG",
-    "mute": "KC_MUTE", "ctrlwheelb": "K100_RGB_PROFILE",
+    "mute": "KC_MUTE", "ctrlwheelb": "K100_RGB_EFFECT",
     "stop": "KC_MSTP", "prev": "KC_MPRV", "play": "KC_MPLY", "next": "KC_MNXT",
 }
 
@@ -67,10 +67,10 @@ NON_HID_KEYCODES = {
 # order from the header instead of from here is what stops the two drifting apart, and a
 # drifted order is silent -- the app would simply label the wrong keycode.
 CUSTOM_KEYCODE_LABELS = {
-    "K100_RGB_PROFILE": {
-        "name": "LED Profile",
-        "title": "Steps the lighting through white, red, rainbow and rainbow sweep",
-        "shortName": "LED",
+    "K100_RGB_EFFECT": {
+        "name": "LED Effect",
+        "title": "Steps the lighting through the effects this firmware has",
+        "shortName": "Effect",
     },
     "K100_LIGHTS_TOGGLE": {
         "name": "Lights",
@@ -114,16 +114,18 @@ FN_OVERRIDES = {
 #
 # The order is not ours to pick. QMK numbers the effects it compiles in the order its own
 # rgb_matrix_effects.inc includes them, starting at 1, and that number is what VIA's menu
-# sends. Checked against the built firmware rather than assumed: the profile table in
-# lighting_profiles.c compiles to modes 1 and 2.
+# sends. Checked against the built firmware rather than assumed.
 #
 # Effects that read a position were left out while the LED positions were not known to agree
-# with the LEDs they are attached to. The key LEDs are settled now -- the first 119 entries
-# follow the matrix, measured with the LED probe -- so one that sweeps across the keys is
-# built: `cycle_left_right`. The lights that are not keys are still unmeasured, so a sweep
-# reaches them in whatever order ckb-next had, which is the one thing to expect to look wrong.
+# with the LEDs they are attached to. Every slot is measured now, so one that sweeps across
+# the keyboard is built: `cycle_left_right`.
 #
-# What each one responds to decides which controls VIA offers alongside it.
+# What each one responds to decides which controls VIA offers alongside it. `colour` is
+# whether the effect *reads* the stored hue and saturation, not whether it is drawn in that
+# colour: both rainbows replace the hue -- with the LED's position for the sweep, with the
+# clock for the other -- and keep the saturation, so a stored colour of none paints them
+# white. Hiding the colour control from them is what made a rainbow picked in VIA look like
+# plain white, with nothing in the menu to put it right.
 #
 # `custom` marks the keyboard's own, in rgb_matrix_kb.inc, which QMK numbers after every
 # built-in and enables through rules.mk rather than through keyboard.json -- so each is
@@ -131,8 +133,8 @@ FN_OVERRIDES = {
 # keyboard.json takes, ours by the C name the effect is declared with.
 ANIMATIONS = {
     "solid_color": {"label": "Solid Color", "colour": True, "speed": False},
-    "cycle_all": {"label": "Rainbow", "colour": False, "speed": True},
-    "cycle_left_right": {"label": "Rainbow Sweep", "colour": False, "speed": True},
+    "cycle_all": {"label": "Rainbow", "colour": True, "speed": True},
+    "cycle_left_right": {"label": "Rainbow Sweep", "colour": True, "speed": True},
     "K100_LIGHTS_OFF": {"label": "Off", "colour": False, "speed": False, "custom": True},
 }
 
@@ -535,12 +537,12 @@ def build_keyboard_json(placed: list[Key], all_keys: list[Key], slots: list[Slot
         "usb": {"vid": "0x1B1C", "pid": "0x1B7C", "device_version": FIRMWARE_VERSION},
         "rgb_matrix": {
             "driver": "is31fl3743b",
-            # The two the wheel button steps through, and no more. An
+            # The ones the wheel button steps through, and no more. An
             # animation a definition offers and nothing drives is a claim
-            # rather than a feature. See ANIMATIONS for why these two, and
-            # lighting_profiles.c on why the rainbow is CYCLE_ALL. The
-            # keyboard's own effect is not named here: QMK takes that one
-            # through rules.mk, and the schema knows only its own.
+            # rather than a feature. See ANIMATIONS for why these, and
+            # lighting_keys.c for the key that steps them. The keyboard's own
+            # effect is not named here: QMK takes that one through rules.mk,
+            # and the schema knows only its own.
             "animations": {name: True for name, animation in ANIMATIONS.items()
                            if not animation.get("custom")},
             # White, full brightness. A stored default survives a reflash, so

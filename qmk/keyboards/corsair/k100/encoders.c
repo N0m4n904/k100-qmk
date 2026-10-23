@@ -4,10 +4,9 @@
 /*
  * The two things on this keyboard that turn.
  *
- * The iCUE wheel sets the lighting's brightness, which is why the lighting
- * profiles beside it carry no brightness of their own -- a profile that did
- * would undo this on every press. The volume roller does what it is printed
- * to do.
+ * The iCUE wheel sets the lighting's brightness, which is why the button in the
+ * middle of it steps the effect and leaves the brightness alone -- a press that
+ * set one would undo this. The volume roller does what it is printed to do.
  *
  * The pins are P1_28/P1_29 and P1_30/P1_31, read out of the stock firmware's
  * INPUTMUX configuration, where they are attached to four pin interrupts and

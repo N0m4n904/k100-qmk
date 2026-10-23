@@ -15,10 +15,10 @@ SRC += is31fl3743b_leds.c
 # which printed icon is a property of the board, not a preference.
 SRC += indicators.c
 
-# The lighting the wheel button steps through. Keyboard level because the key
-# is one: the button in the middle of the wheel has no HID meaning to fall back
-# on, so without this it does nothing of its own.
-SRC += lighting_profiles.c
+# What the wheel button and the profile-switch key do to the lighting. Keyboard
+# level because the keys are: neither has a HID meaning to fall back on, so
+# without this they do nothing of their own.
+SRC += lighting_keys.c
 
 # What the wheel and the roller do when they turn. Keyboard level for the same
 # reason: which rotary is which is a property of the board.

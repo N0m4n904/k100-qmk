@@ -18,15 +18,15 @@
  * unlabelled, so adding a keycode here means adding its label there.
  */
 enum k100_keycodes {
-    /** Steps the lighting through white, red and rainbow. See lighting_profiles.c. */
-    K100_RGB_PROFILE = QK_KB_0,
+    /** Steps the lighting through the effects this firmware has. See lighting_keys.c. */
+    K100_RGB_EFFECT = QK_KB_0,
 
     /** Turns the key lighting off and back on, status icons included. */
     K100_LIGHTS_TOGGLE,
 };
 
 /**
- * @brief Values this keyboard answers on VIA's custom channel. See version.c.
+ * @brief Values this keyboard answers on VIA's custom channel. See via_values.c.
  *
  * The numbers are VIA's to send and ours to choose, and the generated
  * definition sends them as literals -- tools/generate-qmk-layout.py reads them
