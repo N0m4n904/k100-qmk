@@ -24,3 +24,7 @@ __pycache__/
 # VIA's definition reader. The lock file is committed, so npm ci installs the
 # versions this was checked against.
 tools/via-definition-check/node_modules/
+
+# Release artefacts, assembled from a build rather than kept: the firmware
+# image, the definition that goes with it and their checksums.
+dist/
