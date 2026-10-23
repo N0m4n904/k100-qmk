@@ -29,6 +29,11 @@ SRC += encoders.c
 # which index lights which LED is not known on this board.
 SRC += via_values.c
 
+# How the keyboard tells the application that it changed something itself. The
+# keys and the wheel above do, and VIA reads its menu values only when it
+# connects, so without this its idea of the lighting stops being true.
+SRC += via_ui_sync.c
+
 # Our own RGB effect, in rgb_matrix_kb.inc, which QMK includes into
 # rgb_matrix.c rather than compiling on its own -- so no SRC entry, just this.
 # The file says why an effect that paints black has to exist at all.

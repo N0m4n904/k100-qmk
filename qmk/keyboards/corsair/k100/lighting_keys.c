@@ -22,12 +22,16 @@
  * seen on the keyboard: a press overwrote a colour set in VIA, and a colour set
  * in VIA left the state matching no profile at all, so the next press fell back
  * to the first one and the keyboard went white. The effect is this key's to
- * step. The colour is the application's to set, for every effect that reads
- * one -- which is all of them but the black one, because the rainbows take
- * their saturation from it and paint white without it.
+ * step. The colour is the application's to set, and the only effect that reads
+ * one is the effect that *is* a colour -- this keyboard's rainbows paint their
+ * own hues at full saturation, see rgb_matrix_kb.inc.
+ *
+ * Both keys tell the application what they did, because it reads the effect
+ * once and then only knows what it wrote itself; see via_ui_sync.c.
  */
 
 #include "quantum.h"
+#include "via.h"
 
 #include "k100.h"
 
@@ -72,6 +76,7 @@ static void step_effect(void) {
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     if (keycode == K100_RGB_EFFECT && record->event.pressed) {
         step_effect();
+        k100_via_sync_value(id_qmk_rgb_matrix_channel, id_qmk_rgb_matrix_effect);
         return false;
     }
 
@@ -82,6 +87,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             before_off = rgb_matrix_get_mode();
             rgb_matrix_mode(RGB_MATRIX_CUSTOM_K100_LIGHTS_OFF);
         }
+        k100_via_sync_value(id_qmk_rgb_matrix_channel, id_qmk_rgb_matrix_effect);
         return false;
     }
 

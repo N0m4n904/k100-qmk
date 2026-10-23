@@ -19,6 +19,9 @@
  */
 
 #include "quantum.h"
+#include "via.h"
+
+#include "k100.h"
 
 enum k100_encoder {
     K100_ENCODER_WHEEL = 0,
@@ -38,6 +41,11 @@ bool encoder_update_kb(uint8_t index, bool clockwise) {
             } else {
                 rgb_matrix_decrease_val();
             }
+            /* The application reads the brightness when it connects and then
+               only knows what it set itself, so a turn has to say so or its
+               slider sits where the wheel left it a session ago. One request
+               per detent: VIA collects them and reads once per batch. */
+            k100_via_sync_value(id_qmk_rgb_matrix_channel, id_qmk_rgb_matrix_brightness);
 #endif
             return false;
 

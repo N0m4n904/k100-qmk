@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from k100_usb import PRODUCT, VENDOR, device, identity  # noqa: E402
 from k100_via import (CUSTOM_GET_VALUE, GET_PROTOCOL_VERSION, REPORT_SIZE,  # noqa: E402
-                      interface)
+                      UI_SYNC_REQUEST, interface)
 
 #: The lighting channel and its four values, which is what the application asks
 #: for on connecting -- and the run that exposed the fault.
@@ -119,13 +119,31 @@ def main() -> int:
             started = time.monotonic()
             os.write(fd, b"\x00" + padded)
 
-            ready, _, _ = select.select([fd], [], [], args.timeout)
-            if not ready:
-                print(f"  {command.hex(' ')}  ->  nothing within {args.timeout}s")
-                in_order = False
+            # Reports of the keyboard's own are passed over on the way to the
+            # reply: a UI sync request answers nothing -- it asks the
+            # application to read a menu value again -- and the keyboard sends
+            # one whenever a key or the wheel changes the lighting. Touching
+            # one during a run is not a fault, so it is reported and the reply
+            # is still waited for.
+            reply = None
+            deadline = started + args.timeout
+            while reply is None:
+                ready, _, _ = select.select([fd], [], [], max(deadline - time.monotonic(), 0))
+                if not ready:
+                    print(f"  {command.hex(' ')}  ->  nothing within {args.timeout}s")
+                    in_order = False
+                    break
+
+                report = os.read(fd, REPORT_SIZE)
+                if report[0] == UI_SYNC_REQUEST:
+                    print(f"{'':<16} -> {report[:6].hex(' ')}  "
+                          f"the keyboard asking for a menu value to be read again")
+                    continue
+                reply = report
+
+            if reply is None:
                 continue
 
-            reply = os.read(fd, REPORT_SIZE)
             waited = (time.monotonic() - started) * 1000
             echoed = reply[:len(command)] == command
             in_order &= echoed

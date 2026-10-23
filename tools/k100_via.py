@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import select
 import sys
+import time
 from pathlib import Path
 
 from k100_usb import hidraw_nodes
@@ -40,6 +41,13 @@ CUSTOM_SAVE = 0x09
 #: What an unsupported command comes back as, which is how an interface that is
 #: not VIA's answers one.
 UNHANDLED = 0xFF
+
+#: The one report this keyboard sends without being asked for it: VIA's UI sync
+#: request, which tells the application to read a menu value again after a key
+#: or the wheel has changed it. No command carries this number, so a report that
+#: starts with it is never a reply -- and a reader that took it for one would be
+#: one reply behind for the rest of the connection. See via_ui_sync.c.
+UI_SYNC_REQUEST = 0x16
 
 
 def exchange(node: Path, request: bytes) -> bytes | None:
@@ -69,10 +77,17 @@ def exchange(node: Path, request: bytes) -> bytes | None:
                   file=sys.stderr)
             return None
 
-        ready, _, _ = select.select([fd], [], [], TIMEOUT_S)
-        if not ready:
-            return None
-        return os.read(fd, REPORT_SIZE)
+        # The keyboard's own reports are passed over rather than waited on
+        # separately: one can land between the command and its reply, and the
+        # reply is still the next thing after it.
+        deadline = time.monotonic() + TIMEOUT_S
+        while True:
+            ready, _, _ = select.select([fd], [], [], max(deadline - time.monotonic(), 0))
+            if not ready:
+                return None
+            reply = os.read(fd, REPORT_SIZE)
+            if reply[0] != UI_SYNC_REQUEST:
+                return reply
     except OSError as error:
         print(f"  {node.name}: {error}", file=sys.stderr)
         return None

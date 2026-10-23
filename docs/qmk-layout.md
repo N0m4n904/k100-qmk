@@ -250,15 +250,29 @@ same set, so a renamed or added key stops the build instead of shifting every LE
 VIA ships a `qmk_rgb_matrix` menu that a definition can ask for by name, and it is the
 wrong menu for this keyboard. Its effect dropdown lists all 45 effects QMK has and sends
 the position in that list, while QMK numbers only the effects that are **compiled**. This
-firmware compiles two, so 1 is the solid colour and 2 the rainbow. In VIA's list, 2 is
-"Breathing". Picking breathing would start the rainbow and nothing would say so.
+firmware compiles four, so 2 is a rainbow here and "Breathing" there. Picking breathing
+would start the rainbow and nothing would say so.
 
 The menu is therefore emitted from the same `ANIMATIONS` table the firmware's animation
 list comes from. The dropdown holds exactly the effects that exist, at the numbers they
 answer to, and the colour and speed controls carry a `showIf` so that each appears only
 for the effects that read it.
 
-### Why "Off" is effect 3 and not zero
+### Why the rainbows are the keyboard's own
+
+Three of the four effects are, and the two rainbows are there for a reason worth writing
+down: **QMK's rainbows read the stored colour.** `CYCLE_ALL` and `CYCLE_LEFT_RIGHT` replace
+the hue -- with the clock and with the LED's position -- and keep the saturation they are
+handed, which is the saturation the *plain colour* is set to. A keyboard set to white
+therefore has white rainbows. The effect runs, every LED is painted, and nothing about it
+looks like a rainbow; it is indistinguishable from the solid colour, and the control that
+would have put it right was hidden by the `showIf` that said rainbows read no colour.
+
+`K100_RAINBOW` and `K100_RAINBOW_SWEEP` in `rgb_matrix_kb.inc` take the hue the same way and
+paint it fully saturated. The colour then belongs to the one effect that is a colour, which
+is what the `showIf` says, and one knob no longer reaches across three effects.
+
+### Why "Off" is effect 4 and not zero
 
 VIA's own menu offers "All Off" as value zero, and zero is not an effect. It disables the
 matrix, and QMK draws the status icons from inside the lighting task:
@@ -278,8 +292,9 @@ them either. Turning the key lighting off from the app would take Num Lock with 
 So the menu does not offer zero. Its "Off" selects `K100_LIGHTS_OFF` in
 `rgb_matrix_kb.inc`, an effect that paints black: the task keeps running, the indicator
 hook keeps being called, and the keyboard goes dark with its icons still lit. QMK numbers a
-keyboard's own effects after every built-in, which makes it 3 here, and a `_Static_assert`
-in that file holds the number against what the generated definition sends.
+keyboard's own effects after every built-in, which makes it 4 here, and a `_Static_assert`
+in that file holds that number -- and the rainbows' 2 and 3 -- against what the generated
+definition sends.
 
 Measured on the keyboard, reading the LED output buffer over SWD while the firmware ran:
 with "Off" selected the key channels hold `0x00` and the lit indicator's channel still holds
@@ -301,6 +316,26 @@ python3 tools/via-lighting.py --effect 2 --speed 200
 
 Measured on the keyboard: all four are written and read back, and the four it reports
 agree with the same values read out of `rgb_matrix_config` over SWD.
+
+### Telling the application what the keyboard did
+
+VIA reads these values when it connects and afterwards knows only what it wrote itself, so
+the wheel button stepping the effect and the wheel turning the brightness happen behind its
+back: the dropdown goes on naming the effect that was running when the menu loaded, and the
+next change made there lands on top of a state the application no longer knows.
+
+VIA has a way out that the keyboard drives. It passes every report that arrives on its own
+through a handler looking for a **UI sync request** -- report `0x16`, version 1, then which
+channel and value to read again -- and recognising one consumes the report, so it never
+reaches the code that matches replies to commands. `via_ui_sync.c` sends one after each of
+the three things that change the lighting without the application asking.
+
+The request is not in QMK: its `via_command_id` stops at `0x15`, and `parseUISyncRequest` in
+VIA's own bundle is what the layout follows. An application that does not know it loses
+nothing by dropping it, unless it is waiting for a reply at that moment, in which case it
+would take this for the reply -- which cannot be avoided from the keyboard's side, since a
+keyboard cannot ask which version is listening. `tools/k100_via.py` skips these reports for
+the same reason.
 
 ## Validation
 

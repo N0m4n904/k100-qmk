@@ -31,9 +31,7 @@
   "rgb_matrix": {
     "driver": "is31fl3743b",
     "animations": {
-      "solid_color": true,
-      "cycle_all": true,
-      "cycle_left_right": true
+      "solid_color": true
     },
     "default": {
       "animation": "solid_color",

@@ -43,6 +43,20 @@ enum k100_via_value {
 };
 
 /**
+ * @brief   Asks the configuration application to read one of its values again.
+ *
+ * @details For the state this keyboard changes by itself. VIA reads the values
+ *          its menus show when it connects and afterwards knows only what it
+ *          wrote, so a key or a wheel that changes one has to say so or the
+ *          application's idea of the keyboard quietly stops being true.
+ *
+ *          The channel and value are the numbers the application sends to ask
+ *          for that value, from `enum via_channel_id` and its per-channel
+ *          counterparts in via.h. See via_ui_sync.c.
+ */
+void k100_via_sync_value(uint8_t channel, uint8_t value);
+
+/**
  * Lights the one LED the probe names, if it is on.
  *
  * Called from the indicator hook rather than from an effect, so that it shows

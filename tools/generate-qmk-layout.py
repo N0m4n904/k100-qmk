@@ -118,23 +118,25 @@ FN_OVERRIDES = {
 #
 # Effects that read a position were left out while the LED positions were not known to agree
 # with the LEDs they are attached to. Every slot is measured now, so one that sweeps across
-# the keyboard is built: `cycle_left_right`.
+# the keyboard is built.
 #
 # What each one responds to decides which controls VIA offers alongside it. `colour` is
-# whether the effect *reads* the stored hue and saturation, not whether it is drawn in that
-# colour: both rainbows replace the hue -- with the LED's position for the sweep, with the
-# clock for the other -- and keep the saturation, so a stored colour of none paints them
-# white. Hiding the colour control from them is what made a rainbow picked in VIA look like
-# plain white, with nothing in the menu to put it right.
+# whether the effect reads the stored hue and saturation at all, and only the effect that
+# *is* a colour does: QMK's own rainbows keep the saturation they are handed, which made a
+# keyboard set to white paint white rainbows, so this keyboard has rainbows of its own that
+# paint their hues fully saturated. One colour that reached across three effects was the
+# fault; see rgb_matrix_kb.inc.
 #
 # `custom` marks the keyboard's own, in rgb_matrix_kb.inc, which QMK numbers after every
 # built-in and enables through rules.mk rather than through keyboard.json -- so each is
 # keyed by the name its own kind is known by: a built-in by the lowercase name
-# keyboard.json takes, ours by the C name the effect is declared with.
+# keyboard.json takes, ours by the C name the effect is declared with. Only the plain
+# colour is a built-in here, which is why the three below carry that mark.
 ANIMATIONS = {
     "solid_color": {"label": "Solid Color", "colour": True, "speed": False},
-    "cycle_all": {"label": "Rainbow", "colour": True, "speed": True},
-    "cycle_left_right": {"label": "Rainbow Sweep", "colour": True, "speed": True},
+    "K100_RAINBOW": {"label": "Rainbow", "colour": False, "speed": True, "custom": True},
+    "K100_RAINBOW_SWEEP": {"label": "Rainbow Sweep", "colour": False, "speed": True,
+                           "custom": True},
     "K100_LIGHTS_OFF": {"label": "Off", "colour": False, "speed": False, "custom": True},
 }
 
@@ -537,12 +539,12 @@ def build_keyboard_json(placed: list[Key], all_keys: list[Key], slots: list[Slot
         "usb": {"vid": "0x1B1C", "pid": "0x1B7C", "device_version": FIRMWARE_VERSION},
         "rgb_matrix": {
             "driver": "is31fl3743b",
-            # The ones the wheel button steps through, and no more. An
-            # animation a definition offers and nothing drives is a claim
-            # rather than a feature. See ANIMATIONS for why these, and
-            # lighting_keys.c for the key that steps them. The keyboard's own
-            # effect is not named here: QMK takes that one through rules.mk,
-            # and the schema knows only its own.
+            # QMK's own effects that this firmware compiles, which is one of
+            # the 45 it has. An animation a definition offers and nothing
+            # drives is a claim rather than a feature. The keyboard's three are
+            # not named here -- QMK takes those through rules.mk and the schema
+            # knows only its own -- so this is ANIMATIONS without them; see
+            # there for what each is for, and rgb_matrix_kb.inc for the three.
             "animations": {name: True for name, animation in ANIMATIONS.items()
                            if not animation.get("custom")},
             # White, full brightness. A stored default survives a reflash, so
