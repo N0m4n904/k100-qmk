@@ -530,643 +530,643 @@
                   13
                 ],
                 [
-                  "14  prtscn",
+                  "14  unknown",
                   14
                 ],
                 [
-                  "15  scroll",
+                  "15  prtscn",
                   15
                 ],
                 [
-                  "16  pause",
+                  "16  scroll",
                   16
                 ],
                 [
-                  "17  g2",
+                  "17  pause",
                   17
                 ],
                 [
-                  "18  grave",
+                  "18  g2",
                   18
                 ],
                 [
-                  "19  1",
+                  "19  grave",
                   19
                 ],
                 [
-                  "20  2",
+                  "20  1",
                   20
                 ],
                 [
-                  "21  3",
+                  "21  2",
                   21
                 ],
                 [
-                  "22  4",
+                  "22  3",
                   22
                 ],
                 [
-                  "23  5",
+                  "23  4",
                   23
                 ],
                 [
-                  "24  6",
+                  "24  5",
                   24
                 ],
                 [
-                  "25  7",
+                  "25  6",
                   25
                 ],
                 [
-                  "26  8",
+                  "26  7",
                   26
                 ],
                 [
-                  "27  9",
+                  "27  8",
                   27
                 ],
                 [
-                  "28  0",
+                  "28  9",
                   28
                 ],
                 [
-                  "29  minus",
+                  "29  0",
                   29
                 ],
                 [
-                  "30  equal",
+                  "30  minus",
                   30
                 ],
                 [
-                  "31  bspace",
+                  "31  equal",
                   31
                 ],
                 [
-                  "32  ins",
+                  "32  bspace",
                   32
                 ],
                 [
-                  "33  home",
+                  "33  ins",
                   33
                 ],
                 [
-                  "34  pgup",
+                  "34  home",
                   34
                 ],
                 [
-                  "35  g3",
+                  "35  pgup",
                   35
                 ],
                 [
-                  "36  tab",
+                  "36  g3",
                   36
                 ],
                 [
-                  "37  q",
+                  "37  tab",
                   37
                 ],
                 [
-                  "38  w",
+                  "38  q",
                   38
                 ],
                 [
-                  "39  e",
+                  "39  w",
                   39
                 ],
                 [
-                  "40  r",
+                  "40  e",
                   40
                 ],
                 [
-                  "41  t",
+                  "41  r",
                   41
                 ],
                 [
-                  "42  y",
+                  "42  t",
                   42
                 ],
                 [
-                  "43  u",
+                  "43  y",
                   43
                 ],
                 [
-                  "44  i",
+                  "44  u",
                   44
                 ],
                 [
-                  "45  o",
+                  "45  i",
                   45
                 ],
                 [
-                  "46  p",
+                  "46  o",
                   46
                 ],
                 [
-                  "47  lbrace",
+                  "47  p",
                   47
                 ],
                 [
-                  "48  rbrace",
+                  "48  lbrace",
                   48
                 ],
                 [
-                  "49  del",
+                  "49  rbrace",
                   49
                 ],
                 [
-                  "50  end",
+                  "50  del",
                   50
                 ],
                 [
-                  "51  pgdn",
+                  "51  end",
                   51
                 ],
                 [
-                  "52  g4",
+                  "52  pgdn",
                   52
                 ],
                 [
-                  "53  caps",
+                  "53  g4",
                   53
                 ],
                 [
-                  "54  a",
+                  "54  caps",
                   54
                 ],
                 [
-                  "55  s",
+                  "55  a",
                   55
                 ],
                 [
-                  "56  d",
+                  "56  s",
                   56
                 ],
                 [
-                  "57  f",
+                  "57  d",
                   57
                 ],
                 [
-                  "58  g",
+                  "58  unknown",
                   58
                 ],
                 [
-                  "59  h",
+                  "59  f",
                   59
                 ],
                 [
-                  "60  j",
+                  "60  g",
                   60
                 ],
                 [
-                  "61  k",
+                  "61  h",
                   61
                 ],
                 [
-                  "62  l",
+                  "62  j",
                   62
                 ],
                 [
-                  "63  colon",
+                  "63  k",
                   63
                 ],
                 [
-                  "64  quote",
+                  "64  l",
                   64
                 ],
                 [
-                  "65  hash",
+                  "65  colon",
                   65
                 ],
                 [
-                  "66  enter",
+                  "66  quote",
                   66
                 ],
                 [
-                  "67  g5",
+                  "67  hash",
                   67
                 ],
                 [
-                  "68  lshift",
+                  "68  enter",
                   68
                 ],
                 [
-                  "69  bslash_iso",
+                  "69  g5",
                   69
                 ],
                 [
-                  "70  z",
+                  "70  lshift",
                   70
                 ],
                 [
-                  "71  x",
+                  "71  bslash_iso",
                   71
                 ],
                 [
-                  "72  c",
+                  "72  z",
                   72
                 ],
                 [
-                  "73  v",
+                  "73  x",
                   73
                 ],
                 [
-                  "74  b",
+                  "74  c",
                   74
                 ],
                 [
-                  "75  n",
+                  "75  v",
                   75
                 ],
                 [
-                  "76  m",
+                  "76  b",
                   76
                 ],
                 [
-                  "77  comma",
+                  "77  n",
                   77
                 ],
                 [
-                  "78  dot",
+                  "78  m",
                   78
                 ],
                 [
-                  "79  slash",
+                  "79  comma",
                   79
                 ],
                 [
-                  "80  rshift",
+                  "80  dot",
                   80
                 ],
                 [
-                  "81  up",
+                  "81  slash",
                   81
                 ],
                 [
-                  "82  g6",
+                  "82  rshift",
                   82
                 ],
                 [
-                  "83  lctrl",
+                  "83  up",
                   83
                 ],
                 [
-                  "84  lwin",
+                  "84  g6",
                   84
                 ],
                 [
-                  "85  lalt",
+                  "85  lctrl",
                   85
                 ],
                 [
-                  "86  space",
+                  "86  lwin",
                   86
                 ],
                 [
-                  "87  ralt",
+                  "87  lalt",
                   87
                 ],
                 [
-                  "88  fn",
+                  "88  space",
                   88
                 ],
                 [
-                  "89  rmenu",
+                  "89  ralt",
                   89
                 ],
                 [
-                  "90  rctrl",
+                  "90  fn",
                   90
                 ],
                 [
-                  "91  left",
+                  "91  rmenu",
                   91
                 ],
                 [
-                  "92  down",
+                  "92  rctrl",
                   92
                 ],
                 [
-                  "93  right",
+                  "93  left",
                   93
                 ],
                 [
-                  "94  num0",
+                  "94  down",
                   94
                 ],
                 [
-                  "95  numdot",
+                  "95  right",
                   95
                 ],
                 [
-                  "96  num1",
+                  "96  num0",
                   96
                 ],
                 [
-                  "97  num2",
+                  "97  numdot",
                   97
                 ],
                 [
-                  "98  num3",
+                  "98  num1",
                   98
                 ],
                 [
-                  "99  numenter",
+                  "99  num2",
                   99
                 ],
                 [
-                  "100  num4",
+                  "100  num3",
                   100
                 ],
                 [
-                  "101  num5",
+                  "101  unknown",
                   101
                 ],
                 [
-                  "102  num6",
+                  "102  numenter",
                   102
                 ],
                 [
-                  "103  num7",
+                  "103  num4",
                   103
                 ],
                 [
-                  "104  num8",
+                  "104  num5",
                   104
                 ],
                 [
-                  "105  num9",
+                  "105  num6",
                   105
                 ],
                 [
-                  "106  numplus",
+                  "106  num7",
                   106
                 ],
                 [
-                  "107  numlock",
+                  "107  num8",
                   107
                 ],
                 [
-                  "108  numslash",
+                  "108  num9",
                   108
                 ],
                 [
-                  "109  numstar",
+                  "109  numplus",
                   109
                 ],
                 [
-                  "110  numminus",
+                  "110  numlock",
                   110
                 ],
                 [
-                  "111  profswitch",
+                  "111  numslash",
                   111
                 ],
                 [
-                  "112  ctrlwheelb",
+                  "112  numstar",
                   112
                 ],
                 [
-                  "113  lock",
+                  "113  unknown",
                   113
                 ],
                 [
-                  "114  mute",
+                  "114  numminus",
                   114
                 ],
                 [
-                  "115  stop",
+                  "115  unknown",
                   115
                 ],
                 [
-                  "116  prev",
+                  "116  profswitch",
                   116
                 ],
                 [
-                  "117  play",
+                  "117  ctrlwheelb",
                   117
                 ],
                 [
-                  "118  next",
+                  "118  lock",
                   118
                 ],
                 [
-                  "119  topbar1",
+                  "119  mute",
                   119
                 ],
                 [
-                  "120  topbar2",
+                  "120  stop",
                   120
                 ],
                 [
-                  "121  topbar3",
+                  "121  prev",
                   121
                 ],
                 [
-                  "122  topbar4",
+                  "122  play",
                   122
                 ],
                 [
-                  "123  topbar5",
+                  "123  next",
                   123
                 ],
                 [
-                  "124  topbar6",
+                  "124  topbar1",
                   124
                 ],
                 [
-                  "125  topbar7",
+                  "125  topbar2",
                   125
                 ],
                 [
-                  "126  topbar8",
+                  "126  topbar3",
                   126
                 ],
                 [
-                  "127  topbar9",
+                  "127  topbar4",
                   127
                 ],
                 [
-                  "128  topbar10",
+                  "128  topbar5",
                   128
                 ],
                 [
-                  "129  topbar11",
+                  "129  topbar6",
                   129
                 ],
                 [
-                  "130  topbar12",
+                  "130  unknown",
                   130
                 ],
                 [
-                  "131  topbar13",
+                  "131  topbar7",
                   131
                 ],
                 [
-                  "132  topbar14",
+                  "132  topbar8",
                   132
                 ],
                 [
-                  "133  topbar15",
+                  "133  topbar9",
                   133
                 ],
                 [
-                  "134  topbar16",
+                  "134  topbar10",
                   134
                 ],
                 [
-                  "135  topbar17",
+                  "135  topbar11",
                   135
                 ],
                 [
-                  "136  topbar18",
+                  "136  topbar12",
                   136
                 ],
                 [
-                  "137  topbar19",
+                  "137  topbar13",
                   137
                 ],
                 [
-                  "138  topbar20",
+                  "138  topbar14",
                   138
                 ],
                 [
-                  "139  topbar21",
+                  "139  topbar15",
                   139
                 ],
                 [
-                  "140  topbar22",
+                  "140  topbar16",
                   140
                 ],
                 [
-                  "141  leftbar1",
+                  "141  topbar17",
                   141
                 ],
                 [
-                  "142  leftbar2",
+                  "142  topbar18",
                   142
                 ],
                 [
-                  "143  leftbar3",
+                  "143  topbar19",
                   143
                 ],
                 [
-                  "144  leftbar4",
+                  "144  topbar20",
                   144
                 ],
                 [
-                  "145  leftbar5",
+                  "145  topbar21",
                   145
                 ],
                 [
-                  "146  leftbar6",
+                  "146  topbar22",
                   146
                 ],
                 [
-                  "147  leftbar7",
+                  "147  leftbar1",
                   147
                 ],
                 [
-                  "148  leftbar8",
+                  "148  leftbar2",
                   148
                 ],
                 [
-                  "149  leftbar9",
+                  "149  leftbar3",
                   149
                 ],
                 [
-                  "150  leftbar10",
+                  "150  leftbar4",
                   150
                 ],
                 [
-                  "151  leftbar11",
+                  "151  leftbar5",
                   151
                 ],
                 [
-                  "152  rightbar1",
+                  "152  leftbar6",
                   152
                 ],
                 [
-                  "153  rightbar2",
+                  "153  leftbar7",
                   153
                 ],
                 [
-                  "154  rightbar3",
+                  "154  leftbar8",
                   154
                 ],
                 [
-                  "155  rightbar4",
+                  "155  leftbar9",
                   155
                 ],
                 [
-                  "156  rightbar5",
+                  "156  leftbar10",
                   156
                 ],
                 [
-                  "157  rightbar6",
+                  "157  leftbar11",
                   157
                 ],
                 [
-                  "158  rightbar7",
+                  "158  ctrlwheel2",
                   158
                 ],
                 [
-                  "159  rightbar8",
+                  "159  ctrlwheel3",
                   159
                 ],
                 [
-                  "160  rightbar9",
+                  "160  ctrlwheel4",
                   160
                 ],
                 [
-                  "161  rightbar10",
+                  "161  ctrlwheel5",
                   161
                 ],
                 [
-                  "162  rightbar11",
+                  "162  ctrlwheel6",
                   162
                 ],
                 [
-                  "163  ctrlwheel2",
+                  "163  ctrlwheel7",
                   163
                 ],
                 [
-                  "164  ctrlwheel3",
+                  "164  ctrlwheel8",
                   164
                 ],
                 [
-                  "165  ctrlwheel4",
+                  "165  ctrlwheel1",
                   165
                 ],
                 [
-                  "166  ctrlwheel5",
+                  "166  logoleft",
                   166
                 ],
                 [
-                  "167  ctrlwheel6",
+                  "167  logo",
                   167
                 ],
                 [
-                  "168  ctrlwheel7",
+                  "168  logoright",
                   168
                 ],
                 [
-                  "169  ctrlwheel8",
+                  "169  unknown",
                   169
                 ],
                 [
-                  "170  ctrlwheel1",
+                  "170  unknown",
                   170
                 ],
                 [
-                  "171  logoleft",
+                  "171  unknown",
                   171
                 ],
                 [
-                  "172  logo",
+                  "172  unknown",
                   172
                 ],
                 [
-                  "173  logoright",
+                  "173  unknown",
                   173
                 ],
                 [

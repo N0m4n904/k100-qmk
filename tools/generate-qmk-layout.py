@@ -168,6 +168,22 @@ UNPLACED_POSITION = (0, 0)
 # on this bar alone is what that would look like, and the fix is to reverse this tuple.
 RIGHT_BAR = tuple(f"rightbar{segment}" for segment in range(1, 12))
 
+# Slots the firmware counts and no LED sits on.
+#
+# Measured by lighting every index in turn and writing down which ones stayed dark. They are
+# what made every earlier version of this table wrong after the first one: the firmware
+# numbers a grid, and a position with nothing fitted still takes its number, while this
+# generator only ever knew the lights that exist and packed them tight. One missing slot moves
+# everything after it by one, which is why index 14 is dark and `print` lit one step late.
+#
+# 14 is the space between F12 and Print, and the five after it are the same thing elsewhere.
+GAPS = (14, 58, 101, 113, 115, 130)
+
+# The six single-colour status icons, which hold the six slots before the right bar. Measured
+# twice over: the channel table marks exactly these six as single-channel, and lighting each
+# one alone matched the printed icons in order. See indicators.c.
+ICONS = 6
+
 QMK_MAX_X, QMK_MAX_Y = 224, 64
 
 # This firmware's version, declared once and nowhere else.
@@ -343,22 +359,33 @@ def led_order(lit: list[Key], leds: list[Led]) -> list[Key | None]:
     and the list the LED probe offers in VIA. A probe that offered a different order from the
     one being tested would prove nothing at all.
 
-    `None` is an index nothing is known about, of which there are ten -- lights the firmware
-    has and ckb-next never named.
+    `None` is a slot nothing is known to sit on: one of the measured GAPS, one of the lights
+    the firmware has and ckb-next never named, or the four at the end of the middle stretch
+    that the count says exist and nothing identifies.
+
+    The keys come first, in the matrix's own order, skipping the gaps. The lights that are not
+    keys follow in ckb-next's order, which is **not** measured -- the right bar is the one
+    exception, and it is at the end because that is where it was found.
     """
-    scanning = sorted((key for key in lit if key.matrix), key=lambda k: k.matrix)
-    resting = [key for key in lit if not key.matrix]
-
-    order: list[Key | None] = [*scanning, *resting]
-    order += [None] * (len(leds) - len(order))
-
-    # The right bar, at the end of the firmware's table, where this leaves unknowns otherwise.
     by_name = {key.name: key for key in lit}
-    for offset, name in enumerate(RIGHT_BAR):
-        segment = by_name.get(name)
-        if segment is None:
+    for name in RIGHT_BAR:
+        if name not in by_name:
             raise SystemExit(f"the geometry has no {name}, so the right bar cannot be placed")
-        order[len(leds) - len(RIGHT_BAR) + offset] = segment
+
+    scanning = sorted((key for key in lit if key.matrix), key=lambda k: k.matrix)
+    resting = [key for key in lit if not key.matrix and key.name not in RIGHT_BAR]
+
+    order: list[Key | None] = [None] * len(leds)
+    icons = len(leds) - len(RIGHT_BAR) - ICONS
+
+    # Into the slots that have something on them, in order, leaving the gaps empty. The icons
+    # and the right bar hold the end of the table, so nothing is laid into those.
+    slots = (index for index in range(icons) if index not in GAPS)
+    for key in [*scanning, *resting]:
+        order[next(slots)] = key
+
+    for offset, name in enumerate(RIGHT_BAR):
+        order[len(leds) - len(RIGHT_BAR) + offset] = by_name[name]
 
     return order
 
