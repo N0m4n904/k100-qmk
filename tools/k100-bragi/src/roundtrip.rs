@@ -11,6 +11,7 @@ use anyhow::{bail, Context, Result};
 
 use crate::device::Device;
 use crate::protocol::{self, OperatingMode, Request};
+use crate::transport;
 
 /// The updater allows 20 s for a device to come back after a firmware apply.
 const RECONNECT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -220,18 +221,55 @@ pub fn flash(device: &Device, image: &[u8], commit: bool) -> Result<Plan> {
     Ok(plan)
 }
 
+/// What was found running after an apply.
+pub enum Running {
+    /// It speaks Corsair's protocol and reports this firmware version.
+    Bragi(String),
+    /// It came back without Corsair's protocol, declaring this device version.
+    ///
+    /// Not a failure, and not an edge case either: an image that does not implement
+    /// Bragi -- this project's own firmware -- can look like nothing else. There is
+    /// no version to ask it for, so the one it puts in its USB descriptor is what
+    /// there is, and that is the number to compare against.
+    Foreign(String),
+}
+
 /// Waits out the reboot an apply triggers and reports what the keyboard is running.
 ///
 /// This is the only check that means anything: every status byte up to here says a report was
-/// accepted, and none of them says the image boots. The version the device reports afterwards
-/// does.
-pub fn confirm_after_apply() -> Result<String> {
+/// accepted, and none of them says the image boots. What answers afterwards does.
+pub fn confirm_after_apply(product: u16) -> Result<Running> {
     println!("  waiting up to {}s for the keyboard to reboot", APPLY_TIMEOUT.as_secs());
     sleep(APPLY_TIMEOUT);
 
-    let device = reconnect().context("the keyboard did not come back after the apply")?;
-    println!("  back on the bus, operating mode {:?}", device.operating_mode()?);
-    device.firmware_version()
+    match reconnect() {
+        Ok(device) => {
+            println!("  back on the bus, operating mode {:?}", device.operating_mode()?);
+            device.firmware_version().map(Running::Bragi)
+        }
+        Err(silent) => {
+            // Nothing answered, so the question is whether anything came back at all.
+            let version = transport::find(protocol::CORSAIR_VID, &[product])?
+                .into_iter()
+                .next()
+                .and_then(|found| found.version)
+                .ok_or(silent)
+                .context("the keyboard did not come back after the apply")?;
+
+            println!("  back on the bus, and not answering Corsair's protocol");
+            Ok(Running::Foreign(describe_version(version)))
+        }
+    }
+}
+
+/// `bcdDevice` in the form a version is written in: 0x0010 is 0.1.0.
+///
+/// The descriptor packs it as binary-coded decimal, two digits for the leading number
+/// and one each for the other two, which is also how QMK generates it from a
+/// keyboard's `device_version`.
+fn describe_version(version: u16) -> String {
+    let major = (version >> 12) * 10 + ((version >> 8) & 0xf);
+    format!("{}.{}.{}", major, (version >> 4) & 0xf, version & 0xf)
 }
 
 /// Commits the written image and accepts that the device may never answer.

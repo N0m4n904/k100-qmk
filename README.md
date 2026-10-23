@@ -14,9 +14,13 @@ volume roller setting the volume, the six status icons, and VIA reading and writ
 keymap, the layers and the lighting. Three separate ways back into Corsair's bootloader if a
 flash goes wrong, all three measured.
 
+**Installed over USB**, with no programmer and the case shut: `Fn+Esc` hands the keyboard to
+Corsair's own bootloader, and `k100-bragi flash` writes this firmware through Corsair's own
+update path. See [Installing it](#installing-it).
+
 **Not finished:** eleven LEDs in Corsair's map have no position in the layout, so no effect
-reaches them. Writing a replacement image over USB from the bootloader is not implemented --
-flashing here goes over SWD, with the case open.
+reaches them. A keyboard that will not boot still needs the programmer, because writing from
+the bootloader is only proven on a keyboard that got there on purpose.
 
 ---
 
@@ -75,7 +79,7 @@ and the two rules that keep a mistake survivable.
 | --- | --- |
 | Firmware container format | **Proven.** The writer rebuilds both official images byte for byte. |
 | Firmware distribution | **Understood and verified.** Official images download and validate. |
-| Reflashing a *healthy* keyboard | **Proven on hardware.** An official image was written, applied and verified, many times. |
+| Reflashing a *healthy* keyboard | **Proven on hardware**, in both directions. Corsair's own images, many times; and this firmware, over USB through Corsair's update path, with no programmer: `Fn+Esc` into the bootloader, 33828 bytes in 555 chunks, applied, and the keyboard came back as `bcdDevice 0010` with its three interfaces. |
 | Route back to the bootloader | **Three ways, all measured.** From the keyboard alone: hold `B` and `L` while plugging in, decoded out of the bootloader's own startup matrix scan. From the firmware: `Fn+Esc` forces a watchdog reset, because `WDTOF` — the flag such a reset leaves behind — is what the bootloader keys on, not the EEPROM mode word this project first read it as. Over SWD it is one command. [`docs/recovery.md`](docs/recovery.md) |
 | Recovery from firmware that will not boot, over USB | **Half of it is proven.** The firmware's own route back works and has been watched doing so -- for a while it worked rather too well, firing on every cold boot because it could not tell a host that had not woken up from a broken one. Writing a replacement image from the bootloader over USB is **not implemented**; flashing here goes over SWD. Relying on this route before it had ever been seen to work cost a keyboard. |
 | Recovery from firmware that will not boot, over SWD | **Proven on hardware.** A bricked K100 was dumped, erased and restored to stock with a Raspberry Pi and four jumper wires. [`swd/`](swd/README.md) |
@@ -137,6 +141,34 @@ that browser's storage and survives restarts.
 not get as far as drawing this keyboard; the web application is where the project kept going,
 and it is the one this was measured against. `tools/via-definition-check` checks the
 definition with the same reader the application reads it with, before a browser ever sees it.
+
+## Installing it
+
+One key press and one command, with the case shut. This does not replace Corsair's
+bootloader; it uses Corsair's own update path, which is the same one their software uses.
+
+1. **`Fn+Esc`.** The keyboard restarts into the bootloader and comes back as `bcdDevice 0.0a`,
+   still typing -- the bootloader presents a keyboard of its own. VIA's **Bootloader Jump**
+   button, under Connected Device Debugging in its settings, does the same thing.
+2. **Write the image**, built and wrapped as under Building, or taken from a release:
+
+   ```sh
+   tools/k100-bragi/target/release/k100-bragi flash k100-0.1.0.bin --device 0x1b7c --commit
+   ```
+
+   Without `--commit` it is a dry run: it checks the image against the keyboard and prints
+   what it would write, and sends nothing.
+
+The keyboard reboots itself and comes back as `bcdDevice 0010`, which is this firmware's
+version 0.1.0. The keymap, the lighting and everything else VIA stores live in the keyboard's
+EEPROM and survive the write.
+
+Install `udev/99-corsair-k100.rules` first, or run the write as root; see `udev/README.md`.
+
+**If it does not come back**, hold `B` and `L` while plugging it in. Corsair's bootloader keeps
+the keyboard, and the same command writes a working image over the broken one.
+[`docs/recovery.md`](docs/recovery.md) has the whole account, and [`swd/`](swd/README.md) the
+route for a keyboard that reaches neither -- that one needs a programmer and an open case.
 
 ## Building
 

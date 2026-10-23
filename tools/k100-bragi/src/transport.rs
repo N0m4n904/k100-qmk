@@ -76,6 +76,13 @@ const USBDEVFS_CONNECT: c_int = ioc::encode(ioc::NONE, b'U', 23, 0) as c_int;
 pub struct Found {
     pub node: PathBuf,
     pub product: u16,
+    /// `bcdDevice`, the version the device declares in its own descriptor.
+    ///
+    /// The one field that says which program is answering, because all three --
+    /// Corsair's application, Corsair's bootloader and this project's firmware --
+    /// share a vendor and product id. It is also the only thing left to read when
+    /// what came back does not speak Corsair's protocol at all.
+    pub version: Option<u16>,
     /// Interface numbers the device actually presents, read from sysfs rather than assumed.
     ///
     /// The application firmware shows three, but the bootloader is a different program and
@@ -202,6 +209,7 @@ fn scan(vendor: u16, accept: impl Fn(u16) -> bool) -> Result<Vec<Found>> {
         found.push(Found {
             node: PathBuf::from(format!("/dev/bus/usb/{bus:03}/{device:03}")),
             product: pid,
+            version: hex("bcdDevice"),
             interfaces: interfaces_of(&path),
             endpoints: endpoints_of(&path),
         });

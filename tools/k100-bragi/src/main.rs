@@ -19,6 +19,7 @@ use clap::{Parser, Subcommand};
 
 use device::Device;
 use protocol::OperatingMode;
+use roundtrip::Running;
 
 #[derive(Parser)]
 #[command(about, long_about = None)]
@@ -163,14 +164,32 @@ fn flash(path: &std::path::Path, commit: bool, product: u16) -> Result<()> {
     println!();
     println!("wrote {} bytes in {} chunks and applied", plan.total, plan.chunks);
 
-    let running = roundtrip::confirm_after_apply()?;
     println!();
-    println!("the keyboard reports firmware {running}");
-    if running == header.version() {
-        println!("which is the version this image declares. The write took effect.");
-    } else {
-        println!("but this image declares {}. The device did not take it, or it reports a \
-                  version from somewhere other than the image header.", header.version());
+    match roundtrip::confirm_after_apply(device.product)? {
+        Running::Bragi(running) => {
+            println!("the keyboard reports firmware {running}");
+            if running == header.version() {
+                println!("which is the version this image declares. The write took effect.");
+            } else {
+                println!("but this image declares {}. The device did not take it, or it \
+                          reports a version from somewhere other than the image header.",
+                         header.version());
+            }
+        }
+        // An image without Corsair's protocol in it -- this project's firmware is one --
+        // has nothing to answer the question with, and silence there is what success
+        // sounds like. What it does say is the version in its USB descriptor.
+        Running::Foreign(version) => {
+            println!("the keyboard came back as a device reporting version {version}, with no \
+                      Corsair protocol to ask");
+            if version == header.version() {
+                println!("which is the version this image declares. The write took effect.");
+            } else {
+                println!("but this image declares {}. Either it did not take, or the image \
+                          and its descriptor disagree about which version it is.",
+                         header.version());
+            }
+        }
     }
     Ok(())
 }
