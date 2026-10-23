@@ -46,8 +46,8 @@ RGB_MATRIX_EFFECT(K100_LIGHTS_OFF)
  * app's Off would then select whatever took the number. This stops the build
  * instead, which is the only moment at which both can still be put right.
  */
-_Static_assert(RGB_MATRIX_CUSTOM_K100_LIGHTS_OFF == 3,
-               "the VIA definition sends 3 for Off; regenerate it with tools/generate-qmk-layout.py");
+_Static_assert(RGB_MATRIX_CUSTOM_K100_LIGHTS_OFF == 4,
+               "the VIA definition sends 4 for Off; regenerate it with tools/generate-qmk-layout.py");
 
 bool K100_LIGHTS_OFF(effect_params_t* params) {
     RGB_MATRIX_USE_LIMITS(led_min, led_max);

@@ -117,8 +117,12 @@ FN_OVERRIDES = {
 # sends. Checked against the built firmware rather than assumed: the profile table in
 # lighting_profiles.c compiles to modes 1 and 2.
 #
-# Only effects that ignore where an LED is are enabled, because this keyboard's LED
-# positions do not yet agree with the LEDs they are attached to -- see docs/pin-mapping.md.
+# Effects that read a position were left out while the LED positions were not known to agree
+# with the LEDs they are attached to. The key LEDs are settled now -- the first 119 entries
+# follow the matrix, measured with the LED probe -- so one that sweeps across the keys is
+# built: `cycle_left_right`. The lights that are not keys are still unmeasured, so a sweep
+# reaches them in whatever order ckb-next had, which is the one thing to expect to look wrong.
+#
 # What each one responds to decides which controls VIA offers alongside it.
 #
 # `custom` marks the keyboard's own, in rgb_matrix_kb.inc, which QMK numbers after every
@@ -128,6 +132,7 @@ FN_OVERRIDES = {
 ANIMATIONS = {
     "solid_color": {"label": "Solid Color", "colour": True, "speed": False},
     "cycle_all": {"label": "Rainbow", "colour": False, "speed": True},
+    "cycle_left_right": {"label": "Rainbow Sweep", "colour": False, "speed": True},
     "K100_LIGHTS_OFF": {"label": "Off", "colour": False, "speed": False, "custom": True},
 }
 
@@ -151,6 +156,17 @@ LED_FLAG_KEYLIGHT = 0x04
 # What an entry carries when nothing places it. Its flags keep every effect
 # away, so the coordinates are not wrong -- nothing reads them.
 UNPLACED_POSITION = (0, 0)
+
+# The firmware's last eleven lights are the right light bar.
+#
+# Measured rather than derived: nothing ever lit them, and writing their channels by hand lit
+# the right bar. ckb-next has the bar too, under these names, but at different indices -- so
+# its coordinates are borrowed here while its own entries stay where ckb-next puts them. Both
+# cannot be right, and which of the two drives the real bar is now known: this one.
+#
+# Which end of the bar index 179 is has **not** been measured. A sweep that runs the wrong way
+# on this bar alone is what that would look like, and the fix is to reverse this tuple.
+RIGHT_BAR = tuple(f"rightbar{segment}" for segment in range(1, 12))
 
 QMK_MAX_X, QMK_MAX_Y = 224, 64
 
@@ -323,7 +339,13 @@ def scale(keys: list[Key]):
 def rgb_layout(lit: list[Key], to_qmk, leds: list[Led]) -> list[dict]:
     """The lighting table: a position for each LED, as far as either source knows one.
 
-    Two rules, and both come from somewhere rather than from taste.
+    Three rules, and all three come from somewhere rather than from taste.
+
+    **The first 119 entries are the keys, in the matrix's own order.** Measured on the
+    keyboard with the LED probe: index 0 lights G1, which is strobe 0, sense 0, and the number
+    pad lights in the order the matrix has it rather than the order it is printed in. This was
+    ckb-next's ordering before, which is alphabetical by key name -- so every key LED was
+    attached to the wrong key, invisibly, because a flat colour looks the same either way.
 
     **It is as long as the firmware's own LED map.** QMK will not address an LED
     past the end of this table, and the keyboard addresses some that ckb-next's
@@ -337,11 +359,12 @@ def rgb_layout(lit: list[Key], to_qmk, leds: list[Led]) -> list[dict]:
     status icons. Colouring one is meaningless: it is on or off, and what it
     means is decided by what the keyboard is reporting. See indicators.c.
 
-    The positions themselves come from ckb-next and are dense over what it
-    places, which does **not** line up with the firmware's index space. That is
-    a real disagreement and it is not settled here; docs/pin-mapping.md has the
-    measurements. It costs nothing under one flat colour and would show under
-    the first effect that reads a position.
+    **What comes after the keys is still ckb-next's order, and still unverified.** The
+    firmware's table continues with 54 more lights, then the six icons, then the right light
+    bar -- which is known because the bar is the one thing that never lit until its channels
+    were written by hand. Which of the remaining 54 is which is not measured yet, so they keep
+    the order they had: wrong in the same way as before rather than newly wrong, and visible
+    only to an effect that reads a position.
     """
     single_colour = {led.index for led in leds if not led.is_rgb}
 
@@ -351,10 +374,24 @@ def rgb_layout(lit: list[Key], to_qmk, leds: list[Led]) -> list[dict]:
             return {"matrix": list(key.matrix), "x": x, "y": y, "flags": LED_FLAG_KEYLIGHT}
         return {"x": x, "y": y, "flags": LED_FLAG_UNDERGLOW}
 
+    scanning = sorted((key for key in lit if key.matrix), key=lambda k: k.matrix)
+    resting = [key for key in lit if not key.matrix]
+
     unplaced_x, unplaced_y = UNPLACED_POSITION
-    table = [entry(key) for key in lit]
+    table = [entry(key) for key in scanning] + [entry(key) for key in resting]
     table += [{"x": unplaced_x, "y": unplaced_y, "flags": LED_FLAG_NONE}
               for _ in range(len(leds) - len(table))]
+
+    # The right bar, at the end of the firmware's table, where this used to leave padding.
+    by_name = {key.name: key for key in lit}
+    for offset, name in enumerate(RIGHT_BAR):
+        segment = by_name.get(name)
+        if segment is None:
+            raise SystemExit(f"the geometry has no {name}, so the right bar cannot be placed")
+        x, y = to_qmk(segment)
+        table[len(leds) - len(RIGHT_BAR) + offset] = {
+            "x": x, "y": y, "flags": LED_FLAG_UNDERGLOW,
+        }
 
     for index in single_colour:
         table[index]["flags"] = LED_FLAG_NONE

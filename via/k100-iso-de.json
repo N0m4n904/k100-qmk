@@ -398,8 +398,12 @@
                   2
                 ],
                 [
-                  "Off",
+                  "Rainbow Sweep",
                   3
+                ],
+                [
+                  "Off",
+                  4
                 ]
               ],
               "content": [
@@ -415,7 +419,7 @@
                 0,
                 255
               ],
-              "showIf": "{id_qmk_rgb_matrix_effect} == 2",
+              "showIf": "{id_qmk_rgb_matrix_effect} == 2 || {id_qmk_rgb_matrix_effect} == 3",
               "content": [
                 "id_qmk_rgb_matrix_effect_speed",
                 3,
