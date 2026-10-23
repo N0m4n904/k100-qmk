@@ -33,8 +33,13 @@ from k100_firmware import (  # noqa: E402
 
 # QMK keycodes for the keys that have no HID usage code of their own.
 #
-# G1-G6 use F13-F18, the conventional stand-in since QMK has no macro-key standard, and are
-# trivially remapped in VIA.
+# G1-G6 are the first six of VIA's macros, which is what the keys are for: six keys with
+# nothing printed on them but a number, beside an application that records macros and stores
+# them on the keyboard. They sent F13-F18 before, the conventional stand-in for a macro key,
+# which only stood in -- nothing was listening, and the keyboard had no way to say what G3
+# should do. `MC_0` is the macro VIA calls M0, so G1 is its first row and G6 its sixth. A
+# macro that has not been recorded is empty, and an empty one does nothing when the key is
+# pressed.
 #
 # `lock` is the Windows lock key the manual names, between the iCUE wheel and the macro keys,
 # and GU_TOGG is QMK's own version of it: it suppresses the GUI keys, which is what the key is
@@ -48,8 +53,8 @@ from k100_firmware import (  # noqa: E402
 # thing, and nothing for the wheel. It now steps the lighting effect; see
 # qmk/keyboards/corsair/k100/lighting_keys.c.
 NON_HID_KEYCODES = {
-    "g1": "KC_F13", "g2": "KC_F14", "g3": "KC_F15",
-    "g4": "KC_F16", "g5": "KC_F17", "g6": "KC_F18",
+    "g1": "MC_0", "g2": "MC_1", "g3": "MC_2",
+    "g4": "MC_3", "g5": "MC_4", "g6": "MC_5",
     "fn": "MO(1)",
     "profswitch": "K100_LIGHTS_TOGGLE", "lock": "GU_TOGG",
     "mute": "KC_MUTE", "ctrlwheelb": "K100_RGB_EFFECT",

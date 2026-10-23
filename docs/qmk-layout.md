@@ -231,8 +231,11 @@ same set, so a renamed or added key stops the build instead of shifting every LE
 
 ## Keycode choices worth knowing
 
-- **G1-G6** map to `KC_F13`-`KC_F18`. QMK has no macro-key standard; this is the conventional
-  stand-in and is trivially remapped in VIA.
+- **G1-G6** are `MC_0`-`MC_5`, the first six of VIA's sixteen macros -- M0 to M5 in the
+  application, where they are recorded and stored on the keyboard. They sent `KC_F13`-`KC_F18`
+  before, the conventional stand-in for a macro key, which stood in for nothing: no host does
+  anything with F13 unless something was bound to it. A macro that has not been recorded is
+  empty and the key does nothing, which is the one thing to know before reporting G3 as dead.
 - **The two rotations are encoders**, not matrix positions. ckb-next reports them as keys, but
   the stock firmware attaches `P1_28`-`P1_31` to pin interrupts and nothing in the matrix sees
   a turn. The iCUE wheel sets the lighting's brightness and the volume roller the volume,

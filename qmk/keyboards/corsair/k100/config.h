@@ -52,13 +52,14 @@
  * correct.
  *
  * 0xFEE3 is upstream's. Moved down when the default lighting became white,
- * again when the Windows lock key was given a keycode, and again when the
- * wheel button was given one. Every entry here is a keymap change that the
- * stored copy would otherwise have outlived -- which is what this number is
- * for, and what forgetting it looks like: a key that still does the old thing
- * however correct the build is.
+ * again when the Windows lock key was given a keycode, again when the wheel
+ * button was given one, and again when the macro keys stopped sending F13-F18
+ * and became VIA's macros. Every entry here is a keymap change that the stored
+ * copy would otherwise have outlived -- which is what this number is for, and
+ * what forgetting it looks like: a key that still does the old thing however
+ * correct the build is.
  */
-#define EECONFIG_MAGIC_NUMBER (uint16_t)0xFEE0
+#define EECONFIG_MAGIC_NUMBER (uint16_t)0xFEDF
 
 /* Temporary: USB bring-up diagnostic, see bootloader.c. */
 /*
