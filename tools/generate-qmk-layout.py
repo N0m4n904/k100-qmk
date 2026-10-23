@@ -695,11 +695,20 @@ def reading_order(numbered: tuple[int, "Key | None"]) -> tuple:
     Three groups rather than one, because the bars run down the edges: sorted by position
     alone they land between the key rows, and a list meant for walking the keys would hop to a
     bar and back on every row.
+
+    The lights are then kept bar by bar, by their own names, for the same reason one step
+    further in. Sorting those by position alternates between the left bar, the right bar and
+    the top one, because that is how they are arranged -- and a bar is measured by walking it
+    end to end, not by hopping around the edge of the board.
     """
     index, key = numbered
     if key is None:
-        return (2, UNREADABLE, index)
-    return (0 if key.matrix else 1, key.top, key.left)
+        return (2, (UNREADABLE,), index)
+    if key.matrix:
+        return (0, (key.top, key.left), index)
+
+    strip = re.match(r"(\D+)(\d*)", key.name)
+    return (1, (strip.group(1), int(strip.group(2) or 0)), index)
 
 
 def diagnostics_group(probe_value: int, index_value: int, order: list) -> dict:
