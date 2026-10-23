@@ -336,6 +336,33 @@ def scale(keys: list[Key]):
     return to_qmk
 
 
+def led_order(lit: list[Key], leds: list[Led]) -> list[Key | None]:
+    """Which key or light this generator believes each LED index belongs to.
+
+    One place, because two things need it and they must agree: the table QMK is built with,
+    and the list the LED probe offers in VIA. A probe that offered a different order from the
+    one being tested would prove nothing at all.
+
+    `None` is an index nothing is known about, of which there are ten -- lights the firmware
+    has and ckb-next never named.
+    """
+    scanning = sorted((key for key in lit if key.matrix), key=lambda k: k.matrix)
+    resting = [key for key in lit if not key.matrix]
+
+    order: list[Key | None] = [*scanning, *resting]
+    order += [None] * (len(leds) - len(order))
+
+    # The right bar, at the end of the firmware's table, where this leaves unknowns otherwise.
+    by_name = {key.name: key for key in lit}
+    for offset, name in enumerate(RIGHT_BAR):
+        segment = by_name.get(name)
+        if segment is None:
+            raise SystemExit(f"the geometry has no {name}, so the right bar cannot be placed")
+        order[len(leds) - len(RIGHT_BAR) + offset] = segment
+
+    return order
+
+
 def rgb_layout(lit: list[Key], to_qmk, leds: list[Led]) -> list[dict]:
     """The lighting table: a position for each LED, as far as either source knows one.
 
@@ -374,24 +401,10 @@ def rgb_layout(lit: list[Key], to_qmk, leds: list[Led]) -> list[dict]:
             return {"matrix": list(key.matrix), "x": x, "y": y, "flags": LED_FLAG_KEYLIGHT}
         return {"x": x, "y": y, "flags": LED_FLAG_UNDERGLOW}
 
-    scanning = sorted((key for key in lit if key.matrix), key=lambda k: k.matrix)
-    resting = [key for key in lit if not key.matrix]
-
     unplaced_x, unplaced_y = UNPLACED_POSITION
-    table = [entry(key) for key in scanning] + [entry(key) for key in resting]
-    table += [{"x": unplaced_x, "y": unplaced_y, "flags": LED_FLAG_NONE}
-              for _ in range(len(leds) - len(table))]
-
-    # The right bar, at the end of the firmware's table, where this used to leave padding.
-    by_name = {key.name: key for key in lit}
-    for offset, name in enumerate(RIGHT_BAR):
-        segment = by_name.get(name)
-        if segment is None:
-            raise SystemExit(f"the geometry has no {name}, so the right bar cannot be placed")
-        x, y = to_qmk(segment)
-        table[len(leds) - len(RIGHT_BAR) + offset] = {
-            "x": x, "y": y, "flags": LED_FLAG_UNDERGLOW,
-        }
+    table = [entry(key) if key else
+             {"x": unplaced_x, "y": unplaced_y, "flags": LED_FLAG_NONE}
+             for key in led_order(lit, leds)]
 
     for index in single_colour:
         table[index]["flags"] = LED_FLAG_NONE
@@ -601,7 +614,7 @@ def via_value(header: Path, name: str) -> int:
     return int(declared.group(1))
 
 
-def diagnostics_group(probe_value: int, index_value: int, leds: int) -> dict:
+def diagnostics_group(probe_value: int, index_value: int, order: list) -> dict:
     """The LED probe: light one LED by index, and see what lights.
 
     Which index lights which LED is not settled on this keyboard. The channel table comes
@@ -610,15 +623,22 @@ def diagnostics_group(probe_value: int, index_value: int, leds: int) -> dict:
     because they sit where this layout keeps the entries it cannot place. Finding out what
     sits where needs a way to light one and look at it, and that is what this is.
 
-    The slider appears only while the probe is on, which is `showIf` pointed at this
-    keyboard's own value rather than at the lighting's.
+    A list rather than a slider, because VIA draws a slider with no number on it -- and an
+    instrument with no scale measures nothing. Each entry carries the index and what this
+    generator believes is there, so picking one is a prediction and the keyboard answers it:
+    choose `12 f11` and either F11 lights or something else does.
+
+    The list appears only while the probe is on, which is `showIf` pointed at this keyboard's
+    own value rather than at the lighting's.
     """
     return {
         "label": "Diagnostics",
         "content": [
             {"label": "LED probe", "type": "toggle",
              "content": [f"{K100_VALUE}led_probe", K100_CHANNEL, probe_value]},
-            {"label": "LED index", "type": "range", "options": [0, leds - 1],
+            {"label": "LED index", "type": "dropdown",
+             "options": [[f"{index}  {key.name if key else 'unknown'}", index]
+                         for index, key in enumerate(order)],
              "showIf": f"{{{K100_VALUE}led_probe}} == 1",
              "content": [f"{K100_VALUE}led_index", K100_CHANNEL, index_value]},
         ],
@@ -626,7 +646,7 @@ def diagnostics_group(probe_value: int, index_value: int, leds: int) -> dict:
 
 
 def firmware_menu(version_value: int, probe_value: int, index_value: int,
-                  leds: int) -> dict:
+                  order: list) -> dict:
     """A menu that shows which firmware is on the keyboard, asked of the keyboard.
 
     VIA displays no firmware version anywhere. It reads one, and uses it only to hide menu
@@ -645,7 +665,7 @@ def firmware_menu(version_value: int, probe_value: int, index_value: int,
                      "content": [f"{K100_VALUE}version", K100_CHANNEL, version_value]},
                 ],
             },
-            diagnostics_group(probe_value, index_value, leds),
+            diagnostics_group(probe_value, index_value, order),
         ],
     }
 
@@ -678,7 +698,7 @@ def custom_keycodes(header: Path) -> list[dict]:
 
 
 def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, int],
-                   leds: int) -> dict:
+                   order: list) -> dict:
     """VIA v3 definition. The keymap is KLE, emitted with explicit per-row offsets."""
     # By the top edge, not the centre: a key two units tall shares its top with
     # the row it starts in and its centre with nothing, and grouping by the
@@ -725,7 +745,7 @@ def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, in
         "menus": [lighting_menu(), firmware_menu(values["K100_VIA_VERSION"],
                                                  values["K100_VIA_LED_PROBE"],
                                                  values["K100_VIA_LED_INDEX"],
-                                                 leds)],
+                                                 order)],
     }
 
 
@@ -812,7 +832,9 @@ def main() -> int:
 
     args.via_out.parent.mkdir(parents=True, exist_ok=True)
     args.via_out.write_text(
-        json.dumps(build_via_json(placed, keycodes, values, len(leds)), indent=2) + "\n")
+        json.dumps(build_via_json(placed, keycodes, values, led_order(
+            sorted((k for k in keys.values() if k.has_led), key=lambda k: k.led),
+            leds)), indent=2) + "\n")
 
     lit = [k for k in keys.values() if k.has_led]
     print(f"matrix      {STROBES} x {SENSES} electrical, {len(placed)} positions")
