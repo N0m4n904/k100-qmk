@@ -34,6 +34,11 @@ SRC += via_values.c
 # connects, so without this its idea of the lighting stops being true.
 SRC += via_ui_sync.c
 
+# One colour per LED, which is what VIA's key painter writes and the keyboard
+# stores. Keyboard level because the storage is: the region it lives in is
+# declared in this keyboard's config.h.
+SRC += per_key_colour.c
+
 # Our own RGB effect, in rgb_matrix_kb.inc, which QMK includes into
 # rgb_matrix.c rather than compiling on its own -- so no SRC entry, just this.
 # The file says why an effect that paints black has to exist at all.

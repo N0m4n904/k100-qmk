@@ -354,6 +354,58 @@ would take this for the reply -- which cannot be avoided from the keyboard's sid
 keyboard cannot ask which version is listening. `tools/k100_via.py` skips these reports for
 the same reason.
 
+### A colour per LED, painted from the application
+
+VIA can paint keys: a palette appears beside the keyboard and dragging across it sends one
+colour per key, which the keyboard stores. Three things had to be true for that, and the
+third is why it could not have been done before the LED order was measured.
+
+**The definition has to name an LED for each key.** The index goes in the key's *legend*,
+not in a property on it -- `l128` on the second line, where VIA's reader looks for it after
+running the labels through its own alignment table. A property called `li` is what the
+transformed definition carries, and a definition that writes one is rejected by the schema.
+The application asks for per-key colours only if some key names an LED, and then for every
+index from zero to the highest named, so this is also the switch that turns the feature on.
+
+**The protocol is VIA's, on a number the keyboard does not choose.** Painting is
+`id_custom_set_value` on channel 0, value 1, with the LED index and the colour behind it, and
+reading is the same with `id_custom_get_value`. Channel 0 is the channel VIA leaves to the
+keyboard, so this keyboard's own values -- the version, the LED probe, its index -- start at
+**2**. The version used to be value 1, which would have answered the painter with a string.
+Like the UI sync request, this is read out of VIA's bundle: `getPerKeyRGBMatrix` and
+`setPerKeyRGBMatrix` in the application, with `PER_KEY_RGB_CHANNEL_COMMAND = [0, 1]`.
+
+**The colours have to go somewhere.** `VIA_EEPROM_CUSTOM_CONFIG_SIZE` is what QMK gives a
+keyboard for its own stored state, and declaring a size is what creates the region. 190 LEDs
+at two bytes -- a hue and a saturation each; brightness is not part of a per-key colour and
+stays the one the wheel sets. The region comes out of what the dynamic keymap leaves, so the
+macro buffer shrinks by the same 380 bytes, from 855.
+
+**What shows them is an effect of the keyboard's own**, `K100_PER_KEY`, which gives every LED
+the colour stored for it at the brightness the wheel sets. It is the fifth entry in the
+dropdown and the last of the four effects declared in `rgb_matrix_kb.inc`, because the numbers
+VIA sends are the order they are declared in and appending is the one change that moves
+nothing already in use. Painting without selecting it stores colours that nothing draws, which
+is exactly what it looks like: a painter that does nothing.
+
+**The colours are read before QMK decides to wipe the EEPROM, which cost a measurement to
+find.** `via_init()` runs before `quantum_init()`, and `quantum_init()` is where QMK notices
+that `EECONFIG_MAGIC_NUMBER` has moved and erases the whole EEPROM. So on the first boot of a
+firmware whose stored shape changed, `via_init_kb()` has already read the region -- and what
+it read was the *previous* firmware's bytes. Measured, with the table at a new address: LED 1
+came back with saturation 41, which is `0x29`, which is the low byte of `KC_ESC` where the old
+dynamic keymap's second keycode had been. `eeconfig_init_kb()` is the hook that runs from
+inside that erase, and putting the RAM copy back in step there is the fix.
+
+Two further details are worth knowing. **A key with two LEDs gets the colour on both**: the
+application paints one index, and `per_key_colour.c` gives the same colour to every other LED
+at the same position -- which is how it finds them, because two lights under one key carry one
+position and the generator refuses to emit a layout where two LEDs share a position without
+sharing a key. And **only keys can be painted**, because only keys are drawn: the LightEdge
+bars, the logo and the wheel's ring have nothing to click on. The storage covers them anyway,
+so a menu that sets them is an addition rather than another change to the shape of what is
+stored -- and every such change costs every keyboard its stored keymap.
+
 ## Validation
 
 The generated files are checked structurally, not eyeballed:

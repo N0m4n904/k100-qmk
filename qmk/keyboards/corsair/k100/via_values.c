@@ -108,6 +108,9 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
     switch (*command_id) {
         case id_custom_get_value:
             switch (*value_id) {
+                case K100_VIA_PER_KEY_COLOUR:
+                    k100_per_key_colour_get(value_data);
+                    return;
                 case K100_VIA_VERSION:
                     describe_version(value_data);
                     return;
@@ -122,6 +125,9 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
 
         case id_custom_set_value:
             switch (*value_id) {
+                case K100_VIA_PER_KEY_COLOUR:
+                    k100_per_key_colour_set(value_data);
+                    return;
                 // The version is not ours to be told.
                 case K100_VIA_LED_PROBE:
                     probe_lit = value_data[0] != 0;
@@ -133,9 +139,11 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
             break;
 
         case id_custom_save:
-            // Answered rather than refused. Nothing on this channel is stored,
-            // and the application sends a save after every change -- refusing
-            // it would fill its error log with failures that are not failures.
+            // Answered rather than refused. What is stored on this channel is
+            // written as it arrives -- see per_key_colour.c, which the part's
+            // one-word-at-a-time EEPROM makes the simpler of the two -- and the
+            // application sends a save after every change, so refusing would
+            // fill its error log with failures that are not failures.
             return;
     }
 

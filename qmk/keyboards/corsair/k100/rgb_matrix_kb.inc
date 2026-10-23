@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 /*
- * The three effects this keyboard has of its own.
+ * The four effects this keyboard has of its own.
  *
  * **Two rainbows, because QMK's own read the stored colour.** CYCLE_ALL and
  * CYCLE_LEFT_RIGHT replace the hue -- with the clock and with the LED's
@@ -37,7 +37,12 @@
  * "Off" entry in the VIA menu selects; see tools/generate-qmk-layout.py, which
  * emits that menu from the same table these effects are listed in.
  *
- * The flags test is what leaves the icons alone, here and in the two above:
+ * **The painted one** is what makes VIA's key painter visible: it gives every
+ * LED the colour stored for it, at the brightness the wheel sets. It is last
+ * because the numbers VIA sends are the order these are declared in, and
+ * appending is the one change that moves nothing already in use.
+ *
+ * The flags test is what leaves the icons alone, in all of them:
  * their layout entries carry no flags, so no effect reaches them, and
  * indicators.c is the only thing that drives them. The six slots with nothing
  * fitted are skipped for the same reason.
@@ -46,8 +51,18 @@
 RGB_MATRIX_EFFECT(K100_RAINBOW)
 RGB_MATRIX_EFFECT(K100_RAINBOW_SWEEP)
 RGB_MATRIX_EFFECT(K100_LIGHTS_OFF)
+RGB_MATRIX_EFFECT(K100_PER_KEY)
 
 #ifdef RGB_MATRIX_CUSTOM_EFFECT_IMPLS
+
+/*
+ * For the painted effect's colours, and inside the guard rather than at the top
+ * of the file: rgb_matrix.c includes this three times, and one of those is from
+ * *inside* the enum of effect names. A header included there is a declaration
+ * inside an enum body, which is what "expected identifier before 'enum'" means
+ * when it comes out of a file that compiles perfectly well on its own.
+ */
+#include "k100.h"
 
 /*
  * The numbers the VIA menu's entries send.
@@ -65,6 +80,8 @@ _Static_assert(RGB_MATRIX_CUSTOM_K100_RAINBOW_SWEEP == 3,
                "the VIA definition sends 3 for Rainbow Sweep; regenerate it with tools/generate-qmk-layout.py");
 _Static_assert(RGB_MATRIX_CUSTOM_K100_LIGHTS_OFF == 4,
                "the VIA definition sends 4 for Off; regenerate it with tools/generate-qmk-layout.py");
+_Static_assert(RGB_MATRIX_CUSTOM_K100_PER_KEY == 5,
+               "the VIA definition sends 5 for Per Key; regenerate it with tools/generate-qmk-layout.py");
 
 /** @brief The whole keyboard through the hues together, at full saturation. */
 static hsv_t k100_rainbow_math(hsv_t hsv, uint8_t i, uint8_t time) {
@@ -95,6 +112,38 @@ static hsv_t k100_rainbow_sweep_math(hsv_t hsv, uint8_t i, uint8_t time) {
 
 bool K100_RAINBOW_SWEEP(effect_params_t* params) {
     return effect_runner_i(params, &k100_rainbow_sweep_math);
+}
+
+/**
+ * @brief   What the key painter put on each LED.
+ *
+ * @details The colours come from per_key_colour.c, which is where they are
+ *          stored and how the application sets them. Brightness is not one of
+ *          them: it is the one the wheel sets, so the whole keyboard dims
+ *          together and a painted colour keeps its hue while it does.
+ *
+ *          A key nobody has painted is white, because an untouched colour is
+ *          zero and zero saturation is white -- the same thing the keyboard
+ *          shows with no per-key colour set at all.
+ */
+bool K100_PER_KEY(effect_params_t* params) {
+    RGB_MATRIX_USE_LIMITS(led_min, led_max);
+
+    hsv_t hsv = {.v = rgb_matrix_config.hsv.v};
+
+    for (uint8_t i = led_min; i < led_max; i++) {
+        RGB_MATRIX_TEST_LED_FLAGS();
+
+        const k100_colour_t colour = k100_per_key_colour(i);
+
+        hsv.h     = colour.hue;
+        hsv.s     = colour.sat;
+        rgb_t rgb = rgb_matrix_hsv_to_rgb(hsv);
+
+        rgb_matrix_set_color(i, rgb.r, rgb.g, rgb.b);
+    }
+
+    return rgb_matrix_check_finished_leds(led_max);
 }
 
 bool K100_LIGHTS_OFF(effect_params_t* params) {

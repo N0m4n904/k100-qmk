@@ -94,6 +94,16 @@ stored under     ${via.vendorProductId} (0x${via.vendorProductId.toString(16)})
 matrix           ${via.matrix.rows} rows x ${via.matrix.cols} cols
 keys drawn       ${via.layouts.keys.length}`);
 
+// What the application reads to decide whether this keyboard has per-key colours, and then
+// which index it paints. It survives the transform or it does not, and a definition that
+// lost it looks exactly like one that never asked for it.
+const painted = via.layouts.keys.filter((key) => key.li !== undefined).map((key) => key.li);
+console.log(`keys with an LED  ${painted.length} of ${via.layouts.keys.length}`
+  + (painted.length
+    ? `, indices ${Math.min(...painted)} to ${Math.max(...painted)}`
+      + `, ${new Set(painted).size} of them distinct`
+    : ''));
+
 console.log('\nkeycodes this keyboard adds, at the numbers VIA sends:');
 (via.customKeycodes ?? []).forEach(({ name, title, shortName }, index) =>
   console.log(`  CUSTOM(${index})  ${name}  "${title}"  short "${shortName ?? ''}"`));

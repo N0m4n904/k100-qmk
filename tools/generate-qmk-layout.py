@@ -158,6 +158,7 @@ ANIMATIONS = {
     "K100_RAINBOW_SWEEP": {"label": "Rainbow Sweep", "colour": False, "speed": True,
                            "custom": True},
     "K100_LIGHTS_OFF": {"label": "Off", "colour": False, "speed": False, "custom": True},
+    "K100_PER_KEY": {"label": "Per Key", "colour": False, "speed": False, "custom": True},
 }
 
 # QMK's channel for the RGB matrix and the prefix VIA's own menu gives its four values,
@@ -500,7 +501,10 @@ def rgb_layout(slots: list[Slot], to_qmk) -> list[dict]:
     flag. A slot with nothing carries no flags at all: no effect writes it, so the position it
     is given is never read.
 
-    The single-colour rule is a check rather than a correction. is31fl3743b_leds.c is indexed
+    Two rules here are checks rather than corrections, and both guard something the firmware
+    reads this table to find out.
+
+    The single-colour rule is the first. is31fl3743b_leds.c is indexed
     by the firmware's LED index, and six of those LEDs have one channel instead of three --
     the status icons, which are on or off and mean whatever the keyboard is reporting, so
     colouring one is meaningless. The measurement already leaves exactly those six unplaced,
@@ -519,9 +523,27 @@ def rgb_layout(slots: list[Slot], to_qmk) -> list[dict]:
         return {"x": x, "y": y, "flags": LED_FLAG_UNDERGLOW}
 
     unplaced_x, unplaced_y = UNPLACED_POSITION
-    return [entry(slot.key) if slot.key else
-            {"x": unplaced_x, "y": unplaced_y, "flags": LED_FLAG_NONE}
-            for slot in slots]
+    table = [entry(slot.key) if slot.key else
+             {"x": unplaced_x, "y": unplaced_y, "flags": LED_FLAG_NONE}
+             for slot in slots]
+
+    # Two key LEDs at one position have to be two lights under one key, because that is how
+    # the firmware finds them: VIA's key painter writes one index and per_key_colour.c gives
+    # the colour to every other LED at the same place. Two different keys landing on one
+    # position would quietly take each other's colour, which is what this refuses.
+    together: dict[tuple[int, int], list[int]] = {}
+    for index, slot in enumerate(table):
+        if slot["flags"] == LED_FLAG_KEYLIGHT:
+            together.setdefault((slot["x"], slot["y"]), []).append(index)
+
+    confused = {at: shared for at, shared in together.items()
+                if len({tuple(table[i]["matrix"]) for i in shared}) > 1}
+    if confused:
+        raise SystemExit("LEDs of different keys share a position: " + "; ".join(
+            f"{at} has {', '.join(str(i) for i in shared)}"
+            for at, shared in sorted(confused.items())))
+
+    return table
 
 
 def build_keyboard_json(placed: list[Key], all_keys: list[Key], slots: list[Slot]) -> dict:
@@ -669,7 +691,7 @@ def only_for(effects: list[int]) -> dict:
     return {"showIf": " || ".join(f"{{{EFFECT_VALUE}}} == {number}" for number in effects)}
 
 
-def lighting_menu() -> dict:
+def lighting_menu(per_key_value: int) -> dict:
     """VIA's lighting controls, declared here rather than taken from its built-in set.
 
     VIA ships a `qmk_rgb_matrix` menu that a definition can ask for by name, and it is the
@@ -688,6 +710,14 @@ def lighting_menu() -> dict:
     Num Lock with it. "Off" here is an effect that paints black, in rgb_matrix_kb.inc, and
     the icons stay lit under it. The entries are in the order QMK numbers them, which puts
     that one last, since it is the keyboard's own.
+
+    The palette is the second group, and it is what turns VIA's key painter on: a control of
+    type `color-palette` draws the palette beside the keyboard and makes the keys paintable
+    while that pane is open. It is bound to the value the application sends a painted colour
+    on, which is channel zero, value one -- VIA's number, not this keyboard's, which is why
+    the keyboard's own values start at two. Only the keys can be painted, because only keys
+    are drawn; the bars, the logo and the wheel's ring have no key to click. See
+    per_key_colour.c.
     """
     return {
         "label": "Lighting",
@@ -706,6 +736,12 @@ def lighting_menu() -> dict:
                 {"label": "Color", "type": "color",
                  **only_for(effect_numbers("colour")),
                  "content": [f"{RGB_MATRIX_VALUE}color", RGB_MATRIX_CHANNEL, 4]},
+            ],
+        }, {
+            "label": "Per Key",
+            "content": [
+                {"label": "Paint", "type": "color-palette",
+                 "content": [f"{K100_VALUE}per_key_colour", K100_CHANNEL, per_key_value]},
             ],
         }],
     }
@@ -841,6 +877,16 @@ def custom_keycodes(header: Path) -> list[dict]:
 def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, int],
                    slots: list[Slot]) -> dict:
     """VIA v3 definition. The keymap is KLE, emitted with explicit per-row offsets."""
+    # Which LED sits under each key, which is what turns the key painter on: VIA
+    # asks for per-key colours only if a key names an LED, and then for every
+    # index from zero to the largest one named. The first of the two for a key
+    # that has two -- the application paints one index, and the firmware gives
+    # the colour to the key's other light; see per_key_colour.c.
+    under: dict[str, int] = {}
+    for slot in slots:
+        if slot.key is not None:
+            under.setdefault(slot.key.name, slot.index)
+
     # By the top edge, not the centre: a key two units tall shares its top with
     # the row it starts in and its centre with nothing, and grouping by the
     # centre puts the ISO enter in a row of its own.
@@ -871,7 +917,12 @@ def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, in
                 props.update(shape["props"])
             if props:
                 segment.append(props)
-            segment.append(f"{key.matrix[0]},{key.matrix[1]}")
+            # Row and column on the first line of the legend and the LED index on the
+            # second, which is where VIA's reader looks for each: the labels are mapped
+            # through its own alignment table, where line 0 is the matrix position and line
+            # 1 is `l` and a number. Not a property on the key -- the schema takes no such
+            # property, and the index would be dropped on the way in.
+            segment.append(f"{key.matrix[0]},{key.matrix[1]}\nl{under[key.name]}")
             # Past the whole key, overhang included, not past its own rectangle.
             cursor = (key.left + key.width) / UNIT
         kle.append(segment)
@@ -883,10 +934,11 @@ def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, in
         "matrix": {"rows": STROBES, "cols": SENSES},
         "layouts": {"keymap": kle},
         "customKeycodes": keycodes,
-        "menus": [lighting_menu(), firmware_menu(values["K100_VIA_VERSION"],
-                                                 values["K100_VIA_LED_PROBE"],
-                                                 values["K100_VIA_LED_INDEX"],
-                                                 slots)],
+        "menus": [lighting_menu(values["K100_VIA_PER_KEY_COLOUR"]),
+                  firmware_menu(values["K100_VIA_VERSION"],
+                                values["K100_VIA_LED_PROBE"],
+                                values["K100_VIA_LED_INDEX"],
+                                slots)],
     }
 
 
@@ -951,7 +1003,8 @@ def main() -> int:
     placed = join_matrix(keys, firmware, args.layout)
     keycodes = custom_keycodes(args.keycodes)
     values = {name: via_value(args.keycodes, name) for name in
-              ("K100_VIA_VERSION", "K100_VIA_LED_PROBE", "K100_VIA_LED_INDEX")}
+              ("K100_VIA_PER_KEY_COLOUR", "K100_VIA_VERSION",
+               "K100_VIA_LED_PROBE", "K100_VIA_LED_INDEX")}
 
     # Everything that scans but did not land in the matrix must be an encoder, or the join
     # has silently dropped a key.

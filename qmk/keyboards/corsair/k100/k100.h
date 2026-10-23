@@ -34,12 +34,21 @@ enum k100_keycodes {
  * where each is decided.
  */
 enum k100_via_value {
+    /**
+     * One LED's own colour, which is **not** a number this keyboard chose.
+     *
+     * VIA's key painter reaches per-key colours on channel zero, value one,
+     * and that is fixed in the application. This keyboard's own values
+     * therefore start at two; the version used to be here, which would have
+     * answered the painter with a version string. See per_key_colour.c.
+     */
+    K100_VIA_PER_KEY_COLOUR = 1,
     /** The firmware version, as text for VIA to display. */
-    K100_VIA_VERSION = 1,
+    K100_VIA_VERSION = 2,
     /** Whether the LED probe is lighting one LED. */
-    K100_VIA_LED_PROBE = 2,
+    K100_VIA_LED_PROBE = 3,
     /** Which LED it lights, by the index an effect would use. */
-    K100_VIA_LED_INDEX = 3,
+    K100_VIA_LED_INDEX = 4,
 };
 
 /**
@@ -55,6 +64,27 @@ enum k100_via_value {
  *          counterparts in via.h. See via_ui_sync.c.
  */
 void k100_via_sync_value(uint8_t channel, uint8_t value);
+
+/** How many LEDs carry a colour of their own: every LED the firmware has. */
+#define K100_PER_KEY_LEDS 190
+
+/** One LED's stored colour. Brightness is not part of it -- the wheel sets that. */
+typedef struct {
+    uint8_t hue;
+    uint8_t sat;
+} k100_colour_t;
+
+/** @brief What the key painter has put on this LED. See per_key_colour.c. */
+k100_colour_t k100_per_key_colour(uint8_t led);
+
+/**
+ * @brief   Answers VIA's per-key colour on channel zero, value one.
+ *
+ * @details Both take the command's payload from its index byte on, which is
+ *          where the application puts the LED and, for a write, the colour.
+ */
+void k100_per_key_colour_get(uint8_t *value_data);
+void k100_per_key_colour_set(uint8_t *value_data);
 
 /**
  * Lights the one LED the probe names, if it is on.

@@ -54,13 +54,29 @@
  * 0xFEE3 is upstream's. Moved down when the default lighting became white,
  * again when the Windows lock key was given a keycode, again when the wheel
  * button was given one, again when the macro keys stopped sending F13-F18 and
- * became VIA's macros, and again when the Fn layer took on NKRO and the effect
- * speed. Every entry here is a keymap change that the stored copy would
- * otherwise have outlived -- which is what this number is for, and what
- * forgetting it looks like: a key that still does the old thing however correct
- * the build is.
+ * became VIA's macros, again when the Fn layer took on NKRO and the effect
+ * speed, and again when the per-key colours took a region of their own. Every
+ * entry here is a keymap change, or a change to the shape of what is stored,
+ * that the stored copy would otherwise have outlived -- which is what this
+ * number is for, and what forgetting it looks like: a key that still does the
+ * old thing however correct the build is.
  */
-#define EECONFIG_MAGIC_NUMBER (uint16_t)0xFEDE
+#define EECONFIG_MAGIC_NUMBER (uint16_t)0xFEDD
+
+/*
+ * Room for one colour per LED, which is what VIA's key painter writes.
+ *
+ * VIA keeps per-key colours on its own channel and expects the keyboard to
+ * store them; this region is what QMK gives a keyboard for exactly that, and
+ * declaring a size is what creates it. 190 LEDs at two bytes each -- a hue and
+ * a saturation, brightness being the one the wheel sets.
+ *
+ * It comes out of what the dynamic keymap leaves, so the macro buffer shrinks
+ * by the same amount: it was 855 bytes, which is already far more than sixteen
+ * macros need. See per_key_colour.c, and the EEPROM driver's own header for why
+ * the whole region is 2 KB rather than the array's 16.
+ */
+#define VIA_EEPROM_CUSTOM_CONFIG_SIZE (190 * 2)
 
 /* Temporary: USB bring-up diagnostic, see bootloader.c. */
 /*
