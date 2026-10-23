@@ -12,7 +12,7 @@ use crate::transport::{self, UsbDevice};
 
 /// Bragi command endpoints, from ckb-next's `bragi_fill_input_eps()` for this product ID,
 /// corroborated by the device's own descriptors.
-const BRAGI_EP_OUT: u8 = 0x01;
+pub const BRAGI_EP_OUT: u8 = 0x01;
 const BRAGI_EP_IN: u8 = 0x82;
 
 /// Report size when the device does not say.

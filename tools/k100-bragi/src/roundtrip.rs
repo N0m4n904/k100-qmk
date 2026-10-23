@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 
-use crate::device::Device;
+use crate::device::{self, Device};
 use crate::protocol::{self, OperatingMode, Request};
 use crate::transport;
 
@@ -280,18 +280,38 @@ enum Returned {
 /// therefore not absence, and reading it as absence reports a working keyboard as a
 /// missing one -- so when nothing answers, what is on the bus is looked at instead.
 fn wait_for_return(product: u16) -> Result<Returned> {
-    match reconnect() {
-        Ok(device) => Ok(Returned::Vendor(device)),
-        Err(silent) => {
-            let version = transport::find(protocol::CORSAIR_VID, &[product])?
-                .into_iter()
-                .next()
-                .and_then(|found| found.version)
-                .ok_or(silent)?;
+    let deadline = Instant::now() + RECONNECT_TIMEOUT;
 
-            Ok(Returned::Foreign(describe_version(version)))
+    while Instant::now() < deadline {
+        sleep(POLL_INTERVAL);
+
+        let Some(found) = transport::find(protocol::CORSAIR_VID, &[product])?.into_iter().next()
+        else {
+            continue;
+        };
+
+        /*
+         * Looked at rather than opened, and that is the whole point of doing it this way.
+         * Opening takes all three interfaces away from the kernel's driver and gives them
+         * back on release, and the host re-sends the lock lights on every reattach -- so
+         * polling a program that cannot answer makes the keyboard's status lights blink for
+         * the whole timeout, which is what it did: eighty rebinds over twenty seconds after
+         * every write, and the keyboard unusable while it lasted.
+         *
+         * A program that answers this protocol has the endpoint it is spoken on. This
+         * project's own firmware has no OUT endpoint at all, so its absence is the answer
+         * and no handle has to be taken to learn it.
+         */
+        if !found.endpoints.contains_key(&device::BRAGI_EP_OUT) {
+            return Ok(Returned::Foreign(
+                found.version.map_or_else(|| "unknown".to_owned(), describe_version),
+            ));
         }
+
+        return reconnect().map(Returned::Vendor);
     }
+
+    bail!("waited {RECONNECT_TIMEOUT:?} for the keyboard to come back on the bus")
 }
 
 /// `bcdDevice` in the form a version is written in: 0x0010 is 0.1.0.
