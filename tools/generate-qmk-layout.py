@@ -168,16 +168,51 @@ UNPLACED_POSITION = (0, 0)
 # on this bar alone is what that would look like, and the fix is to reverse this tuple.
 RIGHT_BAR = tuple(f"rightbar{segment}" for segment in range(1, 12))
 
+# Which key each of the firmware's first 124 LED slots lights.
+#
+# Measured, one slot at a time, with the LED probe: each index was lit on its own and the key
+# that came up was written down. Nothing here is derived, and nothing in this project could
+# have derived it -- the order is Corsair's wiring and agrees with neither the key matrix nor
+# the way the keys are laid out.
+#
+# The shape it does have is six rows of 22 slots, each starting with a macro key, running
+# across the main block and then taking that row's share of the navigation and number pads.
+# `None` is a slot with nothing fitted, which still takes its number: 14 is the space between
+# F12 and Print.
+#
+# Two things in it are worth knowing before changing anything. The media keys sit in the top
+# row, where they are *printed*, and not with the other keys of their strobe. And the number
+# pad's rows are not the ones they look like: 1, 2, 3 and its enter key come before 4, 5, 6,
+# both in the row that carries A to Ä. That is the keyboard, not a mistake here.
+#
+# The last four are **not measured**: they are the only keys left over, so this is where they
+# must be, but which of them is which has never been looked at.
+KEY_LEDS = (
+    "g1", "esc", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
+    None, "prtscn", "scroll", "pause", "stop", "prev", "play", "next",
+
+    "g2", "grave", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "minus", "equal",
+    "bspace", "ins", "home", "pgup", "numlock", "numslash", "numstar", "numminus",
+
+    "g3", "tab", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "lbrace", "rbrace",
+    None, "del", "end", "pgdn", "num7", "num8", "num9", "numplus",
+
+    "g4", "caps", "a", "s", "d", "f", "g", "h", "j", "k", "l", "colon", "quote", "hash",
+    "enter", "num1", "num2", "num3", "numenter", "num4", "num5", "num6",
+
+    "g5", "lshift", "bslash_iso", "z", "x", "c", "v", "b", "n", "m", "comma", "dot", "slash",
+    None, "rshift", "up", "left", "down", "right", "num0", "numdot",
+
+    "g6", "lctrl", "lwin", "lalt", None, "space", None, "ralt", "fn", "rmenu", "rctrl",
+    "profswitch", "ctrlwheelb", "lock", "mute",
+)
+
 # Slots the firmware counts and no LED sits on.
 #
-# Measured by lighting every index in turn and writing down which ones stayed dark. They are
-# what made every earlier version of this table wrong after the first one: the firmware
-# numbers a grid, and a position with nothing fitted still takes its number, while this
-# generator only ever knew the lights that exist and packed them tight. One missing slot moves
-# everything after it by one, which is why index 14 is dark and `print` lit one step late.
-#
-# 14 is the space between F12 and Print, and the five after it are the same thing elsewhere.
-GAPS = (14, 58, 101, 113, 115, 130)
+# Measured the same way as the keys above, which is where the rest of them are recorded. This
+# one is past them, in the stretch of lights that are not keys, and it is the only one there
+# that anybody has looked for.
+GAPS = (130,)
 
 # The six single-colour status icons, which hold the six slots before the right bar. Measured
 # twice over: the channel table marks exactly these six as single-channel, and lighting each
@@ -368,20 +403,29 @@ def led_order(lit: list[Key], leds: list[Led]) -> list[Key | None]:
     exception, and it is at the end because that is where it was found.
     """
     by_name = {key.name: key for key in lit}
-    for name in RIGHT_BAR:
+    for name in (*RIGHT_BAR, *(name for name in KEY_LEDS if name)):
         if name not in by_name:
-            raise SystemExit(f"the geometry has no {name}, so the right bar cannot be placed")
+            raise SystemExit(f"the geometry has no {name}, which the LED table names")
 
-    scanning = sorted((key for key in lit if key.matrix), key=lambda k: k.matrix)
-    resting = [key for key in lit if not key.matrix and key.name not in RIGHT_BAR]
+    measured = {name for name in KEY_LEDS if name}
+    scanning = {key.name for key in lit if key.matrix}
+    if measured != scanning:
+        raise SystemExit(
+            f"the measured LED table and the scanning keys disagree: "
+            f"{', '.join(sorted(measured ^ scanning))}")
 
     order: list[Key | None] = [None] * len(leds)
-    icons = len(leds) - len(RIGHT_BAR) - ICONS
 
-    # Into the slots that have something on them, in order, leaving the gaps empty. The icons
-    # and the right bar hold the end of the table, so nothing is laid into those.
-    slots = (index for index in range(icons) if index not in GAPS)
-    for key in [*scanning, *resting]:
+    # The keys hold the front of the table, where each was measured.
+    for index, name in enumerate(KEY_LEDS):
+        order[index] = by_name[name] if name else None
+
+    # Then the lights that are not keys, in ckb-next's order, which is **not** measured. The
+    # icons and the right bar hold the end of the table, so nothing is laid into those.
+    resting = [key for key in lit if not key.matrix and key.name not in RIGHT_BAR]
+    slots = (index for index in range(len(KEY_LEDS), len(leds) - len(RIGHT_BAR) - ICONS)
+             if index not in GAPS)
+    for key in resting:
         order[next(slots)] = key
 
     for offset, name in enumerate(RIGHT_BAR):
