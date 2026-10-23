@@ -27,12 +27,15 @@
 #define LPC546XX_WWDT_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
   bool lpcWwdtIsRunning(void);
   void lpcWwdtFeed(void);
+  uint32_t lpcWwdtTimeout(void);
+  bool lpcWwdtSetTimeout(uint32_t timeout);
   bool lpcWwdtStretch(void);
   bool lpcWwdtForceReset(void);
 #ifdef __cplusplus

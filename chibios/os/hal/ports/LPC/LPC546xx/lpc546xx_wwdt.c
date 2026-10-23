@@ -154,6 +154,58 @@ bool lpcWwdtForceReset(void) {
 }
 
 /**
+ * @brief   The timeout an inherited watchdog is running with.
+ *
+ * @details In watchdog clocks divided by four, which is what @p TC counts in.
+ *          Worth having only to put back: an application that widens the
+ *          window for a slow startup has to know what it widened it from, and
+ *          the previous owner is the only thing that knows.
+ *
+ * @return              @p TC, or zero when no watchdog is running.
+ *
+ * @notapi
+ */
+uint32_t lpcWwdtTimeout(void) {
+
+  if (!lpcWwdtIsRunning()) {
+    return 0U;
+  }
+
+  return WWDT->TC & WWDT_TC_COUNT_MASK;
+}
+
+/**
+ * @brief   Sets the timeout of an inherited watchdog.
+ *
+ * @details The same restriction as @p lpcWwdtStretch: @p TC is ordinary state
+ *          with @p WDPROTECT clear, and refused rather than guessed at when it
+ *          is set. Feeding afterwards is not a courtesy either -- the counter
+ *          reloads from @p TC on a feed and not on the write, so without it the
+ *          new timeout does not take effect until something else feeds.
+ *
+ * @param[in] timeout   the new @p TC, in watchdog clocks divided by four
+ *
+ * @return              Whether it was set.
+ *
+ * @notapi
+ */
+bool lpcWwdtSetTimeout(uint32_t timeout) {
+
+  if (!lpcWwdtIsRunning()) {
+    return false;
+  }
+
+  if ((WWDT->MOD & WWDT_MOD_WDPROTECT_MASK) != 0U) {
+    return false;
+  }
+
+  WWDT->TC = timeout & WWDT_TC_COUNT_MASK;
+  lpcWwdtFeed();
+
+  return true;
+}
+
+/**
  * @brief   Lengthens an inherited watchdog to its maximum timeout.
  *
  * @details Separate from feeding, and far more restricted. @p WDEN cannot be

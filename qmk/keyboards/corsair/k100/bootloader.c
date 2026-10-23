@@ -672,8 +672,35 @@ void __late_init(void) {
 }
 #endif
 
+/*
+ * The watchdog timeout this firmware inherited, while startup borrows a longer one.
+ *
+ * Measured on the keyboard: Corsair's bootloader leaves a running watchdog with TC 400000,
+ * which is about 3.2 s, and a normal start reaches the main loop inside it comfortably. The
+ * first start after a flash does not. QMK finds its settings invalid then and writes the whole
+ * keymap into the part's EEPROM before the main loop runs, and the watchdog takes the keyboard
+ * in the middle of it -- which restarts the same write, so the keyboard re-enumerates again
+ * and again until enough of it has been written to get through. Counted on the host: 86 HID
+ * registrations in two minutes after an update, and the status lights blinking with each one,
+ * while a plain power cycle is clean.
+ *
+ * Widened for the startup only, and put back in keyboard_post_init_kb(). Leaving it wide is
+ * the tempting half of the fix and the wrong one: the watchdog is this project's net. A
+ * firmware that hangs is reset by it and the bootloader keeps the keyboard, and that is what
+ * has rescued every failed experiment here. Three seconds of protection matter in the state
+ * the keyboard spends its life in; the one second of startup is where they do not.
+ */
+static uint32_t inherited_timeout = 0;
+
 void board_init(void) {
     lpcWwdtFeed();
+
+    /* Not in early_hardware_init_pre(), which runs before .bss is cleared -- anything saved
+       there would be wiped before it could be put back. */
+    inherited_timeout = lpcWwdtTimeout();
+    if (inherited_timeout != 0U) {
+        (void)lpcWwdtStretch();
+    }
 #ifdef K100_USB_DIAGNOSTIC
     diagnostic_mark(DIAGNOSTIC_STAGE_BOARD_S);
     diagnostic_mark(lpcRitIsRunning() ? DIAGNOSTIC_STAGE_RIT_LIVE_S
@@ -853,6 +880,13 @@ void keyboard_post_init_kb(void) {
      */
     __disable_irq();
 #endif
+
+    /* Startup is over: QMK has initialised its settings, writing the whole keymap into the
+       EEPROM if it had to, and the main loop is about to start feeding. Hand the watchdog
+       back the timeout it came with. */
+    if (inherited_timeout != 0U) {
+        (void)lpcWwdtSetTimeout(inherited_timeout);
+    }
 
     keyboard_post_init_user();
 }
