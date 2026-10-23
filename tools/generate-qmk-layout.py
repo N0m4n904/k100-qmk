@@ -237,6 +237,10 @@ FIRMWARE_VERSION = "0.1.0"
 # One key unit in ckb-next's 16ths-of-an-inch grid.
 UNIT = 12
 
+# Past the bottom of the board, so that slots with no position sort after everything that has
+# one rather than among the keys at the top edge.
+UNREADABLE = 1 << 20
+
 # The one key ckb-next cannot describe. An ISO enter is two rectangles, 1.5 units wide in the
 # row above and 1.25 in the row below, where the key beside it tucks under the overhang --
 # measured, not assumed: `hash` ends 0.25 units past where the enter's box begins. ckb-next
@@ -685,6 +689,19 @@ def via_value(header: Path, name: str) -> int:
     return int(declared.group(1))
 
 
+def reading_order(numbered: tuple[int, "Key | None"]) -> tuple:
+    """Across the keyboard, keys before the lights around them, unknowns last.
+
+    Three groups rather than one, because the bars run down the edges: sorted by position
+    alone they land between the key rows, and a list meant for walking the keys would hop to a
+    bar and back on every row.
+    """
+    index, key = numbered
+    if key is None:
+        return (2, UNREADABLE, index)
+    return (0 if key.matrix else 1, key.top, key.left)
+
+
 def diagnostics_group(probe_value: int, index_value: int, order: list) -> dict:
     """The LED probe: light one LED by index, and see what lights.
 
@@ -695,9 +712,15 @@ def diagnostics_group(probe_value: int, index_value: int, order: list) -> dict:
     sits where needs a way to light one and look at it, and that is what this is.
 
     A list rather than a slider, because VIA draws a slider with no number on it -- and an
-    instrument with no scale measures nothing. Each entry carries the index and what this
-    generator believes is there, so picking one is a prediction and the keyboard answers it:
-    choose `12 f11` and either F11 lights or something else does.
+    instrument with no scale measures nothing. Each entry carries what this generator believes
+    is there and the index it sends, so picking one is a prediction and the keyboard answers
+    it: choose `f11` and either F11 lights or something else does.
+
+    **Ordered across the keyboard, not by index.** The index is Corsair's wiring and jumps
+    about -- the number pad's 1, 2, 3 come before its 4, 5, 6, and the up arrow is nowhere
+    near the other three. Stepping down a list in that order tells you nothing, because every
+    jump looks like a mistake. In reading order the light walks the keyboard, so a jump *is*
+    one, and the whole table can be checked by holding the down arrow.
 
     The list appears only while the probe is on, which is `showIf` pointed at this keyboard's
     own value rather than at the lighting's.
@@ -708,8 +731,8 @@ def diagnostics_group(probe_value: int, index_value: int, order: list) -> dict:
             {"label": "LED probe", "type": "toggle",
              "content": [f"{K100_VALUE}led_probe", K100_CHANNEL, probe_value]},
             {"label": "LED index", "type": "dropdown",
-             "options": [[f"{index}  {key.name if key else 'unknown'}", index]
-                         for index, key in enumerate(order)],
+             "options": [[f"{key.name if key else 'unknown'}  ({index})", index]
+                         for index, key in sorted(enumerate(order), key=reading_order)],
              "showIf": f"{{{K100_VALUE}led_probe}} == 1",
              "content": [f"{K100_VALUE}led_index", K100_CHANNEL, index_value]},
         ],
