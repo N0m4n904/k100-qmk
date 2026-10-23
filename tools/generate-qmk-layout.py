@@ -69,7 +69,7 @@ NON_HID_KEYCODES = {
 CUSTOM_KEYCODE_LABELS = {
     "K100_RGB_PROFILE": {
         "name": "LED Profile",
-        "title": "Steps the lighting through white, red and rainbow",
+        "title": "Steps the lighting through white, red, rainbow and rainbow sweep",
         "shortName": "LED",
     },
     "K100_LIGHTS_TOGGLE": {
@@ -157,37 +157,35 @@ LED_FLAG_KEYLIGHT = 0x04
 # away, so the coordinates are not wrong -- nothing reads them.
 UNPLACED_POSITION = (0, 0)
 
-# The firmware's last eleven lights are the right light bar.
+# What each of the firmware's 190 LED slots lights.
 #
-# Measured rather than derived: nothing ever lit them, and writing their channels by hand lit
-# the right bar. ckb-next has the bar too, under these names, but at different indices -- so
-# its coordinates are borrowed here while its own entries stay where ckb-next puts them. Both
-# cannot be right, and which of the two drives the real bar is now known: this one.
+# Measured, one slot at a time, with the LED probe in VIA's Diagnostics menu: each index was
+# lit on its own and what came up was written down. Nothing here is derived, and nothing in
+# this project could have derived it -- the order is Corsair's wiring and agrees with neither
+# the key matrix nor the way the keys are laid out. Three derivations were tried before this
+# was measured and all three were wrong.
 #
-# Which end of the bar index 179 is has **not** been measured. A sweep that runs the wrong way
-# on this bar alone is what that would look like, and the fix is to reverse this tuple.
-RIGHT_BAR = tuple(f"rightbar{segment}" for segment in range(1, 12))
-
-# Which key each of the firmware's first 124 LED slots lights.
-#
-# Measured, one slot at a time, with the LED probe: each index was lit on its own and the key
-# that came up was written down. Nothing here is derived, and nothing in this project could
-# have derived it -- the order is Corsair's wiring and agrees with neither the key matrix nor
-# the way the keys are laid out.
-#
-# The shape it does have is six rows of 22 slots, each starting with a macro key, running
-# across the main block and then taking that row's share of the navigation and number pads.
 # `None` is a slot with nothing fitted, which still takes its number: 14 is the space between
-# F12 and Print.
+# F12 and Print. A name twice over is a light with two LEDs, which the three buttons along the
+# top and the wheel's centre have.
 #
-# Two things in it are worth knowing before changing anything. The media keys sit in the top
-# row, where they are *printed*, and not with the other keys of their strobe. And the number
-# pad's rows are not the ones they look like: 1, 2, 3 and its enter key come before 4, 5, 6,
-# both in the row that carries A to Ä. That is the keyboard, not a mistake here.
+# Worth knowing before changing any of it:
 #
-# The last four are **not measured**: they are the only keys left over, so this is where they
-# must be, but which of them is which has never been looked at.
-KEY_LEDS = (
+#   * The keys fill 0 to 119 in six rows of 22, each row starting with a macro key, crossing
+#     the main block and then taking that row's share of the navigation and number pads.
+#   * The media keys sit in the top row, where they are printed, rather than with the other
+#     keys of their strobe.
+#   * The number pad's 1, 2, 3 and its enter key come before its 4, 5, 6, all in the row that
+#     carries A to Ä.
+#   * The top bar is not in order: its twelfth to fifteenth segments are at 150, 149, 152 and
+#     151, in that sequence, between its eleventh at 141 and its sixteenth at 142.
+#   * 173 to 178 are the six single-colour status icons. They are left unplaced on purpose --
+#     indicators.c drives them by index, and no effect should reach them.
+#
+# What is *not* measured is the direction of the left and right bars and the rotation of the
+# wheel's ring: the indices are known, which of their ends is which is assumed. A sweep
+# running backwards along one bar alone is what that would look like.
+LED_SLOTS = (
     "g1", "esc", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
     None, "prtscn", "scroll", "pause", "stop", "prev", "play", "next",
 
@@ -204,20 +202,37 @@ KEY_LEDS = (
     None, "rshift", "up", "left", "down", "right", "num0", "numdot",
 
     "g6", "lctrl", "lwin", "lalt", None, "space", None, "ralt", "fn", "rmenu", "rctrl",
-    "profswitch", "ctrlwheelb", "lock", "mute",
+
+    # The wheel: eight around its rim, clockwise from the top, then two in its centre, which
+    # are the button's own light.
+    "ctrlwheel1", "ctrlwheel2", "ctrlwheel3", "ctrlwheel4",
+    "ctrlwheel5", "ctrlwheel6", "ctrlwheel7", "ctrlwheel8",
+    "ctrlwheelb", "ctrlwheelb",
+
+    None,
+
+    # The top bar, left to right, with the four out of sequence in the middle.
+    "topbar1", "topbar2", "topbar3", "topbar4", "topbar5", "topbar6", "topbar7", "topbar8",
+    "topbar9", "topbar10", "topbar11",
+    "topbar16", "topbar17", "topbar18", "topbar19", "topbar20", "topbar21", "topbar22",
+    "topbar13", "topbar12", "topbar15", "topbar14",
+
+    # The two buttons beside the wheel, two LEDs each.
+    "profswitch", "profswitch", "lock", "lock",
+
+    "leftbar1", "leftbar2", "leftbar3", "leftbar4", "leftbar5", "leftbar6",
+    "leftbar7", "leftbar8", "leftbar9", "leftbar10", "leftbar11",
+
+    "mute", "mute",
+
+    "logoleft", "logo", "logoright",
+
+    # The status icons, driven by index from indicators.c.
+    None, None, None, None, None, None,
+
+    "rightbar1", "rightbar2", "rightbar3", "rightbar4", "rightbar5", "rightbar6",
+    "rightbar7", "rightbar8", "rightbar9", "rightbar10", "rightbar11",
 )
-
-# Slots the firmware counts and no LED sits on.
-#
-# Measured the same way as the keys above, which is where the rest of them are recorded. This
-# one is past them, in the stretch of lights that are not keys, and it is the only one there
-# that anybody has looked for.
-GAPS = (130,)
-
-# The six single-colour status icons, which hold the six slots before the right bar. Measured
-# twice over: the channel table marks exactly these six as single-channel, and lighting each
-# one alone matched the printed icons in order. See indicators.c.
-ICONS = 6
 
 QMK_MAX_X, QMK_MAX_Y = 224, 64
 
@@ -391,84 +406,80 @@ def scale(keys: list[Key]):
     return to_qmk
 
 
-def led_order(lit: list[Key], leds: list[Led]) -> list[Key | None]:
-    """Which key or light this generator believes each LED index belongs to.
+@dataclass(frozen=True)
+class Slot:
+    """One LED the firmware has: what drives it, and what the measurement found behind it."""
+
+    led: Led
+    key: "Key | None"
+
+    @property
+    def index(self) -> int:
+        return self.led.index
+
+    @property
+    def label(self) -> str:
+        """What the probe calls it. An empty slot and a status icon are not the same thing:
+        the icons have one channel instead of three, which the firmware's own table says."""
+        if self.key:
+            return self.key.name
+        return "empty" if self.led.is_rgb else "status icon"
+
+
+def led_order(lit: list[Key], leds: list[Led]) -> list[Slot]:
+    """What each LED index belongs to, out of the measured table.
 
     One place, because two things need it and they must agree: the table QMK is built with,
     and the list the LED probe offers in VIA. A probe that offered a different order from the
-    one being tested would prove nothing at all.
+    one under test would prove nothing at all.
 
-    `None` is a slot nothing is known to sit on: one of the measured GAPS, one of the lights
-    the firmware has and ckb-next never named, or the four at the end of the middle stretch
-    that the count says exist and nothing identifies.
-
-    The keys come first, in the matrix's own order, skipping the gaps. The lights that are not
-    keys follow in ckb-next's order, which is **not** measured -- the right bar is the one
-    exception, and it is at the end because that is where it was found.
+    Everything here is a lookup. What is worth having is the three ways it refuses: a name the
+    geometry does not know, a key with no slot at all, and a slot count that is not the
+    firmware's. Each of those used to be a silent shift of every LED after it.
     """
+    if len(LED_SLOTS) != len(leds):
+        raise SystemExit(f"the LED table has {len(LED_SLOTS)} slots and the firmware's map "
+                         f"has {len(leds)}")
+
     by_name = {key.name: key for key in lit}
-    for name in (*RIGHT_BAR, *(name for name in KEY_LEDS if name)):
-        if name not in by_name:
-            raise SystemExit(f"the geometry has no {name}, which the LED table names")
+    named = {name for name in LED_SLOTS if name}
 
-    measured = {name for name in KEY_LEDS if name}
-    scanning = {key.name for key in lit if key.matrix}
-    if measured != scanning:
-        raise SystemExit(
-            f"the measured LED table and the scanning keys disagree: "
-            f"{', '.join(sorted(measured ^ scanning))}")
+    unknown = sorted(named - set(by_name))
+    if unknown:
+        raise SystemExit(f"the geometry has no {', '.join(unknown)}, which the LED table names")
 
-    order: list[Key | None] = [None] * len(leds)
+    dark = sorted({key.name for key in lit if key.matrix} - named)
+    if dark:
+        raise SystemExit(f"keys the LED table gives no slot: {', '.join(dark)}")
 
-    # The keys hold the front of the table, where each was measured.
-    for index, name in enumerate(KEY_LEDS):
-        order[index] = by_name[name] if name else None
-
-    # Then the lights that are not keys, in ckb-next's order, which is **not** measured. The
-    # icons and the right bar hold the end of the table, so nothing is laid into those.
-    resting = [key for key in lit if not key.matrix and key.name not in RIGHT_BAR]
-    slots = (index for index in range(len(KEY_LEDS), len(leds) - len(RIGHT_BAR) - ICONS)
-             if index not in GAPS)
-    for key in resting:
-        order[next(slots)] = key
-
-    for offset, name in enumerate(RIGHT_BAR):
-        order[len(leds) - len(RIGHT_BAR) + offset] = by_name[name]
-
-    return order
+    return [Slot(led, by_name[name] if name else None)
+            for led, name in zip(leds, LED_SLOTS)]
 
 
-def rgb_layout(lit: list[Key], to_qmk, leds: list[Led]) -> list[dict]:
-    """The lighting table: a position for each LED, as far as either source knows one.
+def rgb_layout(slots: list[Slot], to_qmk) -> list[dict]:
+    """The lighting table: one entry per LED the firmware has, in the firmware's order.
 
-    Three rules, and all three come from somewhere rather than from taste.
+    Every index comes from LED_SLOTS, which was measured on the keyboard. The table is as long
+    as the firmware's own LED map, because QMK addresses nothing past its end and the keyboard
+    lights some things ckb-next's geometry never places. Stopping at what has coordinates
+    instead would make the length a number someone chose, and a chosen length drifts.
 
-    **The first 119 entries are the keys, in the matrix's own order.** Measured on the
-    keyboard with the LED probe: index 0 lights G1, which is strobe 0, sense 0, and the number
-    pad lights in the order the matrix has it rather than the order it is printed in. This was
-    ckb-next's ordering before, which is alphabetical by key name -- so every key LED was
-    attached to the wrong key, invisibly, because a flat colour looks the same either way.
+    A slot with a key behind it carries that key's matrix position and a keylight flag, so
+    per-key effects and the reactive ones find it. A slot with a light carries the underglow
+    flag. A slot with nothing carries no flags at all: no effect writes it, so the position it
+    is given is never read.
 
-    **It is as long as the firmware's own LED map.** QMK will not address an LED
-    past the end of this table, and the keyboard addresses some that ckb-next's
-    geometry never places -- the status icons among them. Stopping at what has
-    coordinates is what made the length a number someone had to choose, and a
-    chosen length is one that drifts.
-
-    **An entry whose LED has one channel carries no flags.** The channel table in
-    is31fl3743b_leds.c is indexed by the firmware's LED index, so position *n*
-    here drives whatever LED *n* is there -- and six of them are single-channel
-    status icons. Colouring one is meaningless: it is on or off, and what it
-    means is decided by what the keyboard is reporting. See indicators.c.
-
-    **What comes after the keys is still ckb-next's order, and still unverified.** The
-    firmware's table continues with 54 more lights, then the six icons, then the right light
-    bar -- which is known because the bar is the one thing that never lit until its channels
-    were written by hand. Which of the remaining 54 is which is not measured yet, so they keep
-    the order they had: wrong in the same way as before rather than newly wrong, and visible
-    only to an effect that reads a position.
+    The single-colour rule is a check rather than a correction. is31fl3743b_leds.c is indexed
+    by the firmware's LED index, and six of those LEDs have one channel instead of three --
+    the status icons, which are on or off and mean whatever the keyboard is reporting, so
+    colouring one is meaningless. The measurement already leaves exactly those six unplaced,
+    and if it ever stopped doing so the two would have to be reconciled by hand rather than by
+    quietly clearing a flag here.
     """
-    single_colour = {led.index for led in leds if not led.is_rgb}
+    coloured = [slot for slot in slots if slot.key and not slot.led.is_rgb]
+    if coloured:
+        raise SystemExit("single-channel LEDs the measured table places: " + ", ".join(
+            f"{slot.index} ({slot.key.name})" for slot in coloured))
 
     def entry(key: Key) -> dict:
         x, y = to_qmk(key)
@@ -477,20 +488,13 @@ def rgb_layout(lit: list[Key], to_qmk, leds: list[Led]) -> list[dict]:
         return {"x": x, "y": y, "flags": LED_FLAG_UNDERGLOW}
 
     unplaced_x, unplaced_y = UNPLACED_POSITION
-    table = [entry(key) if key else
-             {"x": unplaced_x, "y": unplaced_y, "flags": LED_FLAG_NONE}
-             for key in led_order(lit, leds)]
-
-    for index in single_colour:
-        table[index]["flags"] = LED_FLAG_NONE
-        table[index].pop("matrix", None)
-
-    return table
+    return [entry(slot.key) if slot.key else
+            {"x": unplaced_x, "y": unplaced_y, "flags": LED_FLAG_NONE}
+            for slot in slots]
 
 
-def build_keyboard_json(placed: list[Key], all_keys: list[Key], leds: list[Led]) -> dict:
+def build_keyboard_json(placed: list[Key], all_keys: list[Key], slots: list[Slot]) -> dict:
     to_qmk = scale(all_keys)
-    lit = sorted((k for k in all_keys if k.has_led), key=lambda k: k.led)
 
     layout = [
         {
@@ -543,7 +547,7 @@ def build_keyboard_json(placed: list[Key], all_keys: list[Key], leds: list[Led])
             # changing this means moving EECONFIG_MAGIC_NUMBER too; that note
             # lives in the keyboard's config.h, beside the number.
             "default": {"animation": "solid_color", "hue": 0, "sat": 0, "val": 255},
-            "layout": rgb_layout(lit, to_qmk, leds),
+            "layout": rgb_layout(slots, to_qmk),
         },
         # What each one does is decided in encoders.c, not here: one sets the
         # lighting's brightness and the other the volume, and neither is a
@@ -689,8 +693,8 @@ def via_value(header: Path, name: str) -> int:
     return int(declared.group(1))
 
 
-def reading_order(numbered: tuple[int, "Key | None"]) -> tuple:
-    """Across the keyboard, keys before the lights around them, unknowns last.
+def reading_order(slot: Slot) -> tuple:
+    """Across the keyboard, keys before the lights around them, empty slots last.
 
     Three groups rather than one, because the bars run down the edges: sorted by position
     alone they land between the key rows, and a list meant for walking the keys would hop to a
@@ -701,28 +705,26 @@ def reading_order(numbered: tuple[int, "Key | None"]) -> tuple:
     the top one, because that is how they are arranged -- and a bar is measured by walking it
     end to end, not by hopping around the edge of the board.
     """
-    index, key = numbered
-    if key is None:
-        return (2, (UNREADABLE,), index)
-    if key.matrix:
-        return (0, (key.top, key.left), index)
+    if slot.key is None:
+        return (2, (UNREADABLE,), slot.index)
+    if slot.key.matrix:
+        return (0, (slot.key.top, slot.key.left), slot.index)
 
-    strip = re.match(r"(\D+)(\d*)", key.name)
-    return (1, (strip.group(1), int(strip.group(2) or 0)), index)
+    strip = re.match(r"(\D+)(\d*)", slot.key.name)
+    return (1, (strip.group(1), int(strip.group(2) or 0)), slot.index)
 
 
-def diagnostics_group(probe_value: int, index_value: int, order: list) -> dict:
+def diagnostics_group(probe_value: int, index_value: int, slots: list[Slot]) -> dict:
     """The LED probe: light one LED by index, and see what lights.
 
-    Which index lights which LED is not settled on this keyboard. The channel table comes
-    from Corsair's own firmware and the positions from ckb-next, and the two number the same
-    hardware differently -- the right light bar is eleven real LEDs that no effect reaches,
-    because they sit where this layout keeps the entries it cannot place. Finding out what
-    sits where needs a way to light one and look at it, and that is what this is.
+    This is the instrument LED_SLOTS was measured with, and it is what any claim about the
+    order has to be made with. The channel table comes from Corsair's firmware and the
+    positions from ckb-next, and the two number the same hardware differently, so no amount of
+    reading either settles which index lights what. Lighting one and looking at it does.
 
     A list rather than a slider, because VIA draws a slider with no number on it -- and an
-    instrument with no scale measures nothing. Each entry carries what this generator believes
-    is there and the index it sends, so picking one is a prediction and the keyboard answers
+    instrument with no scale measures nothing. Each entry carries what the table says is
+    there and the index it sends, so picking one is a prediction and the keyboard answers
     it: choose `f11` and either F11 lights or something else does.
 
     **Ordered across the keyboard, not by index.** The index is Corsair's wiring and jumps
@@ -740,8 +742,8 @@ def diagnostics_group(probe_value: int, index_value: int, order: list) -> dict:
             {"label": "LED probe", "type": "toggle",
              "content": [f"{K100_VALUE}led_probe", K100_CHANNEL, probe_value]},
             {"label": "LED index", "type": "dropdown",
-             "options": [[f"{key.name if key else 'unknown'}  ({index})", index]
-                         for index, key in sorted(enumerate(order), key=reading_order)],
+             "options": [[f"{slot.label}  ({slot.index})", slot.index]
+                         for slot in sorted(slots, key=reading_order)],
              "showIf": f"{{{K100_VALUE}led_probe}} == 1",
              "content": [f"{K100_VALUE}led_index", K100_CHANNEL, index_value]},
         ],
@@ -749,7 +751,7 @@ def diagnostics_group(probe_value: int, index_value: int, order: list) -> dict:
 
 
 def firmware_menu(version_value: int, probe_value: int, index_value: int,
-                  order: list) -> dict:
+                  slots: list[Slot]) -> dict:
     """A menu that shows which firmware is on the keyboard, asked of the keyboard.
 
     VIA displays no firmware version anywhere. It reads one, and uses it only to hide menu
@@ -768,7 +770,7 @@ def firmware_menu(version_value: int, probe_value: int, index_value: int,
                      "content": [f"{K100_VALUE}version", K100_CHANNEL, version_value]},
                 ],
             },
-            diagnostics_group(probe_value, index_value, order),
+            diagnostics_group(probe_value, index_value, slots),
         ],
     }
 
@@ -801,7 +803,7 @@ def custom_keycodes(header: Path) -> list[dict]:
 
 
 def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, int],
-                   order: list) -> dict:
+                   slots: list[Slot]) -> dict:
     """VIA v3 definition. The keymap is KLE, emitted with explicit per-row offsets."""
     # By the top edge, not the centre: a key two units tall shares its top with
     # the row it starts in and its centre with nothing, and grouping by the
@@ -848,7 +850,7 @@ def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, in
         "menus": [lighting_menu(), firmware_menu(values["K100_VIA_VERSION"],
                                                  values["K100_VIA_LED_PROBE"],
                                                  values["K100_VIA_LED_INDEX"],
-                                                 order)],
+                                                 slots)],
     }
 
 
@@ -925,9 +927,11 @@ def main() -> int:
             f"expected exactly the encoder rotations {', '.join(sorted(expected_absent))}"
         )
 
+    slots = led_order([k for k in keys.values() if k.has_led], leds)
+
+    keyboard = build_keyboard_json(placed, list(keys.values()), slots)
     args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "keyboard.json").write_text(
-        json.dumps(build_keyboard_json(placed, list(keys.values()), leds), indent=2) + "\n")
+    (args.out / "keyboard.json").write_text(json.dumps(keyboard, indent=2) + "\n")
 
     keymap_dir = args.out / "keymaps" / "default"
     keymap_dir.mkdir(parents=True, exist_ok=True)
@@ -935,18 +939,15 @@ def main() -> int:
 
     args.via_out.parent.mkdir(parents=True, exist_ok=True)
     args.via_out.write_text(
-        json.dumps(build_via_json(placed, keycodes, values, led_order(
-            sorted((k for k in keys.values() if k.has_led), key=lambda k: k.led),
-            leds)), indent=2) + "\n")
+        json.dumps(build_via_json(placed, keycodes, values, slots), indent=2) + "\n")
 
-    lit = [k for k in keys.values() if k.has_led]
+    entries = keyboard["rgb_matrix"]["layout"]
     print(f"matrix      {STROBES} x {SENSES} electrical, {len(placed)} positions")
     print(f"encoders    {len(ENCODERS)} (rotations are not matrix-scanned)")
-    print(f"rgb matrix  {len(leds)} LEDs in the firmware's map "
-          f"({sum(1 for k in lit if k.matrix)} key, "
-          f"{sum(1 for k in lit if not k.matrix)} underglow placed by ckb-next, "
-          f"{sum(1 for led in leds if not led.is_rgb)} single colour, "
-          f"{len(leds) - len(lit)} with no position)")
+    print(f"rgb matrix  {len(entries)} LEDs in the firmware's map "
+          f"({sum(1 for e in entries if e['flags'] == LED_FLAG_KEYLIGHT)} on keys, "
+          f"{sum(1 for e in entries if e['flags'] == LED_FLAG_UNDERGLOW)} on lights, "
+          f"{sum(1 for e in entries if e['flags'] == LED_FLAG_NONE)} unplaced)")
     print(f"written     {args.out / 'keyboard.json'}")
     print(f"            {keymap_dir / 'keymap.c'}")
     print(f"            {args.via_out}")

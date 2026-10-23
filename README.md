@@ -18,11 +18,11 @@ flash goes wrong, all three measured.
 Corsair's own bootloader, and `k100-bragi flash` writes this firmware through Corsair's own
 update path. See [Installing it](#installing-it).
 
-**Not finished:** the lights that are not keys -- the three bars, the ring around the wheel,
-the logo -- are in an order nobody has checked, so an effect that moves across the keyboard
-reaches them in the wrong sequence. The keys themselves are measured and right. A keyboard
-that will not boot still needs the programmer, because writing from the bootloader is only
-proven on a keyboard that got there on purpose.
+**Not finished:** every LED is measured except for two things -- which end of the left and
+right bars index 157 and 179 are, and which way round the wheel's ring runs. An effect that
+moves across the keyboard is right everywhere else. A keyboard that will not boot still needs
+the programmer, because writing from the bootloader is only proven on a keyboard that got
+there on purpose.
 
 ---
 
@@ -72,7 +72,7 @@ and the two rules that keep a mistake survivable.
 | The two rotary controls | **Both work.** Neither rotation is matrix-scanned, so they are encoders on `P1_28`-`P1_31`, read out of the stock firmware's pin-interrupt configuration. Which pair is which was a guess from the order the image's own tables list them in, and turning them confirmed it: wheel to the brightness, roller to the volume. The roller came out inverted, so its two cases are crossed in `encoders.c` -- `ENCODER_DIRECTION_FLIP` would have turned the wheel round with it. |
 | Lighting | **Working.** 190 LEDs across three IS31FL3743B drivers on SPI3, settable like any other QMK keyboard. It stayed dark long after the bus, the pin mux, the frames and the enable outputs had all been matched against Corsair's own firmware while that firmware was lighting the keyboard. What was missing was a function register at `0x25`, written differently for one of the three drivers: these parts take their scan timing from one of their number, and a set in which every one is told to follow has nobody leading. [`docs/pin-mapping.md`](docs/pin-mapping.md) |
 | Status icons | **Four of the six report something true.** Num, Caps and Scroll Lock from the host; Win Lock is the keyboard's own GUI lock, and setting that state over SWD takes the icon's channel to `0xff` and back. Mute stays dark deliberately -- a keyboard is told about locks and nothing else, so lighting it from our own volume keys would report what was last asked for rather than what is so. They survive the lighting being turned off, which took an effect of our own: QMK draws indicators only while an effect runs, and its way of having none stops the lighting task, so "Off" selects an effect that paints black. |
-| Which LED belongs to which key | **Measured, one LED at a time.** Three derivations were tried and all three were wrong: ckb-next's order, the key matrix, and the physical rows. What the keyboard says is six rows of 22 slots, each starting with a macro key, with the media keys in the top row where they are printed and the number pad's 1, 2, 3 before its 4, 5, 6. Six slots carry no LED and still take their numbers. The probe that settled it is in VIA's Diagnostics menu and is part of this firmware. The lights that are not keys are still in ckb-next's order and still unchecked. |
+| Which LED belongs to which key | **Measured, one LED at a time.** Three derivations were tried and all three were wrong: ckb-next's order, the key matrix, and the physical rows. What the keyboard says is six rows of 22 slots, each starting with a macro key, with the media keys in the top row where they are printed and the number pad's 1, 2, 3 before its 4, 5, 6. Six slots carry no LED and still take their numbers. The lights that are not keys were measured the same way: the wheel's ring, the three bars of the LightEdge, the logo and the six status icons. The probe that settled all of it is in VIA's Diagnostics menu and is part of this firmware. |
 | VIA | **The application configures this keyboard**, as in the picture above. Protocol version 13, over the control endpoint: the interrupt OUT endpoint this keyboard should use takes a packet and answers it but never gives the host an acknowledgement it accepts, so the interface declares none and the host sends `SET_REPORT` instead -- an ordinary shape for an HID interface. Three defects in the shared LPC USB driver were found and fixed on the way, and a fourth was ours: the interface held one request, so a host that sent a second before reading the first answer lost one, and the application then read every answer one question late and gave up. `tools/via-sequence.py` reproduces that in six commands. [`docs/usb-bringup.md`](docs/usb-bringup.md) |
 
 ### Getting it on and off the keyboard

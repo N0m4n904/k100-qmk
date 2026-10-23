@@ -123,16 +123,16 @@ chose. It is read out of the keyboard instead.
 
 | Entries | Flag | What they are |
 | --- | --- | --- |
-| 119 | `LED_FLAG_KEYLIGHT` | under keys |
-| 54 | `LED_FLAG_UNDERGLOW` | the bars of the three-sided LightEdge, the ring around the iCUE wheel, the logo |
-| 17 | none | the six status icons, and eleven that nothing places |
+| 123 | `LED_FLAG_KEYLIGHT` | under keys. 119 keys, four of which have two LEDs: the wheel button, the profile-switch key, the lock key and the mute key. |
+| 55 | `LED_FLAG_UNDERGLOW` | the three bars of the LightEdge (22 along the top, 11 down each side), the ring of eight around the iCUE wheel, the three of the logo |
+| 12 | none | the six status icons, and six slots with nothing fitted |
 
 Positions are scaled from ckb-next's 16ths-of-an-inch grid onto QMK's 224x64 space,
 preserving the bounding box so the negative coordinates of the left bar and top bar land
-correctly. Four keys carry a scancode but no LED, which is why 123 keys yield only 119 key
-LEDs.
+correctly. Four more keys carry a scancode and no LED at all -- the two wheels' rotations,
+which are encoders rather than matrix positions.
 
-### The seventeen entries that carry no flag
+### The twelve entries that carry no flag
 
 A flag of zero keeps every effect away, and that is what these entries are for: they exist so
 that the indices after them line up, not to be drawn on. It is also why the coordinate they
@@ -142,18 +142,14 @@ carry is harmless -- nothing reads it.
 colour would be meaningless and what they mean is decided by what the keyboard is reporting.
 `indicators.c` drives them by index and is the only thing that does. The channel table in
 `is31fl3743b_leds.c` marks which LEDs have one channel, so the generator finds them rather
-than being told. The first of the six does carry a position from ckb-next, which nothing
-reads; the other five have none.
+than being told, and refuses to build if the measured table ever places one of them.
 
-**Eleven, indices 179 to 189, nothing places and nothing drives.** They are real channels --
-three each on the third driver, so RGB-capable -- and they have been dark since init.
-ckb-next's geometry has neither a position nor a name for them, so what they light is not
-established. The bars, the wheel's ring and the logo are **not** among them: all three are
-placed and carry the underglow flag.
+**Six are slots with nothing fitted** -- 14, 58, 101, 113, 115 and 130 -- found by lighting
+each one and seeing nothing come up. 14 is the space between F12 and Print.
 
 ### The 174 versus 193 question, resolved
 
-`led_bragi.c` reports **193** LEDs while our map positions **174**. Cross-checking ckb-next's
+`led_bragi.c` reports **193** LEDs while ckb-next's geometry names **174**. Cross-checking ckb-next's
 `keymap_bragi` against OpenRGB master's `corsair_k100_layout` accounts for all 19, and the
 count 193 is confirmed from the other side too: OpenRGB's LED indices run to a maximum of
 **192**, so 0–192 inclusive.
@@ -172,20 +168,21 @@ The counts also agree across the two projects, which is worth noting because the
 from different places: ckb-next's array holds 194 entries of which the first four are
 padding, leaving 190 real LEDs, and 190 is exactly what the firmware's own `LedInfoMap`
 holds. The two sources agree on *how many* LEDs exist. Whether they agree **index for index**
-is the open question above, and the four padding entries at ckb-next's head are the first
-reason to doubt it.
+was the open question, and the answer is no -- the four padding entries at ckb-next's head
+were the first reason to doubt it, and the measurement below settled it.
 
-The middle group needs a second look though. Those eight carry LED indices in
-`keymap_bragi` but are flagged `hasLed == false` in ckb-next's GUI geometry — the two tables
-in the same project disagree. `volup`, `voldn` and the two wheel-rotation entries are real
-controls on this keyboard, so they may well be lit in hardware and simply missing from the
-GUI's drawing data. If so, our `rgb_matrix` layout omits up to four real LEDs. Worth checking
-once anything can actually drive the LEDs.
+The middle group raised a question that the measurement has since closed. Those eight carry
+LED indices in `keymap_bragi` but are flagged `hasLed == false` in ckb-next's GUI geometry —
+the two tables in the same project disagree — so `volup`, `voldn` and the two wheel-rotation
+entries might have been lit in hardware and missing only from the drawing data. They are not:
+all 190 slots have been lit one at a time, 178 of them turned out to be a key or a light, and
+the twelve left over are the six status icons and six slots with nothing fitted. Nothing is
+omitted.
 
-Useful corroboration from OpenRGB for later: it names indices our map already covers,
-including `Lock` at 114, the media keys at 123–126, `Profile` at 128, `iCue` at 137,
-`Wheel 1`–`8` at 182–189 and `Logo L` at 190. The iCUE wheel therefore has **eight LEDs of
-its own**, which is worth knowing when the LightEdge and wheel zones are wired up.
+OpenRGB's numbering does **not** line up with the firmware's map, which is worth knowing
+before borrowing anything from it: it puts the wheel's ring at 182–189 where the keyboard has
+it at 120–127. What it corroborates is the hardware rather than the order — the iCUE wheel
+has eight LEDs around it, and the measurement found exactly eight.
 **Which driver and channels light LED *n* is known**, because `is31fl3743b_leds.c` is read
 out of the firmware's own table.
 
@@ -200,15 +197,28 @@ What settled it was the probe in VIA's Diagnostics menu, one slot at a time:
 
 | Slots | What is there |
 | --- | --- |
-| 0–123 | the 119 keys, in **six rows of 22**, each row starting with a macro key and running across the main block before taking that row's share of the navigation and number pads. Six slots in them have nothing fitted and still take their numbers. |
-| 124–172 | 48 lights that are not keys, with one empty slot at 130. Still in ckb-next's order, still unverified. |
+| 0–119 | the keys, in **six rows of 22**, each row starting with a macro key and running across the main block before taking that row's share of the navigation and number pads. Five slots in them have nothing fitted and still take their numbers. |
+| 120–127 | the ring around the iCUE wheel, clockwise from the top. |
+| 128–129 | the wheel button, which has two LEDs. |
+| 130 | nothing fitted. |
+| 131–152 | the top light bar, left to right -- except its 12th to 15th segments, which are at 150, 149, 152 and 151, in that order, between the 11th at 141 and the 16th at 142. |
+| 153–156 | the profile-switch key and the lock key, two LEDs each. |
+| 157–167 | the left light bar. |
+| 168–169 | the mute key, two LEDs. |
+| 170–172 | the logo: left, centre, right. |
 | 173–178 | the six single-colour status icons, in the order the printed icons run. |
 | 179–189 | the right light bar, which nothing reached until it was found here. |
 
-Two things in the key range are worth knowing, because neither is guessable. The **media keys
-sit in the top row**, where they are printed, rather than with the other keys of their strobe.
-And the **number pad's rows are not the ones they look like**: 1, 2, 3 and its enter key come
-before 4, 5, 6, all in the row that carries A to Ä.
+Three things are worth knowing, because none of them is guessable. The **media keys sit in
+the top row**, where they are printed, rather than with the other keys of their strobe. The
+**number pad's rows are not the ones they look like**: 1, 2, 3 and its enter key come before
+4, 5, 6, all in the row that carries A to Ä. And four keys -- the wheel button, the
+profile-switch key, the lock key and the mute key -- have **two LEDs each**, which is why 119
+keys take 123 slots.
+
+What is still assumed rather than measured is the **direction** of the left and right bars
+and the **rotation** of the wheel's ring: which index is which end was not checked one at a
+time. A sweep running backwards along one bar alone is what that would look like.
 
 The generator refuses to emit if the measured table and the keys the matrix scans are not the
 same set, so a renamed or added key stops the build instead of shifting every LED after it.
@@ -223,8 +233,9 @@ same set, so a renamed or added key stops the build instead of shifting every LE
   both confirmed by turning them; the roller's directions are crossed because it reports the
   opposite way round from the wheel.
 - **The wheel's button** is `K100_RGB_PROFILE`, a keycode this keyboard adds, and steps the
-  lighting through white, red and rainbow. It used to be `KC_MUTE`, which the mute key beside
-  it already was.
+  lighting through white, red, a rainbow that moves the whole board through the hues together
+  and one that sweeps them across it. It used to be `KC_MUTE`, which the mute key beside it
+  already was.
 - **`lock`** is `GU_TOGG`: it suppresses the GUI keys, which is what the Windows Lock icon
   above it reports. **`profswitch`**, left of the wheel, is `K100_LIGHTS_TOGGLE`: the profiles
   it switched belong to the stock firmware, and turning the lighting off and on is the nearest

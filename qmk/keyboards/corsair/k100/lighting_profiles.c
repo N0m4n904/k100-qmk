@@ -31,21 +31,21 @@ typedef struct {
 } k100_profile_t;
 
 /*
- * White, red, rainbow.
+ * White, red, rainbow, rainbow sweep.
  *
- * The rainbow is CYCLE_ALL, which moves the whole keyboard through the hues
- * together rather than spreading them across it. That is not a matter of
- * taste. A spread one reads each LED's position, and the positions this
- * keyboard carries do not line up with the LEDs they are attached to -- the
- * geometry is dense over what ckb-next places while the channel table is
- * indexed by the firmware's own map, and docs/pin-mapping.md has the
- * measurements. CYCLE_ALL reads no position, so it is right whatever that
- * turns out to be; a spread rainbow is worth having once it is settled.
+ * Two rainbows, because they are not the same thing: CYCLE_ALL moves the whole
+ * keyboard through the hues together and reads no position at all, while
+ * CYCLE_LEFT_RIGHT spreads them across the board and so depends on every LED
+ * sitting where the layout says it does. That is why the sweep is here and was
+ * not before -- which index lights which LED is measured now, LED_SLOTS in
+ * tools/generate-qmk-layout.py holds it, and a sweep is the one effect that
+ * shows a wrong entry at a glance.
  */
 static const k100_profile_t profiles[] = {
     {RGB_MATRIX_SOLID_COLOR, 0, 0},
     {RGB_MATRIX_SOLID_COLOR, 0, UINT8_MAX},
     {RGB_MATRIX_CYCLE_ALL, 0, UINT8_MAX},
+    {RGB_MATRIX_CYCLE_LEFT_RIGHT, 0, UINT8_MAX},
 };
 
 /**

@@ -356,7 +356,7 @@
   "customKeycodes": [
     {
       "name": "LED Profile",
-      "title": "Steps the lighting through white, red and rainbow",
+      "title": "Steps the lighting through white, red, rainbow and rainbow sweep",
       "shortName": "LED"
     },
     {
@@ -474,20 +474,36 @@
               "type": "dropdown",
               "options": [
                 [
-                  "ctrlwheelb  (121)",
-                  121
+                  "ctrlwheelb  (128)",
+                  128
                 ],
                 [
-                  "profswitch  (120)",
-                  120
+                  "ctrlwheelb  (129)",
+                  129
                 ],
                 [
-                  "lock  (122)",
-                  122
+                  "profswitch  (153)",
+                  153
                 ],
                 [
-                  "mute  (123)",
-                  123
+                  "profswitch  (154)",
+                  154
+                ],
+                [
+                  "lock  (155)",
+                  155
+                ],
+                [
+                  "lock  (156)",
+                  156
+                ],
+                [
+                  "mute  (168)",
+                  168
+                ],
+                [
+                  "mute  (169)",
+                  169
                 ],
                 [
                   "g1  (0)",
@@ -950,92 +966,92 @@
                   108
                 ],
                 [
-                  "ctrlwheel1  (165)",
-                  165
+                  "ctrlwheel1  (120)",
+                  120
                 ],
                 [
-                  "ctrlwheel2  (158)",
-                  158
+                  "ctrlwheel2  (121)",
+                  121
                 ],
                 [
-                  "ctrlwheel3  (159)",
-                  159
+                  "ctrlwheel3  (122)",
+                  122
                 ],
                 [
-                  "ctrlwheel4  (160)",
-                  160
+                  "ctrlwheel4  (123)",
+                  123
                 ],
                 [
-                  "ctrlwheel5  (161)",
-                  161
+                  "ctrlwheel5  (124)",
+                  124
                 ],
                 [
-                  "ctrlwheel6  (162)",
-                  162
+                  "ctrlwheel6  (125)",
+                  125
                 ],
                 [
-                  "ctrlwheel7  (163)",
-                  163
+                  "ctrlwheel7  (126)",
+                  126
                 ],
                 [
-                  "ctrlwheel8  (164)",
-                  164
+                  "ctrlwheel8  (127)",
+                  127
                 ],
                 [
-                  "leftbar1  (147)",
-                  147
-                ],
-                [
-                  "leftbar2  (148)",
-                  148
-                ],
-                [
-                  "leftbar3  (149)",
-                  149
-                ],
-                [
-                  "leftbar4  (150)",
-                  150
-                ],
-                [
-                  "leftbar5  (151)",
-                  151
-                ],
-                [
-                  "leftbar6  (152)",
-                  152
-                ],
-                [
-                  "leftbar7  (153)",
-                  153
-                ],
-                [
-                  "leftbar8  (154)",
-                  154
-                ],
-                [
-                  "leftbar9  (155)",
-                  155
-                ],
-                [
-                  "leftbar10  (156)",
-                  156
-                ],
-                [
-                  "leftbar11  (157)",
+                  "leftbar1  (157)",
                   157
                 ],
                 [
-                  "logo  (167)",
-                  167
+                  "leftbar2  (158)",
+                  158
                 ],
                 [
-                  "logoleft  (166)",
+                  "leftbar3  (159)",
+                  159
+                ],
+                [
+                  "leftbar4  (160)",
+                  160
+                ],
+                [
+                  "leftbar5  (161)",
+                  161
+                ],
+                [
+                  "leftbar6  (162)",
+                  162
+                ],
+                [
+                  "leftbar7  (163)",
+                  163
+                ],
+                [
+                  "leftbar8  (164)",
+                  164
+                ],
+                [
+                  "leftbar9  (165)",
+                  165
+                ],
+                [
+                  "leftbar10  (166)",
                   166
                 ],
                 [
-                  "logoright  (168)",
-                  168
+                  "leftbar11  (167)",
+                  167
+                ],
+                [
+                  "logo  (171)",
+                  171
+                ],
+                [
+                  "logoleft  (170)",
+                  170
+                ],
+                [
+                  "logoright  (172)",
+                  172
                 ],
                 [
                   "rightbar1  (179)",
@@ -1082,155 +1098,139 @@
                   189
                 ],
                 [
-                  "topbar1  (124)",
-                  124
-                ],
-                [
-                  "topbar2  (125)",
-                  125
-                ],
-                [
-                  "topbar3  (126)",
-                  126
-                ],
-                [
-                  "topbar4  (127)",
-                  127
-                ],
-                [
-                  "topbar5  (128)",
-                  128
-                ],
-                [
-                  "topbar6  (129)",
-                  129
-                ],
-                [
-                  "topbar7  (131)",
+                  "topbar1  (131)",
                   131
                 ],
                 [
-                  "topbar8  (132)",
+                  "topbar2  (132)",
                   132
                 ],
                 [
-                  "topbar9  (133)",
+                  "topbar3  (133)",
                   133
                 ],
                 [
-                  "topbar10  (134)",
+                  "topbar4  (134)",
                   134
                 ],
                 [
-                  "topbar11  (135)",
+                  "topbar5  (135)",
                   135
                 ],
                 [
-                  "topbar12  (136)",
+                  "topbar6  (136)",
                   136
                 ],
                 [
-                  "topbar13  (137)",
+                  "topbar7  (137)",
                   137
                 ],
                 [
-                  "topbar14  (138)",
+                  "topbar8  (138)",
                   138
                 ],
                 [
-                  "topbar15  (139)",
+                  "topbar9  (139)",
                   139
                 ],
                 [
-                  "topbar16  (140)",
+                  "topbar10  (140)",
                   140
                 ],
                 [
-                  "topbar17  (141)",
+                  "topbar11  (141)",
                   141
                 ],
                 [
-                  "topbar18  (142)",
+                  "topbar12  (150)",
+                  150
+                ],
+                [
+                  "topbar13  (149)",
+                  149
+                ],
+                [
+                  "topbar14  (152)",
+                  152
+                ],
+                [
+                  "topbar15  (151)",
+                  151
+                ],
+                [
+                  "topbar16  (142)",
                   142
                 ],
                 [
-                  "topbar19  (143)",
+                  "topbar17  (143)",
                   143
                 ],
                 [
-                  "topbar20  (144)",
+                  "topbar18  (144)",
                   144
                 ],
                 [
-                  "topbar21  (145)",
+                  "topbar19  (145)",
                   145
                 ],
                 [
-                  "topbar22  (146)",
+                  "topbar20  (146)",
                   146
                 ],
                 [
-                  "unknown  (14)",
+                  "topbar21  (147)",
+                  147
+                ],
+                [
+                  "topbar22  (148)",
+                  148
+                ],
+                [
+                  "empty  (14)",
                   14
                 ],
                 [
-                  "unknown  (58)",
+                  "empty  (58)",
                   58
                 ],
                 [
-                  "unknown  (101)",
+                  "empty  (101)",
                   101
                 ],
                 [
-                  "unknown  (113)",
+                  "empty  (113)",
                   113
                 ],
                 [
-                  "unknown  (115)",
+                  "empty  (115)",
                   115
                 ],
                 [
-                  "unknown  (130)",
+                  "empty  (130)",
                   130
                 ],
                 [
-                  "unknown  (169)",
-                  169
-                ],
-                [
-                  "unknown  (170)",
-                  170
-                ],
-                [
-                  "unknown  (171)",
-                  171
-                ],
-                [
-                  "unknown  (172)",
-                  172
-                ],
-                [
-                  "unknown  (173)",
+                  "status icon  (173)",
                   173
                 ],
                 [
-                  "unknown  (174)",
+                  "status icon  (174)",
                   174
                 ],
                 [
-                  "unknown  (175)",
+                  "status icon  (175)",
                   175
                 ],
                 [
-                  "unknown  (176)",
+                  "status icon  (176)",
                   176
                 ],
                 [
-                  "unknown  (177)",
+                  "status icon  (177)",
                   177
                 ],
                 [
-                  "unknown  (178)",
+                  "status icon  (178)",
                   178
                 ]
               ],
