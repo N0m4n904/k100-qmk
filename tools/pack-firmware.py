@@ -21,6 +21,7 @@ exactly has the layout, the CRC and the length right.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import struct
 import subprocess
@@ -40,6 +41,26 @@ from k100_container import (  # noqa: E402
 
 #: The K100 RGB with OPX optical switches.
 DEFAULT_PRODUCT_ID = 0x1B7C
+
+#: Where the firmware's version is declared, which is also where USB gets it.
+KEYBOARD_JSON = Path(__file__).resolve().parent.parent / \
+    "qmk/keyboards/corsair/k100/keyboard.json"
+
+
+def declared_version() -> str:
+    """The version the keyboard declares to USB, for the container to carry too.
+
+    Read rather than repeated. A container that says one thing while the device
+    says another is worse than either being wrong: the bootloader and the host
+    would disagree about what is installed, and the only way to find out which
+    is right is to take the keyboard apart.
+    """
+    try:
+        return json.loads(KEYBOARD_JSON.read_text())["usb"]["device_version"]
+    except (OSError, KeyError, json.JSONDecodeError):
+        # Packing an image from somewhere else is allowed; it just has to say
+        # which version it is.
+        return "0.0.0"
 
 #: Where LPC546xx_app_at_64k.ld puts the vector table, relative to the image's
 #: first byte. The table needs 1 KB alignment and the header occupies the first
@@ -309,8 +330,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--entry", type=lambda v: int(v, 0),
                         help="entry point, if not taking it from an ELF")
     parser.add_argument("--pid", type=lambda v: int(v, 0), default=DEFAULT_PRODUCT_ID)
-    parser.add_argument("--version", default="0.99.0",
-                        help="version to declare, as 0.minor.patch")
+    parser.add_argument("--version", default=declared_version(),
+                        help="version to declare, as major.minor.patch; defaults to the one "
+                             "the keyboard declares to USB")
     parser.add_argument("--out", type=Path, help="where to write the container")
     args = parser.parse_args(argv[1:])
 
@@ -371,7 +393,15 @@ def main(argv: list[str]) -> int:
     header_entry = (APPLICATION_BASE + TRAMPOLINE_ENTRY_OFFSET + 1
                     if gap > HEADER_SIZE else entry)
 
-    _, minor, patch = (int(p) for p in args.version.split("."))
+    # The container has a field for the minor and one for the patch and none for
+    # anything above them, so a leading number that is not zero cannot be carried
+    # and is refused rather than dropped quietly.
+    major, minor, patch = (int(p) for p in args.version.split("."))
+    if major:
+        print(f"refusing: the container carries only a minor and a patch, so "
+              f"{args.version} cannot be declared in it", file=sys.stderr)
+        return 1
+
     now = datetime.now(timezone.utc)
 
     container = Container(

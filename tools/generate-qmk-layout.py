@@ -148,6 +148,19 @@ UNPLACED_POSITION = (0, 0)
 
 QMK_MAX_X, QMK_MAX_Y = 224, 64
 
+# This firmware's version, declared once and nowhere else.
+#
+# Three readers want it and all three have to agree, so all three are fed from here. QMK builds
+# it into the USB descriptor as `DEVICE_VER`, which is the only thing that tells this firmware
+# apart from Corsair's -- `tools/k100_usb.py` maps the number to a name, so changing this means
+# changing that in the same breath. The keyboard's config.h hands the same macro to VIA as its
+# firmware version. And `tools/pack-firmware.py` reads it back out of the generated
+# keyboard.json for the container header, which is what Corsair's bootloader reads.
+#
+# QMK encodes it as BCD: 0.1.0 becomes 0x0010. Corsair's container carries only the minor and
+# the patch, so the leading number stays where it is whatever this says.
+FIRMWARE_VERSION = "0.1.0"
+
 # One key unit in ckb-next's 16ths-of-an-inch grid.
 UNIT = 12
 
@@ -384,7 +397,7 @@ def build_keyboard_json(placed: list[Key], all_keys: list[Key], leds: list[Led])
             "extrakey": True, "mousekey": False, "nkro": True, "rgb_matrix": True,
             "via": True,
         },
-        "usb": {"vid": "0x1B1C", "pid": "0x1B7C", "device_version": "0.0.1"},
+        "usb": {"vid": "0x1B1C", "pid": "0x1B7C", "device_version": FIRMWARE_VERSION},
         "rgb_matrix": {
             "driver": "is31fl3743b",
             # The two the wheel button steps through, and no more. An

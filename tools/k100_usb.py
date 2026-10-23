@@ -19,7 +19,12 @@ from pathlib import Path
 VENDOR = "1b1c"
 PRODUCT = "1b7c"
 
-OURS = "0001"
+# `bcdDevice`, as sysfs spells it: four hex digits, BCD, so 0.1.0 reads 0010.
+# Ours is declared in tools/generate-qmk-layout.py and reaches the descriptor
+# through keyboard.json; the other two belong to Corsair and are observed.
+# Earlier builds of this firmware said 0001, which is why a version it does not
+# recognise is named rather than silently treated as ours.
+OURS = "0010"
 BOOTLOADER = "000a"
 STOCK = "0023"
 

@@ -45,6 +45,11 @@
 #include "lpc546xx_wwdt.h"
 #include "k100.h"
 
+#ifdef VIA_ENABLE
+/* For id_bootloader_jump and via_command_kb(); see the override further down. */
+#    include "via.h"
+#endif
+
 /*
  * The strobe the recovery key is looked for on: row 0, the top row.
  *
@@ -316,6 +321,38 @@ void bootloader_jump(void) {
 void mcu_reset(void) {
     NVIC_SystemReset();
 }
+
+#ifdef VIA_ENABLE
+/*
+ * VIA's "Bootloader Jump" button, which QMK itself does not answer.
+ *
+ * The application has the button -- it is in the settings, under Connected
+ * Device Debugging -- and sends command 0x0B for it, but QMK declares that id
+ * without handling it, so on a stock build the button does nothing. The hook
+ * below is QMK's own way for a keyboard to answer a command itself.
+ *
+ * It matters more here than on a keyboard with a DFU bootloader. Writing this
+ * keyboard needs Corsair's bootloader, and this is the way into it that needs
+ * neither a key combination at the right moment nor a programmer: press the
+ * button, and the keyboard comes back as the bootloader for `k100-bragi flash`
+ * to write.
+ *
+ * Nothing is sent back. The jump resets the part, so there is nobody left to
+ * answer with; the application sees the device leave the bus, which is what it
+ * expects of this command. If the jump fails -- the EEPROM word would not
+ * program -- the keyboard is still running, and saying so by letting QMK answer
+ * `unhandled` is better than silence.
+ */
+bool via_command_kb(uint8_t *data, uint8_t length) {
+    (void)length;
+
+    if (data[0] != id_bootloader_jump) {
+        return false;
+    }
+
+    return k100_enter_bootloader();
+}
+#endif
 
 /**
  * The one sense in a reading that disagrees with all the others, if there is

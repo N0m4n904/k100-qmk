@@ -1025,7 +1025,12 @@ which needs no command sent at all:
 | --- | --- |
 | `0.23` | Corsair's application, firmware 0.35.288 |
 | `0.0a` | Corsair's bootloader, 0.10.45 |
-| `0.01` | **this project's firmware** — `DEVICE_VER 0x0001` from `keyboard.json` |
+| `0.10` | **this project's firmware** — `DEVICE_VER 0x0010`, version 0.1.0, from `keyboard.json` |
+
+Builds before version 0.1.0 said `0.01`, and measurements quoted further up this document are
+from those. Read the hex rather than the printed form if the two are easy to confuse: `0x0010`
+is this firmware and `0x000a` is Corsair's bootloader, whose own version number happens to
+begin 0.10 as well.
 
 The USB vendor and product ids stay `1b1c:1b7c` in all three cases, deliberately: the udev
 rules keep working and nothing on the host has to be reconfigured. `bcdDevice` is the only
@@ -1033,13 +1038,13 @@ field that distinguishes them.
 
 So, after writing a custom image:
 
-1. `lsusb -v -d 1b1c:1b7c | grep bcdDevice` — `0.01` means it booted.
+1. `lsusb -v -d 1b1c:1b7c | grep bcdDevice` — `0.10` means it booted.
 2. Type something, and read `bcdDevice` again in the same breath. **Corsair's bootloader
    presents a working keyboard of its own**, so keys arriving proves only that *something* is
    scanning the matrix. A whole keyboard was swept this way, 104 distinct keys reported, and
    the firmware under test had already been gone for minutes: the device on the bus was
    `bcdDevice 0.0a` with Corsair's product string, and the evidence was worth nothing. Keys
-   that arrive *while* `bcdDevice` reads `0.01` mean the matrix guesses were right; keys that
+   that arrive *while* `bcdDevice` reads `0.10` mean the matrix guesses were right; keys that
    stick or report their neighbours mean `MATRIX_SENSE_ACTIVE_LOW` or
    `MATRIX_STROBE_SETTLE_US` need the other value, which is a reflash, not a brick.
 3. Nothing at all after ten seconds means the watchdog should already have put it back in the

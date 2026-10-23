@@ -120,6 +120,17 @@
 #define RAW_HID_NO_OUT_ENDPOINT
 
 /*
+ * The version VIA reports is the version the device reports.
+ *
+ * QMK leaves this at zero unless a keyboard says otherwise, which would have
+ * the application show nothing while the USB descriptor carries a real number.
+ * `DEVICE_VER` comes from keyboard.json's `device_version`, which is generated
+ * from one declaration in tools/generate-qmk-layout.py -- so the two cannot
+ * drift, rather than being checked for drift.
+ */
+#define VIA_FIRMWARE_VERSION DEVICE_VER
+
+/*
  * Settle time between asserting a strobe and sampling the senses.
  *
  * The driver's own default is 20 us, which was a guess on what an optical
