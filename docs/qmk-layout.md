@@ -251,8 +251,16 @@ same set, so a renamed or added key stops the build instead of shifting every LE
   it switched belong to the stock firmware, and turning the lighting off and on is the nearest
   thing this one has, beside the wheel that sets the brightness. It was `KC_NO`, which VIA
   draws as a blank key.
-- **`fn`** is `MO(1)`. Layer 1 passes everything through except Fn+Esc, which is `QK_BOOT`,
-  and Fn+Backspace, which is `EE_CLR`.
+- **`fn`** is `MO(1)`, and layer 1 passes everything through except five keys. Two are there
+  because the keyboard would otherwise have no way to do them at all: **Fn+Esc** is `QK_BOOT`,
+  the only route back to Corsair's bootloader a user can take deliberately, and
+  **Fn+Backspace** is `EE_CLR`, the only way back to the compiled defaults once something has
+  been stored over them. **Fn+N** is `NK_TOGG`: this firmware reports all keys at once, and a
+  host that cannot read that reads nothing -- a BIOS or a boot menu, where there is no
+  application to put it right with. **Fn+Left** and **Fn+Right** are `RM_SPDD` and `RM_SPDU`,
+  the effect speed, which is the one lighting value with no control of its own on the board.
+  Layers 2 and 3 exist in the stored keymap, are transparent throughout, and nothing selects
+  them.
 
 ## The lighting menu is declared, not VIA's own
 

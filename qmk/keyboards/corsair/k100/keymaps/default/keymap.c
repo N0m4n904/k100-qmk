@@ -23,22 +23,23 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         /* P1_25 */ K100_LIGHTS_TOGGLE, K100_RGB_EFFECT   , GU_TOGG           , KC_MUTE           , KC_MSTP           , KC_MPRV           , KC_MPLY           , KC_MNXT           
     ),
 
-    // Fn layer, pass-through except for the overrides below, until the hardware is
-    // understood. Fn+Esc is QK_BOOT: see bootloader.c for why a route back to Corsair's
-    // bootloader is a requirement rather than a convenience.
+    // The Fn layer passes everything through except five keys, and what each of the five
+    // is for is in FN_OVERRIDES in the generator. In short:
     //
-    // Fn+Backspace clears the settings QMK keeps in the part's EEPROM, which is the only
-    // way back to the defaults compiled in here once something has been stored over them.
-    // It is not a convenience either: the stored settings outlive a reflash, so a new
-    // default -- a colour, a mode, a brightness -- has no effect on a keyboard that has
-    // ever had one written.
+    //   Fn+Esc        the way back to Corsair's bootloader; see bootloader.c for why a
+    //                 keyboard that cannot be reflashed is what this guards against.
+    //   Fn+Backspace  clears the settings QMK keeps in the part's EEPROM, which is the only
+    //                 way back to the defaults compiled in here once something has been
+    //                 stored over them -- they outlive a reflash.
+    //   Fn+N          all keys at once, or the six a host that cannot read that understands.
+    //   Fn+Left/Right the effect speed, which has no control of its own on the keyboard.
     [1] = LAYOUT_k100_iso_de(
         /* P1_18 */ KC_TRNS           , QK_BOOT           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           ,
         /* P1_19 */ KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , EE_CLR            , KC_TRNS           , KC_TRNS           , KC_TRNS           ,
         /* P1_20 */ KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           ,
         /* P1_21 */ KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           ,
-        /* P1_22 */ KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           ,
-        /* P1_23 */ KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           ,
+        /* P1_22 */ KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , NK_TOGG           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           ,
+        /* P1_23 */ KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , RM_SPDD           , KC_TRNS           , RM_SPDU           ,
         /* P1_24 */ KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           ,
         /* P1_25 */ KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           , KC_TRNS           
     ),

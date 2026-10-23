@@ -100,19 +100,34 @@ ENCODERS = [
     ("volume roller", "voldn", "volup", "KC_VOLD", "KC_VOLU"),
 ]
 
-# Keys the Fn layer does not pass through, by (row, column).
+# Keys the Fn layer does not pass through, by the name the geometry knows them by.
 #
-# Fn+Esc has to reach QK_BOOT. QMK does not speak Bragi, so once this firmware runs there is
-# no vendor interface left to flash the keyboard through -- the keymap is one of the three ways
-# back to Corsair's bootloader, and the only one a user can reach deliberately while the
+# Names rather than matrix positions, because a pair of numbers says nothing about which key
+# it is and the generator already knows where each name sits. A name no key has stops the
+# build; see build_keymap_c().
+#
+# **Fn+Esc has to reach QK_BOOT.** QMK does not speak Bragi, so once this firmware runs there
+# is no vendor interface left to flash the keyboard through -- the keymap is one of the three
+# ways back to Corsair's bootloader, and the only one a user can reach deliberately while the
 # keyboard is working. See qmk/keyboards/corsair/k100/bootloader.c.
 #
-# Fn+Backspace clears the settings QMK keeps in the part's EEPROM. Those outlive a reflash,
-# which is the point of keeping them and also means a changed default here reaches a keyboard
-# that has never had settings written, and no other.
+# **Fn+Backspace** clears the settings QMK keeps in the part's EEPROM. Those outlive a
+# reflash, which is the point of keeping them and also means a changed default here reaches a
+# keyboard that has never had settings written, and no other.
+#
+# **Fn+N** turns NKRO off and on. This firmware reports all keys at once, which is what the
+# keyboard is for, and a host that cannot read that reads nothing at all -- a BIOS or a boot
+# menu, where there is no application to fix it with and the keyboard is the only way in.
+#
+# **Fn+Left and Fn+Right** set the effect speed, which is the one lighting value with no
+# control of its own on the keyboard: the wheel sets the brightness, the button beside it steps
+# the effect, and the key beside that turns the lighting off.
 FN_OVERRIDES = {
-    (0, 1): "QK_BOOT",
-    (1, 14): "EE_CLR",
+    "esc": "QK_BOOT",
+    "bspace": "EE_CLR",
+    "n": "NK_TOGG",
+    "left": "RM_SPDD",
+    "right": "RM_SPDU",
 }
 
 # The RGB effects this firmware is built with, in the order QMK numbers them.
@@ -580,13 +595,17 @@ def build_keymap_c(placed: list[Key]) -> str:
     for key in placed:
         rows.setdefault(key.matrix[0], []).append(key)
 
+    unknown = sorted(set(FN_OVERRIDES) - {key.name for key in placed})
+    if unknown:
+        raise SystemExit(f"the Fn layer names {', '.join(unknown)}, which no key is")
+
     width = max(len(keycode_for(k)) for k in placed)
 
     def layer(transparent: bool) -> str:
         lines = []
         for strobe in sorted(rows):
             ordered = sorted(rows[strobe], key=lambda k: k.matrix[1])
-            codes = [FN_OVERRIDES.get(k.matrix, "KC_TRNS") if transparent
+            codes = [FN_OVERRIDES.get(k.name, "KC_TRNS") if transparent
                      else keycode_for(k) for k in ordered]
             lines.append(f"        /* P1_{STROBE_PIN_BASE + strobe} */ "
                          + ", ".join(c.ljust(width) for c in codes) + ",")
@@ -615,15 +634,16 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {{
 {layer(False)}
     ),
 
-    // Fn layer, pass-through except for the overrides below, until the hardware is
-    // understood. Fn+Esc is QK_BOOT: see bootloader.c for why a route back to Corsair's
-    // bootloader is a requirement rather than a convenience.
+    // The Fn layer passes everything through except five keys, and what each of the five
+    // is for is in FN_OVERRIDES in the generator. In short:
     //
-    // Fn+Backspace clears the settings QMK keeps in the part's EEPROM, which is the only
-    // way back to the defaults compiled in here once something has been stored over them.
-    // It is not a convenience either: the stored settings outlive a reflash, so a new
-    // default -- a colour, a mode, a brightness -- has no effect on a keyboard that has
-    // ever had one written.
+    //   Fn+Esc        the way back to Corsair's bootloader; see bootloader.c for why a
+    //                 keyboard that cannot be reflashed is what this guards against.
+    //   Fn+Backspace  clears the settings QMK keeps in the part's EEPROM, which is the only
+    //                 way back to the defaults compiled in here once something has been
+    //                 stored over them -- they outlive a reflash.
+    //   Fn+N          all keys at once, or the six a host that cannot read that understands.
+    //   Fn+Left/Right the effect speed, which has no control of its own on the keyboard.
     [1] = LAYOUT_k100_iso_de(
 {layer(True)}
     ),
