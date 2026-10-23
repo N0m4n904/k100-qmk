@@ -30,9 +30,13 @@ Four sources, joined:
   chain of C++ transformations off the K95 Platinum (`KeyMap::getMap`), so rather than
   reimplement that chain the extractor **links against ckb-next's own implementation** and
   asks it for the finished map. No transcription, no drift.
-- **LED ordering** from ckb-next's `keymap_bragi` array in `src/daemon/keymap.c`, where the
-  array index *is* the Bragi LED index. `N_KEYS_BRAGI_PATCH` is 194, matching the 193 LEDs
-  that `led_bragi.c` reports for the K100.
+- **LED ordering for the keys**, from the keyboard itself. Every key LED was lit on its own
+  through the probe and the key that came up was written down, 120 slots of it, and that table
+  is in the generator. It had to be measured: Corsair's order agrees with nothing else here.
+  See "What the LED order turned out to be" below.
+- **LED ordering for everything that is not a key**, still from ckb-next's `keymap_bragi`
+  array in `src/daemon/keymap.c`, where the array index *is* the Bragi LED index -- and still
+  unverified, which the probe can settle the same way.
 - **The keycodes this keyboard adds**, from `enum k100_keycodes` in the keyboard's own
   `k100.h`, read for the order it declares them in. VIA's `customKeycodes` is positional --
   its first entry labels the first `QK_KB` keycode -- so the enum is what fixes that order,
@@ -183,10 +187,31 @@ including `Lock` at 114, the media keys at 123–126, `Profile` at 128, `iCue` a
 `Wheel 1`–`8` at 182–189 and `Logo L` at 190. The iCUE wheel therefore has **eight LEDs of
 its own**, which is worth knowing when the LightEdge and wheel zones are wired up.
 **Which driver and channels light LED *n* is known**, because `is31fl3743b_leds.c` is read
-out of the firmware's own table. What is not established is whether entry *n*'s **coordinate**
-belongs to LED *n*: the positions are dense over what ckb-next places, in ckb-next's order,
-and that order is not guaranteed to be the firmware's. Under one flat colour this costs
-nothing. It would show under the first effect that reads a position.
+out of the firmware's own table.
+
+### What the LED order turned out to be
+
+Whether entry *n*'s **coordinate** belongs to LED *n* was an open question for as long as the
+answer was derived rather than looked at. Three derivations were tried and all three were
+wrong: ckb-next's order, which is alphabetical by key name; the key matrix, strobe by strobe;
+and the physical rows. Each matched at index 0 and diverged within twenty.
+
+What settled it was the probe in VIA's Diagnostics menu, one slot at a time:
+
+| Slots | What is there |
+| --- | --- |
+| 0–123 | the 119 keys, in **six rows of 22**, each row starting with a macro key and running across the main block before taking that row's share of the navigation and number pads. Six slots in them have nothing fitted and still take their numbers. |
+| 124–172 | 48 lights that are not keys, with one empty slot at 130. Still in ckb-next's order, still unverified. |
+| 173–178 | the six single-colour status icons, in the order the printed icons run. |
+| 179–189 | the right light bar, which nothing reached until it was found here. |
+
+Two things in the key range are worth knowing, because neither is guessable. The **media keys
+sit in the top row**, where they are printed, rather than with the other keys of their strobe.
+And the **number pad's rows are not the ones they look like**: 1, 2, 3 and its enter key come
+before 4, 5, 6, all in the row that carries A to Ä.
+
+The generator refuses to emit if the measured table and the keys the matrix scans are not the
+same set, so a renamed or added key stops the build instead of shifting every LED after it.
 
 ## Keycode choices worth knowing
 
