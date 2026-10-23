@@ -58,12 +58,35 @@ static void describe_version(uint8_t *out) {
     out[at]   = '\0';
 }
 
+/** No LED, for a probe that is showing none. There are 190 and this is not one. */
+#define PROBE_NONE UINT8_MAX
+
 void k100_led_probe_paint(void) {
 #ifdef RGB_MATRIX_ENABLE
-    if (probe_lit) {
-        // Painted after the effect, like the status icons, so it shows whatever
-        // the lighting is doing -- including nothing at all.
-        rgb_matrix_set_color(probe_index, UINT8_MAX, UINT8_MAX, UINT8_MAX);
+    /*
+     * The probe puts back what it lit before moving on, which matters for
+     * exactly the LEDs this exists to find. An effect repaints every LED it
+     * owns on the next frame, so a probed key cleans itself up -- but the LEDs
+     * no effect reaches are the ones with no flags, and nothing ever paints
+     * over those. Without this, sweeping the slider across them leaves a trail
+     * that only a restart clears, which is how the right light bar came to be
+     * permanently on.
+     */
+    static uint8_t showing = PROBE_NONE;
+
+    const uint8_t wanted = probe_lit ? probe_index : PROBE_NONE;
+
+    if (showing != wanted) {
+        if (showing != PROBE_NONE) {
+            rgb_matrix_set_color(showing, 0, 0, 0);
+        }
+        showing = wanted;
+    }
+
+    // Painted after the effect, like the status icons, so it shows under
+    // whatever the lighting is doing -- including nothing at all.
+    if (showing != PROBE_NONE) {
+        rgb_matrix_set_color(showing, UINT8_MAX, UINT8_MAX, UINT8_MAX);
     }
 #endif
 }
