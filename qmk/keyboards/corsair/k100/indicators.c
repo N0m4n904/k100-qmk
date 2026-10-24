@@ -130,6 +130,11 @@ bool rgb_matrix_indicators_kb(void) {
        in the place it is being looked for. */
     show_locks(host);
 
+    /* What the wheel is set to, while it is being turned. Over the effect for
+       the same reason the locks are: it is a fact about the keyboard and what is
+       underneath it is decoration. See wheel_ring.c. */
+    k100_wheel_ring_paint();
+
     /* Last, so that a probed LED shows even where an icon would otherwise sit:
        the point of it is to find out what a given index lights. */
     k100_led_probe_paint();

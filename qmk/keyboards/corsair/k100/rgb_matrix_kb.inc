@@ -316,11 +316,15 @@ static uint8_t k100_fade_level(uint8_t led, const uint16_t *front) {
  *
  * @details Asked of the key the LED answers to rather than of the LED, which is
  *          what puts the wheel's ring on the same side of every answer below as
- *          the button it surrounds -- including this first one, where a light
- *          that is not a key would otherwise be shown the door.
+ *          the button it surrounds -- including the first one, where a light that
+ *          is not a key would otherwise be shown the door.
  *
- *          The bars and the logo answer to themselves, are not keys, and so keep
- *          whatever their own menu set them to: nothing is ever pressed on them.
+ *          The bars and the logo answer to themselves and are not keys, so only
+ *          an effect that *travels* has anything to give them: a wave crossing
+ *          the keyboard reaches them, and a fade happens on the key that was
+ *          pressed, which none of them is. `reaches_lights` is that difference
+ *          between the two effects, and the setting beside it is for somebody who
+ *          would rather the bars stayed as their own menu set them.
  *
  *          Nor do the four buttons above the keys react unless somebody asked for
  *          it. They *are* keys -- they switch a profile, step the lighting, lock
@@ -329,11 +333,11 @@ static uint8_t k100_fade_level(uint8_t led, const uint16_t *front) {
  *          not what anybody is watching while they type. Which LEDs those are is
  *          generated; see button_leds.h.
  */
-static bool k100_reacts(uint8_t led) {
+static bool k100_reacts(uint8_t led, bool reaches_lights) {
     const uint8_t key = k100_answers_to(led);
 
     if ((g_led_config.flags[key] & LED_FLAG_KEYLIGHT) == 0) {
-        return false;
+        return reaches_lights && k100_lights_react();
     }
 
     if (k100_buttons_react()) {
@@ -370,7 +374,7 @@ static uint8_t k100_splash_level(uint8_t led, const uint16_t *front) {
  *          for which is which and per_key_colour.c for both settings; the effect
  *          itself has no opinion about either, and that is the point of the split.
  */
-static bool k100_run_reactive(effect_params_t *params,
+static bool k100_run_reactive(effect_params_t *params, bool reaches_lights,
                               uint8_t (*level)(uint8_t led, const uint16_t *front)) {
     RGB_MATRIX_USE_LIMITS(led_min, led_max);
 
@@ -382,7 +386,7 @@ static bool k100_run_reactive(effect_params_t *params,
 
         hsv_t hsv;
 
-        if (k100_reacts(i)) {
+        if (k100_reacts(i, reaches_lights)) {
             hsv   = k100_light(k100_reaction_colour(i));
             hsv.v = scale8(hsv.v, level(i, front));
         } else {
@@ -398,11 +402,11 @@ static bool k100_run_reactive(effect_params_t *params,
 }
 
 bool K100_REACTIVE(effect_params_t* params) {
-    return k100_run_reactive(params, &k100_fade_level);
+    return k100_run_reactive(params, false, &k100_fade_level);
 }
 
 bool K100_REACTIVE_SPLASH(effect_params_t* params) {
-    return k100_run_reactive(params, &k100_splash_level);
+    return k100_run_reactive(params, true, &k100_splash_level);
 }
 
 bool K100_LIGHTS_OFF(effect_params_t* params) {

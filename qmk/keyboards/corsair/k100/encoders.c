@@ -46,6 +46,11 @@ bool encoder_update_kb(uint8_t index, bool clockwise) {
                slider sits where the wheel left it a session ago. One request
                per detent: VIA collects them and reads once per batch. */
             k100_via_sync_value(id_qmk_rgb_matrix_channel, id_qmk_rgb_matrix_brightness);
+
+            /* And the ring around the wheel shows where the knob now is, for a
+               moment. The one number this keyboard can honestly draw a gauge
+               for, which is why the roller below has none; see wheel_ring.c. */
+            k100_wheel_turned();
 #endif
             return false;
 

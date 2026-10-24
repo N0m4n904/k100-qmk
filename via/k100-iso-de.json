@@ -487,6 +487,16 @@
                 0,
                 25
               ]
+            },
+            {
+              "label": "Bars and logo react",
+              "type": "toggle",
+              "showIf": "{id_qmk_rgb_matrix_effect} == 7",
+              "content": [
+                "id_k100_lights_react",
+                0,
+                26
+              ]
             }
           ]
         },

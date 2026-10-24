@@ -90,6 +90,8 @@ enum k100_via_value {
     K100_VIA_REACTION_COLOUR = 24,
     /** Whether the four buttons above the keys react to typing, or just stay lit. */
     K100_VIA_BUTTONS_REACT = 25,
+    /** Whether a wave crossing the keyboard runs over the bars and the logo as well. */
+    K100_VIA_LIGHTS_REACT = 26,
 };
 
 /**
@@ -213,6 +215,19 @@ void k100_buttons_react_get(uint8_t *value_data);
 void k100_buttons_react_set(uint8_t *value_data);
 
 /**
+ * @brief   Whether the three bars and the logo take part in a reaction.
+ *
+ * @details Only a wave crossing the keyboard can reach them, because a fade happens on the
+ *          key that was pressed and none of them is a key. So this changes what the splash
+ *          does and leaves the plain reaction alone, which is not an omission: there is
+ *          nothing for a fade to give a light nobody can press.
+ */
+bool k100_lights_react(void);
+
+void k100_lights_react_get(uint8_t *value_data);
+void k100_lights_react_set(uint8_t *value_data);
+
+/**
  * @brief   Counts one finished lighting frame. See lighting_rate.c.
  *
  * @details Called from the indicator hook, which rgb_matrix runs exactly once per frame --
@@ -224,6 +239,18 @@ void k100_frame_rendered(void);
 
 /** @brief The frame and scan rates, as the line of text VIA displays. */
 void k100_lighting_rate_get(uint8_t *value_data);
+
+/**
+ * @brief   The iCUE wheel has been turned, so the ring around it shows the level.
+ *
+ * @details Called from encoders.c, which is where a detent arrives. The ring shows the
+ *          brightness for a moment and then goes back to whatever the lighting was doing; see
+ *          wheel_ring.c, including why the volume roller has no such thing.
+ */
+void k100_wheel_turned(void);
+
+/** @brief Draws that level on the ring, if it is still being shown. From the indicator hook. */
+void k100_wheel_ring_paint(void);
 
 /**
  * Lights the one LED the probe names, if it is on.

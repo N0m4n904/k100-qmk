@@ -24,6 +24,11 @@ SRC += lighting_keys.c
 # reason: which rotary is which is a property of the board.
 SRC += encoders.c
 
+# The ring around the wheel showing what the wheel is set to. Keyboard level
+# because the ring is: eight lights in a circle around that one knob, and the
+# file says why the volume roller gets no such thing.
+SRC += wheel_ring.c
+
 # What the keyboard answers on VIA's own channel: the version, because the
 # application displays none it is not handed as text, and the LED probe, because
 # which index lights which LED is not known on this board.

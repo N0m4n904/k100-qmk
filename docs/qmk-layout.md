@@ -617,8 +617,38 @@ generated row, `{120, 8, 128}` in `follower_leds.h`, and the ring needs no case 
 anywhere. Being a follower does not take it out of its zone: the colour is still
 `Lighting -> Zones -> Wheel ring`, and this is only about which press it answers to.
 
-The three bars and the logo answer to themselves, are not keys, and keep whatever their zone
-was set to.
+The three bars and the logo answer to themselves and are not keys, so only an effect that
+*travels* has anything to give them: a wave crossing the keyboard reaches them, and a fade
+happens on the key that was pressed, which none of them is. So `Bars and logo react` appears
+for the splash alone -- the generator marks that effect `travels` and the control follows that
+mark -- and it is off by default, because a bar somebody set to one colour is a choice.
+
+### The ring is also the wheel's gauge
+
+Eight lights in a circle around a knob that sets the brightness, and they said nothing: a
+colour somebody picked, on all the time. Turning the wheel now fills the ring like a gauge and
+it goes back to whatever the lighting was doing 1.5 seconds later. `wheel_ring.c`, painted
+from the indicator hook so it shows under every effect including the one that paints black --
+a brightness you cannot see is still a brightness you are setting.
+
+Two things about it are deliberate and would be wrong by habit:
+
+**It is not scaled by the brightness it shows.** Every other colour on this keyboard is dimmed
+by the wheel, and a gauge dimmed by the quantity it measures is unreadable exactly when
+somebody is turning it down. The status icons are already written unscaled for the same
+reason.
+
+**The volume roller gets no such thing.** The volume is the host's, and a keyboard is never
+told what it is: `encoders.c` taps `KC_VOLU` and `KC_VOLD`, which asks for a change and is not
+an answer. A ring filled to a level worked out by counting our own requests would be showing
+what we last asked for rather than what is so, which is the same reason the mute icon above
+the keys stays dark. The brightness is the keyboard's own number and is read back from it.
+
+The gauge fills smoothly rather than in eight steps: the segment the fill stops inside is lit
+by however far into it the fill got, which is what makes eight lights read as a level. It
+takes the ring's own zone colour, so it is in the user's colour and not one chosen here, and
+it is drawn against `RGB_MATRIX_MAXIMUM_BRIGHTNESS` rather than against 255, so a firmware
+built with a lower ceiling would still have a gauge that fills.
 
 Those three bytes -- a source and a hue and a saturation -- come out of the slack
 `VIA_EEPROM_CUSTOM_CONFIG_SIZE` was given for exactly this, so adding them clears nothing.

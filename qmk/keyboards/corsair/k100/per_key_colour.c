@@ -100,12 +100,15 @@ static k100_colour_t locks[K100_LOCK_COUNT];
  * brightness is still read even so, because it is the only way a single key is turned off,
  * and a key somebody switched off has no business lighting up under a different effect.
  *
- * And one more byte: whether the four buttons above the keys react at all. They are keys, so
+ * And two more bytes, for what else takes part. The four buttons above the keys are keys, so
  * a reaction had them flashing with the typing, which is not what a strip of mode buttons
- * above the function row is for. They stay lit unless this says otherwise.
+ * above the function row is for; they stay lit unless asked. The three bars and the logo are
+ * not keys at all, so only a wave crossing the board can reach them -- a fade happens on the
+ * key that was pressed, and none of them is one.
  *
- * Four bytes, out of the slack this region was given for exactly this: so that the next small
- * thing to need a few bytes would not cost anybody their keymap. Three are left. See config.h.
+ * Five bytes, out of the slack this region was given for exactly this: so that the next small
+ * thing to need a few bytes would not cost anybody their keymap. Two are left, and the next
+ * reshape should take the chance to leave rather more. See config.h.
  */
 enum k100_reaction_source {
     K100_REACTION_PAINTED,
@@ -117,14 +120,15 @@ typedef struct {
     uint8_t hue;
     uint8_t sat;
     uint8_t buttons;
+    uint8_t lights;
 } k100_reaction_t;
 
-_Static_assert(sizeof(k100_reaction_t) == 4,
+_Static_assert(sizeof(k100_reaction_t) == 5,
                "the reaction is stored by its offset in the region, so it may not be padded");
 
-/** Painted, white, and the buttons staying lit -- which is what an erased region already
-    reads as, so a keyboard that has never been told any of this behaves exactly as one that
-    was told the defaults. */
+/** Painted, white, and the buttons and the bars staying lit -- which is what an erased region
+    already reads as, so a keyboard that has never been told any of this behaves exactly as
+    one that was told the defaults. */
 static k100_reaction_t reaction;
 
 #define K100_REACTION_OFFSET (K100_LOCKS_OFFSET + K100_LOCK_COUNT * sizeof(k100_colour_t))
@@ -184,7 +188,7 @@ static void forget(void) {
     }
 
     reaction = (k100_reaction_t){.source = K100_REACTION_PAINTED, .hue = 0, .sat = 0,
-                                 .buttons = false};
+                                 .buttons = false, .lights = false};
     store_reaction();
 }
 
@@ -469,5 +473,18 @@ void k100_buttons_react_get(uint8_t *value_data) {
 
 void k100_buttons_react_set(uint8_t *value_data) {
     reaction.buttons = value_data[0] != 0;
+    store_reaction();
+}
+
+bool k100_lights_react(void) {
+    return reaction.lights != 0;
+}
+
+void k100_lights_react_get(uint8_t *value_data) {
+    value_data[0] = reaction.lights;
+}
+
+void k100_lights_react_set(uint8_t *value_data) {
+    reaction.lights = value_data[0] != 0;
     store_reaction();
 }

@@ -20,10 +20,16 @@ typedef struct {
 
 #define K100_ZONE_COUNT 5
 
+#define K100_ZONE_TOPBAR 0
+#define K100_ZONE_LEFTBAR 1
+#define K100_ZONE_RIGHTBAR 2
+#define K100_ZONE_CTRLWHEEL 3
+#define K100_ZONE_LOGO 4
+
 static const k100_zone_t k100_zones[K100_ZONE_COUNT] = {
-    {131,  22},  // Top bar, topbar
-    {157,  11},  // Left bar, leftbar
-    {179,  11},  // Right bar, rightbar
-    {120,   8},  // Wheel ring, ctrlwheel
-    {170,   3},  // Logo, logo
+    [K100_ZONE_TOPBAR] = {131,  22},  // Top bar
+    [K100_ZONE_LEFTBAR] = {157,  11},  // Left bar
+    [K100_ZONE_RIGHTBAR] = {179,  11},  // Right bar
+    [K100_ZONE_CTRLWHEEL] = {120,   8},  // Wheel ring
+    [K100_ZONE_LOGO] = {170,   3},  // Logo
 };

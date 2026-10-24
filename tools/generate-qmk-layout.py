@@ -158,21 +158,24 @@ FN_OVERRIDES = {
 # splash crosses the keyboard, which is one length in rgb_matrix_kb.inc.
 #
 # `reacts` is whether the effect lights a key because it was pressed, which is what decides
-# whether the controls for the reaction's own colour are worth showing.
+# whether the controls for the reaction's own colour are worth showing. `travels` is whether
+# it moves across the keyboard while doing so, which is the only way a light that is not a key
+# -- a bar, the logo -- can be part of it at all.
 ANIMATIONS = {
-    "solid_color": {"label": "Solid Color", "colour": True, "speed": False, "reacts": False},
+    "solid_color": {"label": "Solid Color", "colour": True, "speed": False, "reacts": False,
+                    "travels": False},
     "K100_RAINBOW": {"label": "Rainbow", "colour": False, "speed": True, "reacts": False,
-                     "custom": True},
+                     "travels": False, "custom": True},
     "K100_RAINBOW_SWEEP": {"label": "Rainbow Sweep", "colour": False, "speed": True,
-                           "reacts": False, "custom": True},
+                           "reacts": False, "travels": False, "custom": True},
     "K100_LIGHTS_OFF": {"label": "Off", "colour": False, "speed": False, "reacts": False,
-                        "custom": True},
+                        "travels": False, "custom": True},
     "K100_PER_KEY": {"label": "Per Key", "colour": False, "speed": False, "reacts": False,
-                     "custom": True},
+                     "travels": False, "custom": True},
     "K100_REACTIVE": {"label": "Reactive", "colour": False, "speed": True, "reacts": True,
-                      "custom": True},
+                      "travels": False, "custom": True},
     "K100_REACTIVE_SPLASH": {"label": "Reactive Splash", "colour": False, "speed": True,
-                             "reacts": True, "custom": True},
+                             "reacts": True, "travels": True, "custom": True},
 }
 
 # QMK's channel for the RGB matrix and the prefix VIA's own menu gives its four values,
@@ -920,8 +923,13 @@ static const uint8_t k100_button_leds[K100_BUTTON_LEDS] = {{
 
 def build_zones_h(zones: list[tuple[str, str, int, int]], first_value: int) -> str:
     """The zones as the firmware reads them: a run of LEDs each, in the menu's order."""
-    rows = "\n".join(f"    {{{first:3}, {count:3}}},  // {label}, {family}"
-                      for label, family, first, count in zones)
+    rows = "\n".join(f"    [K100_ZONE_{family.upper()}] = {{{first:3}, {count:3}}},  // {label}"
+                     for label, family, first, count in zones)
+    # Named like the locks, and for the same reason: the firmware reaches for one of these by
+    # name -- the ring is what the wheel's own indicator draws on -- and a position in a list
+    # that a reorder here would silently move is not a thing to index by.
+    names = "\n".join(f"#define K100_ZONE_{family.upper()} {number}"
+                      for number, (_, family, _, _) in enumerate(zones))
 
     return f"""// Copyright 2026 k100-qmk contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
@@ -944,6 +952,8 @@ typedef struct {{
 }} k100_zone_t;
 
 #define K100_ZONE_COUNT {len(zones)}
+
+{names}
 
 static const k100_zone_t k100_zones[K100_ZONE_COUNT] = {{
 {rows}
@@ -1062,7 +1072,8 @@ PAINT_VALUES = [("Full", 255), ("Bright", 192), ("Half", 128), ("Dim", 64), ("Of
 def lighting_menu(per_key_value: int, paint_value: int,
                   zones: list[tuple[str, str, int, int]], zone_first: int,
                   locks: list[tuple[str, str, int]], lock_first: int,
-                  reaction_source: int, reaction_colour: int, buttons_react: int) -> dict:
+                  reaction_source: int, reaction_colour: int, buttons_react: int,
+                  lights_react: int) -> dict:
     """VIA's lighting controls, declared here rather than taken from its built-in set.
 
     VIA ships a `qmk_rgb_matrix` menu that a definition can ask for by name, and it is the
@@ -1158,6 +1169,11 @@ def lighting_menu(per_key_value: int, paint_value: int,
                 {"label": "Top buttons react", "type": "toggle",
                  **only_for(effect_numbers("reacts")),
                  "content": [f"{K100_VALUE}buttons_react", K100_CHANNEL, buttons_react]},
+                # Only the splash can reach them, so the control appears only for it: a fade
+                # happens on the key that was pressed and no bar is one.
+                {"label": "Bars and logo react", "type": "toggle",
+                 **only_for(effect_numbers("travels")),
+                 "content": [f"{K100_VALUE}lights_react", K100_CHANNEL, lights_react]},
             ],
         }, {
             "label": "Per Key",
@@ -1414,7 +1430,8 @@ def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, in
                                 locks, values["K100_VIA_LOCK_FIRST"],
                                 values["K100_VIA_REACTION_SOURCE"],
                                 values["K100_VIA_REACTION_COLOUR"],
-                                values["K100_VIA_BUTTONS_REACT"]),
+                                values["K100_VIA_BUTTONS_REACT"],
+                                values["K100_VIA_LIGHTS_REACT"]),
                   firmware_menu(values["K100_VIA_VERSION"],
                                 values["K100_VIA_LED_PROBE"],
                                 values["K100_VIA_LED_INDEX"],
@@ -1489,7 +1506,7 @@ def main() -> int:
                "K100_VIA_PAINT_VALUE", "K100_VIA_ZONE_FIRST",
                "K100_VIA_LOCK_FIRST", "K100_VIA_LIGHTING_RATE",
                "K100_VIA_REACTION_SOURCE", "K100_VIA_REACTION_COLOUR",
-               "K100_VIA_BUTTONS_REACT")}
+               "K100_VIA_BUTTONS_REACT", "K100_VIA_LIGHTS_REACT")}
 
     # Everything that scans but did not land in the matrix must be an encoder, or the join
     # has silently dropped a key.

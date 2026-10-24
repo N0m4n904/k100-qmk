@@ -192,6 +192,9 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 case K100_VIA_BUTTONS_REACT:
                     k100_buttons_react_get(value_data);
                     return;
+                case K100_VIA_LIGHTS_REACT:
+                    k100_lights_react_get(value_data);
+                    return;
             }
             break;
 
@@ -219,6 +222,9 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                     return;
                 case K100_VIA_BUTTONS_REACT:
                     k100_buttons_react_set(value_data);
+                    return;
+                case K100_VIA_LIGHTS_REACT:
+                    k100_lights_react_set(value_data);
                     return;
             }
             break;
