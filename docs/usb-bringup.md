@@ -1,5 +1,11 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# Why this firmware does not appear on the USB bus
+# Getting this firmware onto the USB bus
+
+**It enumerates now**, at 480 Mbit/s with all three HID interfaces bound, and the VIA
+application configures it. This is the record of why it did not, which is kept because the
+faults were in the shared LPC USB driver rather than in anything about this keyboard: three of
+them are patches under `chibios/patches/`, and the next person to bring up a USB device on
+this family will meet the same ones.
 
 Everything here was read off the keyboard over SWD, from both this project's
 firmware and Corsair's working one, on the same unit within the same hour. It
@@ -10,7 +16,7 @@ run the other, read the same registers, and compare. `swd/fault-report.sh
 --peek` and `swd/run-from-ram.sh --peek` do the reading; neither writes to
 flash.
 
-## What works
+## What worked, at the point this was written
 
 The firmware boots and runs. Halted four seconds in, the program counter
 resolves to `matrix_scan_custom`, the link register to `chSysPolledDelayX` and
@@ -27,7 +33,7 @@ read-back succeeded, since the function returns early if either fails — the
 route back to the bootloader works on hardware, which it had never been shown
 to do before.
 
-## What does not
+## What did not
 
 | `USBHSD` register | Corsair | this firmware |
 | --- | --- | --- |

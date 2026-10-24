@@ -660,9 +660,13 @@ One caveat: the table is **not boolean**. Its values are `0xff` (177 entries), `
 unknown. Only the zero-versus-non-zero split is relied on here.
 
 **For the driver, 190 and `LedInfoMap` are the numbers that matter**, since they are what the
-hardware addresses. ckb-next's 193 is host-side bookkeeping. Our generated `rgb_matrix.layout`
-carries 174 because that is all ckb-next's geometry positions, so **up to 16 addressable LEDs
-are currently missing from it** — worth closing before the RGB driver is written.
+hardware addresses. ckb-next's 193 is host-side bookkeeping.
+
+That gap was closed the way it had to be. The generated `rgb_matrix.layout` carried 174 for a
+while, because that is all ckb-next's geometry positions, which left up to 16 addressable LEDs
+with no entry at all — and the right light bar was among them, sitting where the layout kept
+its unplaced entries, so no effect had ever reached it. The layout is 190 entries now, one per
+LED the firmware addresses, and each was lit on its own and written down.
 
 Corsair's own product page is consistent on the key side, listing **110 keys** and **6 macro
 keys**: a full-size ISO board is 105, this one drops right-Win for Fn giving 104, plus the six
@@ -1006,55 +1010,54 @@ index * 4)`, bounded at index 31 and taken under a semaphore, which is the range
 belong to the dial. That is a use for part of the reserved space, and another reason not to
 hand any of it to QMK.
 
-## Still unknown
+## What static analysis left open, and what running the thing settled
 
-- ~~Which `(strobe, sense)` pair is which key.~~ **Answered** by `HidKeyCodes` above. The
-  full ISO matrix is 119 populated positions: 104 carrying a HID usage code and 15 without.
+Everything above was read out of Corsair's image without the keyboard's case being opened. The
+list below is what that could not answer, and what answered it afterwards — in most cases
+simply having our own code on the part, where a port read is a better instrument than a
+disassembler.
 
-  What the 15 are individually is still open. Their positions are known — sense 0 on strobes
-  0 to 5, one at strobe 5 sense 11, and eight on strobe 7 — and sense 0 across six
-  consecutive strobes is a clean fit for the six macro keys G1 to G6, but that is a reading of
-  the shape rather than evidence.
+- ~~Which `(strobe, sense)` pair is which key.~~ **Answered** by `HidKeyCodes` above. The full
+  ISO matrix is 119 populated positions: 104 carrying a HID usage code and 15 without.
 
-  Related arithmetic worth resolving: the generated logical layout has 123 keys while the
-  matrix has 119 positions, so **four logical keys are not matrix-scanned**. The wheel
-  rotations are the strongest candidates for two of them, since the firmware has a
-  `dialAssignmentMutex` and `dialStopSemaphore` and treats the dial as its own subsystem. The
-  other two are unidentified.
-- **Regenerating the QMK definition on the real matrix.** `qmk-layout.md` still describes a
-  *logical* 7x22 matrix, which was the right call while the electrical one was unknown. It can
-  now be replaced by the real 8x18 mapping, which also removes the need for the custom matrix
-  driver to translate between the two.
-- ~~RGB driver bus and pins.~~ **The bus is answered**; the pins are **not in this image** and
-  are most likely set by the bootloader, which is not published — see below. Reading IOCON back
-  from custom firmware answers it. Flexcomm 3's options are fixed by the
-  LPC546xx datasheet once the instance is known.
-- **Encoder pins — attempted, not found.** Much harder than the matrix, because nothing
-  asserts on an encoder table, so there is no string naming one. What was established:
+  ~~What the 15 are individually.~~ **Answered**, and they are what the shape suggested: sense
+  0 across six consecutive strobes is G1 to G6, and the rest are the media keys, the wheel's
+  button, the profile-switch key, the Windows-lock key, the mute key and `fn`. The keymap is
+  generated from it and every key on the board reports.
 
-  | Finding | Evidence |
-  | --- | --- |
-  | ~~No pin-interrupt path~~ | **Wrong, and see below.** PINT is used; its base is built as an immediate rather than loaded from a literal, so searching for the address could not find it |
-  | `INPUTMUX` *is* configured | reached by `sub.w r5, r5, #0x87000` from the GPIO base, giving `0x40005000` — consistent with timer-capture or pin-interrupt input selection |
-  | Not polled via a literal port-0 read | no access to `PIN[0]` (`0x2100`); the matrix reads `PIN[1]` (`0x2104`) with a literal, so the encoders use a different path |
-  | Pin configuration goes through helpers | functions at flash `0x1381c` and `0x13858` take port and pin arguments, so pin numbers are call arguments rather than greppable constants |
-  | Encoder objects and callbacks | `encodersSemaphore`, `dialTimer`, `dialAppSwitchTimer` created near flash `0x16250`, whose literal pool holds callback addresses around `0x155xx`-`0x157xx` |
+  ~~Four logical keys are not matrix-scanned, and two of them are unidentified.~~ **Answered:
+  all four are encoder rotations**, two per rotary. The generator checks exactly this rather
+  than trusting it — it refuses to emit a layout unless the set of keys that scan but have no
+  matrix position is precisely the four rotations.
 
-  Tracing init to callback to GPIO helper to pin constant is the remaining path. Not urgent:
-  the pins are only needed for encoder support, which is late in the port.
+- ~~Regenerating the QMK definition on the real matrix.~~ **Done.** The layout is the real
+  8x18 mapping, and the custom matrix driver translates nothing.
 
-- **The full pin map is not settled, and one attribution is doubtful.** Three functions write
-  IOCON. One is the matrix init at flash `0x17210` (words 32-57 = `P1_0`-`P1_25`), which is
-  solid. A second, near flash `0x11a9c`, configures `P0_2` as FUNC1, `P0_17` as plain GPIO,
+- ~~RGB driver bus and pins.~~ **Answered.** The bus is Flexcomm 3 as SPI3 and the pins were
+  read back from IOCON with our own firmware running, which was the test proposed here. Three
+  IS31FL3743B drivers, 190 LEDs, 12 MHz.
+
+- ~~Encoder pins.~~ **Answered: `P1_28` to `P1_31`**, out of the stock firmware's INPUTMUX
+  setup; see the section above, which records both the finding and why every earlier search
+  missed it. Which pair is which rotary was a guess from the order the tables list them in,
+  and turning them confirmed it: wheel to the brightness, roller to the volume.
+
+- **The full pin map is still not settled, and one attribution is doubtful.** Three functions
+  write IOCON. One is the matrix init at flash `0x17210` (words 32-57 = `P1_0`-`P1_25`), which
+  is solid. A second, near flash `0x11a9c`, configures `P0_2` as FUNC1, `P0_17` as plain GPIO,
   `P0_18` as GPIO with a pull-down, and `P0_23`-`P0_26` as FUNC6. A third, ending at flash
   `0x124a0`, writes words 36-41 — which is `P1_4`-`P1_9`, **overlapping the matrix sense
   lines**. That overlap is unexplained, so do not treat the second and third as identified
-  subsystems; proximity to the SPI HAL in flash is not evidence of purpose. Resolving the
-  LPC546xx FUNC numbers needs the pin table from UM10912.
+  subsystems; proximity to the SPI HAL in flash is not evidence of purpose.
 
-- **CTIMER4 probably drives the scan.** Its base `0x40049000` is referenced five times inside
-  the matrix code between flash `0x171fc` and `0x17468`, which fits the 4000 Hz scan rate
-  needing a hardware timer. Suggestive from locality rather than decoded.
+  It has stopped blocking anything: every pin this firmware needs is known and working. What
+  is left is unexplained detail in someone else's image.
+
+- **CTIMER4 probably drives the stock scan.** Its base `0x40049000` is referenced five times
+  inside the matrix code between flash `0x171fc` and `0x17468`, which fits a 4000 Hz scan rate
+  needing a hardware timer. Suggestive from locality rather than decoded, and not needed: this
+  firmware scans from the main loop, at 250 Hz, which an optical switch's settling time sets
+  rather than any timer.
 
 ## USB: the right controller, and the one piece still missing
 

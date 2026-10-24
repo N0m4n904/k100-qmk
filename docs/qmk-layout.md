@@ -16,8 +16,15 @@ Outputs:
 | File | Contents |
 | --- | --- |
 | `qmk/keyboards/corsair/k100/keyboard.json` | `LAYOUT_k100_iso_de`, matrix size, `rgb_matrix.layout` |
-| `qmk/keyboards/corsair/k100/keymaps/default/keymap.c` | Default keymap plus an empty Fn layer |
+| `qmk/keyboards/corsair/k100/keymaps/default/keymap.c` | Default keymap plus the Fn layer |
+| `qmk/keyboards/corsair/k100/led_zones.h` | the lights that are not keys, as runs of LED indices |
+| `qmk/keyboards/corsair/k100/lock_leds.h` | which LED sits under each lock key |
+| `qmk/keyboards/corsair/k100/button_leds.h` | the lights under the four buttons above the keys |
+| `qmk/keyboards/corsair/k100/follower_leds.h` | lights that are not keys but light with one |
 | `via/k100-iso-de.json` | VIA v3 definition: layout, the labels for the keycodes this keyboard adds, and the lighting menu |
+
+A fresh run leaves the working tree unchanged, which is the point of generating them and is
+worth checking rather than believing: `git status` after that is the test.
 
 ## Where the data comes from
 
@@ -34,9 +41,12 @@ Four sources, joined:
   through the probe and the key that came up was written down, 120 slots of it, and that table
   is in the generator. It had to be measured: Corsair's order agrees with nothing else here.
   See "What the LED order turned out to be" below.
-- **LED ordering for everything that is not a key**, still from ckb-next's `keymap_bragi`
-  array in `src/daemon/keymap.c`, where the array index *is* the Bragi LED index -- and still
-  unverified, which the probe can settle the same way.
+- **LED ordering for everything that is not a key**, measured the same way and no longer
+  taken from ckb-next's `keymap_bragi` array: the wheel's ring, all three bars of the
+  LightEdge, the logo and the six status icons were each lit on their own and written down.
+  The right bar lit for the first time in the process -- it had been sitting where the layout
+  kept its unplaced entries, so no effect had ever reached it. Which end of each bar its run
+  starts at was asked for rather than assumed.
 - **The keycodes this keyboard adds**, from `enum k100_keycodes` in the keyboard's own
   `k100.h`, read for the order it declares them in. VIA's `customKeycodes` is positional --
   its first entry labels the first `QK_KB` keycode -- so the enum is what fixes that order,
@@ -416,8 +426,9 @@ Like the UI sync request, this is read out of VIA's bundle: `getPerKeyRGBMatrix`
 
 **The colours have to go somewhere.** `VIA_EEPROM_CUSTOM_CONFIG_SIZE` is what QMK gives a
 keyboard for its own stored state, and declaring a size is what creates the region. 190 LEDs
-at three bytes -- a hue, a saturation and a brightness each. The region comes out of what the
-dynamic keymap leaves, so the macro buffer shrinks by the same 570 bytes, from 855.
+at three bytes -- a hue, a saturation and a brightness each -- plus the lock colours, the
+reaction's settings and room to grow into, which is 618 bytes in all. The region comes out of
+what the dynamic keymap leaves, so the macro buffer shrinks by that much: 237 bytes, from 855.
 
 ### Turning one key off, and the brush that does it
 
@@ -452,9 +463,10 @@ cannot be read back, and it arrives through `eeconfig_init_kb()`.
 
 **What shows them is an effect of the keyboard's own**, `K100_PER_KEY`, which gives every LED
 the colour stored for it at the brightness the wheel sets. It is the fifth entry in the
-dropdown and the last of the four effects declared in `rgb_matrix_kb.inc`, because the numbers
-VIA sends are the order they are declared in and appending is the one change that moves
-nothing already in use. Painting without selecting it stores colours that nothing draws, which
+dropdown, and it was the last one declared in `rgb_matrix_kb.inc` when it was added: the
+numbers VIA sends are the order the effects are declared in, so appending is the one change
+that moves nothing already in use. The two reactive effects were appended after it for the
+same reason, and read the same stored colours. Painting without selecting it stores colours that nothing draws, which
 is exactly what it looks like: a painter that does nothing.
 
 **The colours are read before QMK decides to wipe the EEPROM, which cost a measurement to

@@ -14,15 +14,15 @@ recognising it.
 does not declare its own licence, if one declares a licence this table does not allow, or if a
 licence appears in the tree that this document does not mention.
 
-`LICENSE` governs every file that does not say otherwise. Three groups of
-files say otherwise, and each has a concrete reason: GPL-3 is incompatible with one of the
+`LICENSE` governs every file that does not say otherwise. The groups below say otherwise, and
+each has a concrete reason: GPL-3 is incompatible with one of the
 upstream projects this work builds on, and unacceptable to another that this work is meant to be
 contributed back to.
 
 A per-file SPDX header takes precedence over a repository-wide `LICENSE`, so the exceptions below
 are expressed as headers in the files themselves. That is not a formality: **a header is the only
 thing that travels with a file** once it is detached from this repository and merged into another,
-which is the point of three of these four groups. Files that stay here may rely on `LICENSE`, and
+which is the point of most of these groups. Files that stay here may rely on `LICENSE`, and
 the check enforces exactly that asymmetry.
 
 | Path | License | Why |

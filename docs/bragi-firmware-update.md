@@ -113,8 +113,9 @@ with `CFLAGS=-DDETACH_KERNEL_DRIVER` — the compile-time flag that gates its
 `libusb_detach_kernel_driver` call, off by default — changed nothing, though with no error
 text it is not possible to tell whether the flag even propagated.
 
-**So neither hidraw nor hidapi-over-libusb can currently drive this keyboard, and the Rust
-tool has no working transport.**
+**So neither hidraw nor hidapi-over-libusb can drive this keyboard.** The transport that
+does is usbdevfs with every interface claimed, which is what `k100-bragi` uses and what has
+written flash ever since; the sections below are how that was arrived at.
 
 ### Privileges: root is not needed
 

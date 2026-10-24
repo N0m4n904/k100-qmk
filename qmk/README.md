@@ -63,9 +63,10 @@ top-level click-through licence says, and ChibiOS-Contrib already keeps `LPC11Ux
 basis. So `startup_lpc546xx.mk` looks for `os/common/ext/CMSIS/LPC/$(LPC_PART)/` first and only
 falls back to an SDK path, which means the port has no opinion about where they come from.
 
-## Status: it builds
+## Status: it runs the keyboard
 
-**A QMK firmware for the K100 builds and links.** About 22 KB of flash.
+**A QMK firmware for the K100 builds, links, and has been running as the keyboard on a
+desk for days.** About 37 KB of flash.
 
 ```sh
 nix develop .#qmk
@@ -90,8 +91,8 @@ declares. The image is a Cortex-M4 build with a VFPv4-D16 FPU, and
 `matrix_init_custom`, `matrix_scan_custom`, `lpc_clock_init`, `_pal_lld_init`
 and `lpc_usb_clock_init` are all in it, so every layer of the port is reached.
 
-**It has never run.** Building is not working, and two things in `matrix.c` are
-hypotheses that only hardware can settle — see below.
+Every layer of it has since been exercised on the keyboard: it types, it drives all 190
+LEDs, both rotaries turn, and VIA configures it.
 
 ### Submodules: use the pinned commits, not the branch heads
 
@@ -108,28 +109,35 @@ QMK build breaks here.
 `lib/printf` and `lib/lufa` are needed too. LUFA is not obvious: QMK's ChibiOS
 USB stack borrows LUFA's HID class headers even on ARM.
 
-### What the matrix does not know
+### What the matrix did not know, and now does
 
-`matrix.c` is written and compiles, and two things in it are unresolved. Both
-are one define wide, deliberately.
+Two things in `matrix.c` were hypotheses that only hardware could settle. Both were one
+define wide, deliberately, and both have been settled on the keyboard.
 
-- **Whether a pressed key reads low.** The pad configuration is established: a
-  strobe is asserted by driving it low, the senses are pulled up, so a
-  conducting switch pulls its sense down. What is not established is which way
-  an OPX *optical* switch conducts — each key interrupts an infrared beam, and
-  whether pressing breaks it or clears it cannot be read out of the firmware's
-  pin setup. If every key reports held and releases when pressed, invert
-  `MATRIX_SENSE_ACTIVE_LOW`.
-- **How long a strobe needs to settle.** The stock firmware does not assert and
-  sample in one go: its scan is a four-state machine, and the state that samples
-  is not the state that asserted, so at least one tick passes between them. That
-  is what optical sensing needs. The tick length was not recovered, so
-  `MATRIX_STROBE_SETTLE_US` is a generous guess; a matrix that misses keys or
-  reports neighbours wants it raised before anything else is suspected.
+- **A pressed key reads low**, as the pad configuration suggested: a strobe is asserted by
+  driving it low, the senses are pulled up, and a conducting switch pulls its sense down.
+  Which way an OPX *optical* switch conducts could not be read out of the firmware's pin
+  setup, so `MATRIX_SENSE_ACTIVE_LOW` was a guess; it was the right one.
+- **A strobe needs 500 µs to settle**, not the 20 µs first guessed. Measured, and the
+  measurement was unambiguous: with a switch held down its bit never changed, while every
+  position with no key in it read as pressed. These are not contacts — a strobe has to light
+  an emitter and let a phototransistor answer. At eight rows that costs 4 ms a scan, which is
+  a 250 Hz matrix and far more than a keyboard needs.
 
-### Still off: RGB
+The second one also decided the debouncing. Several positions that hold no switch flicker
+continuously, so QMK's default `sym_defer_g` — which waits for the *whole* matrix to be quiet
+— never reported anything. `DEBOUNCE_TYPE = sym_eager_pk` lets a key through on its own
+merits, and is safe here because all twenty permanently-pressed positions are ones the layout
+leaves empty.
 
-`rgb_matrix` is disabled in `keyboard.json`. The LED drivers hang off Flexcomm
-SPI, which the ChibiOS port does not implement. The generated `rgb_matrix`
-configuration is kept because it is correct, so turning it back on is one edit
-once the SPI driver exists.
+### RGB, which was the last thing off
+
+`rgb_matrix` is on. The LED drivers hang off Flexcomm SPI, which the ChibiOS port had to
+implement first; it does, and the keyboard's half of it — how the three IS31FL3743B chips are
+reached and which channel lights which LED — is in `keyboards/corsair/k100/`.
+
+What kept the keyboard dark long after the bus, the pin mux, the frames and the enable
+outputs had all been matched against Corsair's own firmware was a function register at
+`0x25`, written differently for one of the three drivers: these parts take their scan timing
+from one of their number, and a set in which every one is told to follow has nobody leading.
+`docs/pin-mapping.md` has it.

@@ -271,22 +271,35 @@ Corsair's public firmware storage settled the hardest questions at no cost — f
 
 ## Open questions
 
-- How does `apply-extended` stream the image? Bootloader *entry* is solved
-  (`docs/bragi-firmware-update.md`): the mode field's undocumented third value `BOOTLOADER = 3`
-  makes it `08 01 03 03`. The upload sequence itself is still untraced.
-- Does the bootloader additionally check a signature beyond the CRC? The manifest implies
-  not, but only a real write proves it.
-- What is the header field at `0x08` (`75113`), and at what flash address is the payload
-  placed? The image starts with code at `0x2c`, not a Cortex-M vector table.
+Most of what was here is answered, by having written the thing rather than by more reading.
+Kept as a record of what the research could and could not reach.
+
+- ~~How does `apply-extended` stream the image?~~ **Answered, and implemented.**
+  `tools/k100-bragi` writes flash through it and has done so dozens of times; see
+  `docs/bragi-firmware-update.md`.
+- ~~Does the bootloader check a signature beyond the CRC?~~ **Answered: it does not.** Custom
+  images carrying nothing but a correct CRC have been written and started many times. The
+  manifest implied it; writing proved it.
+- ~~What is the header field at `0x08` (`75113`), and where is the payload placed?~~
+  **Answered.** `0x08` is the entry point, a Thumb address the bootloader branches to — and
+  `75113` is `0x12569`, which is exactly the stock image's entry. The payload is the code
+  after the `0x2c`-byte header, loaded at `0x00010000`. `docs/firmware-format.md`.
 - ~~How does the OPX optical scan work electrically?~~ **Answered** by firmware static
   analysis: a conventional 8x18 contact matrix on GPIO port 1, strobes `P1_18..P1_25`, senses
-  `P1_0..P1_17`. The optical sensing is internal to the switch. See `docs/pin-mapping.md`.
-- Which `(strobe, sense)` pair is which key? The lookup tables are built at runtime in SRAM;
-  their flash source is not yet located.
-- Which bus and ICs drive the RGB? `FLEXCOMM3` is the leading candidate.
-- Are SWD pads exposed on the PCB, and is ECRP set on the shipped part? Now only relevant as
-  a fallback.
-- **What are the extra contacts inside the USB passthrough connector?** Reported secondhand
-  from a K100 USB-C mod video: an additional connector plus a ground contact, speculated to
-  relate to reset. If that is a factory programming header exposing reset and the ISP boot
-  pins, hardware ISP becomes reachable without a full teardown. See `docs/recovery.md`.
+  `P1_0..P1_17`. The optical sensing is internal to the switch. What static analysis could not
+  give was the **settling time**, which is 500 µs and was measured on the keyboard.
+  `docs/pin-mapping.md`.
+- ~~Which `(strobe, sense)` pair is which key?~~ **Answered**, out of the image's own
+  `HidKeyCodes` table; `tools/extract-matrix-map.py` prints it.
+- ~~Which bus and ICs drive the RGB?~~ **Answered**: three IS31FL3743B on Flexcomm 3 as SPI3,
+  which `FLEXCOMM3` had been the leading candidate for.
+- ~~Are SWD pads exposed on the PCB, and is ECRP set on the shipped part?~~ **Answered on one
+  unit: yes and no.** An unpopulated six-pin header `J1` sits beside the controller in plated
+  through-holes, so a jumper wire pushed in and taped down is enough, and debug access is not
+  disabled — the port attached and all 512 KB read out twice, identically.
+  `docs/handover.md`.
+- **What are the extra contacts inside the USB passthrough connector?** Still open, and the
+  only one here that is. Reported secondhand from a K100 USB-C mod video: an additional
+  connector plus a ground contact, speculated to relate to reset. If that is a factory
+  programming header exposing reset and the ISP boot pins, hardware ISP becomes reachable
+  without a full teardown. Nothing in this project has needed it. See `docs/recovery.md`.

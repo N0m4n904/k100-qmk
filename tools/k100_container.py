@@ -19,6 +19,19 @@ The layout, 0x2c bytes, written into flash at 0x00010000 ahead of the code:
     0x27  u16   image type; 1 is firmware, 2 is bootloader
     0x29  u8    firmware version, minor
     0x2a  u16   firmware version, patch
+
+**There is no field for a major**, and the two bytes of zero at 0x23 are not
+assumed to be one: they are zero in both published images, so a major field and
+padding look identical from here, and assigning a meaning to someone else's byte
+on no evidence is not something this project does. Corsair's own protocol does
+carry a major -- `read_version` in the Bragi client reads one -- so this is a
+limit of the container, and it never showed because every published K100 image
+has a major of zero.
+
+What that means in practice: the version a K100 image is identified by is the
+one in its USB descriptor, which the host reads and VIA displays, and the
+container's version field is the minor and the patch of it. Nothing here writes
+a `0.` in front of those and calls the result a version.
 """
 
 from __future__ import annotations
@@ -130,9 +143,13 @@ class Container:
         )
 
     def describe(self) -> str:
+        # Minor and patch spelled out rather than dressed up as a whole version: the header
+        # has no field for a major -- it is 0x2c bytes and the version is its last three --
+        # and a `0.` in front of these would be a number this header never carried.
         return (
             f"entry 0x{self.entry:08X}, pid 0x{self.product_id:04x}, "
-            f"type {self.image_type}, version 0.{self.version_minor}.{self.version_patch}, "
+            f"type {self.image_type}, minor {self.version_minor}, "
+            f"patch {self.version_patch} (no major in the header), "
             f"built {self.build_date} {self.build_time}, "
             f"{HEADER_SIZE + len(self.payload)} bytes"
         )

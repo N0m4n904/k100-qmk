@@ -393,14 +393,18 @@ def main(argv: list[str]) -> int:
     header_entry = (APPLICATION_BASE + TRAMPOLINE_ENTRY_OFFSET + 1
                     if gap > HEADER_SIZE else entry)
 
-    # The container has a field for the minor and one for the patch and none for
-    # anything above them, so a leading number that is not zero cannot be carried
-    # and is refused rather than dropped quietly.
+    # The container has a field for the minor and one for the patch and none for anything
+    # above them: the header is 0x2c bytes and the version is its last three. So a leading
+    # number is not carried, which is said out loud below rather than refused.
+    #
+    # Refusing was the first answer, on the reasoning that dropping a field quietly is worse
+    # than not writing the image. It is -- but the choice was never between those two. The
+    # version that identifies this firmware is the one in the USB descriptor, which is what
+    # the host reads, what VIA displays and what every tool here goes by; the container's is
+    # read by exactly two things, this writer and `k100-bragi`, and both can say what they
+    # know instead of filling in what they do not. Refusing only meant the project could
+    # never leave 0.x.
     major, minor, patch = (int(p) for p in args.version.split("."))
-    if major:
-        print(f"refusing: the container carries only a minor and a patch, so "
-              f"{args.version} cannot be declared in it", file=sys.stderr)
-        return 1
 
     now = datetime.now(timezone.utc)
 

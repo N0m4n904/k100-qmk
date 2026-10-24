@@ -168,12 +168,14 @@ fn flash(path: &std::path::Path, commit: bool, product: u16) -> Result<()> {
     match roundtrip::confirm_after_apply(device.product)? {
         Running::Bragi(running) => {
             println!("the keyboard reports firmware {running}");
-            if running == header.version() {
-                println!("which is the version this image declares. The write took effect.");
+            if header.declares(&running) {
+                println!("which is the version this image declares, in the minor and patch \
+                          the header carries. The write took effect.");
             } else {
-                println!("but this image declares {}. The device did not take it, or it \
-                          reports a version from somewhere other than the image header.",
-                         header.version());
+                println!("but this image declares minor and patch {}. The device did not take \
+                          it, or it reports a version from somewhere other than the image \
+                          header.",
+                         header.version_tail());
             }
         }
         // An image without Corsair's protocol in it -- this project's firmware is one --
@@ -182,12 +184,13 @@ fn flash(path: &std::path::Path, commit: bool, product: u16) -> Result<()> {
         Running::Foreign(version) => {
             println!("the keyboard came back as a device reporting version {version}, with no \
                       Corsair protocol to ask");
-            if version == header.version() {
-                println!("which is the version this image declares. The write took effect.");
+            if header.declares(&version) {
+                println!("which is the version this image declares, in the minor and patch \
+                          the header carries. The write took effect.");
             } else {
-                println!("but this image declares {}. Either it did not take, or the image \
-                          and its descriptor disagree about which version it is.",
-                         header.version());
+                println!("but this image declares minor and patch {}. Either it did not take, \
+                          or the image and its descriptor disagree about which version it is.",
+                         header.version_tail());
             }
         }
     }

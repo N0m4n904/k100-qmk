@@ -175,8 +175,21 @@ The fields from `0x25` on were read by diffing the two published images against 
 and against what the device reports. `0x27` is `1` in both, and the manifest's own
 `imageType` enumeration puts firmware at 1 and the bootloader at 2 — which is why
 `tools/pack-firmware.py` refuses to emit anything else and `k100-bragi` refuses to write it.
-The version at `0x29`/`0x2a` reads `0.30.257` and `0.35.288`, matching the filenames and the
-`firmware 0.32.6` a real unit reported before it was updated.
+The version at `0x29`/`0x2a` reads minor 30 patch 257 and minor 35 patch 288, matching the
+filenames and the `firmware 0.32.6` a real unit reported before it was updated.
+
+**There is no field for a major**, and this matters for anything but Corsair's own images. The
+header is `0x2c` bytes and the version is its last three, with nothing after them; the two
+zero bytes at `0x23` are *not* assumed to be a major, because they are zero in both images and
+a major field and padding are indistinguishable from that. Corsair's own protocol does carry a
+major — the Bragi client reads one — so this is a limit of the container rather than of their
+versioning, and it never showed because every published K100 image has a major of zero.
+
+This project's firmware does not, from 1.0.0 onwards. So nothing here writes a `0.` in front
+of the two fields and calls the result a version: `pack-firmware.py` and `k100-bragi` report
+them as a minor and a patch and say the major is not carried. The version an image is
+identified by is the one in its USB descriptor, which is what the host reads and what VIA
+displays; the check after a write compares the part the header can be compared against.
 
 ### The format is proven, not inferred
 

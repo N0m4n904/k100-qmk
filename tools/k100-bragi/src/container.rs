@@ -136,17 +136,37 @@ impl Container {
         Ok(())
     }
 
-    /// The version this image declares, formatted the way the device reports its own.
+    /// As much of the version as this header carries, which is the minor and the patch.
     ///
-    /// The header carries only the minor and patch; the major is the `0` every published
-    /// K100 image and every reading off the device has shown.
-    pub fn version(&self) -> String {
-        format!("0.{}.{}", self.version_minor, self.version_patch)
+    /// **There is no field for a major.** The header is 0x2c bytes and the version is its
+    /// last three: one byte of minor at 0x29 and two of patch at 0x2a, with nothing after
+    /// them. Corsair's own protocol does carry a major -- see `read_version` -- so this is a
+    /// limit of the container rather than of their versioning, and it never showed because
+    /// every published K100 image has a major of zero.
+    ///
+    /// It used to be reported as `0.{minor}.{patch}`, which was that zero stated as though
+    /// the header had said it. For an image whose major is not zero that is simply wrong, and
+    /// a verification tool that fills in a field it cannot read is the last place to do it.
+    pub fn version_tail(&self) -> String {
+        format!("{}.{}", self.version_minor, self.version_patch)
+    }
+
+    /// Whether a version a device reports agrees with what this header can be checked against.
+    ///
+    /// The major is dropped from the reported version rather than compared, because the
+    /// header has nothing to compare it with. What that costs is honest and small: an update
+    /// that failed while the minor and the patch happened to stay the same is not caught --
+    /// which was already true of two builds of one version.
+    pub fn declares(&self, reported: &str) -> bool {
+        reported
+            .split_once('.')
+            .is_some_and(|(_major, tail)| tail == self.version_tail())
     }
 
     pub fn describe(&self) -> String {
         format!(
-            "0.{}.{}, entry {:#010x}, product {:#06x}, type {:?}, {} bytes",
+            "minor {}, patch {} (the header carries no major), entry {:#010x}, \
+             product {:#06x}, type {:?}, {} bytes",
             self.version_minor,
             self.version_patch,
             self.entry,

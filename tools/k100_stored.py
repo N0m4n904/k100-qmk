@@ -107,6 +107,29 @@ def ask(node: Path, request: bytes) -> bytes:
     return reply
 
 
+def reported_text(node: Path, name: str) -> str | None:
+    """One of the keyboard's `label` values, as the text it words it in.
+
+    The application renders these as whatever the keyboard returns, which is how it comes to
+    display a firmware version and an NKRO state at all -- VIA has no notion of either. So
+    this is the only way to read what the application would be showing, rather than working
+    out what it ought to show.
+
+    Nothing when the definition does not declare it or the keyboard will not answer: a reader
+    of an older firmware should report what it has, not fail.
+    """
+    where = menu_value(f"id_k100_{name}")
+    if where is None:
+        return None
+
+    try:
+        reply = ask(node, bytes([CUSTOM_GET_VALUE, *where]))
+    except Refused:
+        return None
+
+    return bytes(reply[3:]).split(b"\x00")[0].decode("ascii", "replace") or None
+
+
 def read_buffer(node: Path, command: int, size: int) -> bytes:
     """One of the keyboard's buffers, a report at a time."""
     buffer = bytearray()

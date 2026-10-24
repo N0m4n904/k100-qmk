@@ -148,8 +148,11 @@ header) would be needed instead. Nobody has tested that either.
 `chibios/os/common/startup/ARMCMx/compilers/GCC/ld/LPC546xx_512k_160k.ld` links an image to run
 from `0x00000000` with no bootloader beneath it. This is the fallback if the bootloader is gone.
 
-Be aware that the QMK firmware in this repository **has never completed a boot on hardware**, so
-this option does not currently produce a working keyboard.
+The firmware in this repository **does boot and run on hardware**, which was not true when this
+page was first written — it types, lights all 190 LEDs and is configured from VIA. What it has
+only ever done is boot *behind* Corsair's bootloader, from `LPC546xx_app_at_64k.ld`. The
+bootloader-less link has never been run on the keyboard, so this option is a route that
+compiles rather than one that has been seen to work.
 
 ## Flash map
 

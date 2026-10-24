@@ -38,8 +38,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from k100_stored import (  # noqa: E402
     DEFINITION, Refused, fit_macros, layers, macro_buffer_size, macro_content, menu_value,
-    read_colours, read_keymap, read_macros, read_settings, write_colours, write_keymap,
-    write_macros, write_settings,
+    read_colours, read_keymap, read_macros, read_settings, reported_text, write_colours,
+    write_keymap, write_macros, write_settings,
 )
 from k100_usb import PRODUCT, VENDOR, device, identity  # noqa: E402
 from k100_via import interface  # noqa: E402
@@ -167,6 +167,13 @@ def main() -> int:
         return 1
     node, protocol = found
     print(f"VIA on {node}, protocol {protocol:#06x}")
+
+    # Both numbers, because they come from different places and are meant to agree: the
+    # descriptor is what the host reads, and this is what the keyboard says when the
+    # application asks it -- the only way to see what VIA would be displaying.
+    reported = reported_text(node, "version")
+    if reported is not None:
+        print(f"declares {reported}, as the keyboard words it for the application")
 
     rows, cols = matrix()
 

@@ -203,8 +203,10 @@ void lpc_usb_power_off(void);
 plus `LPC_USB_IRQ_NUMBER`, `LPC_USB_HAS_INTROUTING`, `LPC_USB_SRAM_START` and `LPC_USB_SRAM_END`.
 After the patch the shared driver names no SYSCON register and no address, and LPC11Uxx's code
 lives in a family file of its own, unchanged. The patch is in `chibios/patches`, where its
-README explains it; **it applies cleanly to upstream but has never been compiled**, since building
-the shared driver needs a full ChibiOS checkout.
+README explains it. It applies cleanly to upstream, and the LPC546xx side of it is compiled on
+every build in this repository and runs the keyboard. What has never been compiled is the
+**LPC11Uxx** family file it factors out: nothing here builds for that part, so that half of the
+seam is reviewed rather than tested.
 
 `lpc546xx_usb.c` holds this part's answers, and they are short, because clocking USB from `fro_hf`
 means there is no PLL to configure at all.
@@ -324,7 +326,12 @@ What it produces is `chibios/demos/LPC/LPC54605_GENERIC`, a program whose only p
 built: it touches the clock tree through `halInit()`, the kernel and SysTick through `chSysInit()`
 and `chThdSleep()`, PAL through a pad it drives and a pad it reads, and the USB device driver
 through `usbStart()`, which pulls in the endpoint allocator, the interrupt handler and the
-family's clocking and power hooks. About 6 KB of flash. **It has never been run.**
+family's clocking and power hooks. About 6 KB of flash.
+
+**The demo itself has never been run**, and it has stopped mattering: the port it exercises
+has since booted, enumerated and driven a keyboard for days, which is a stronger statement
+than any demo makes. It is kept because it builds the port on its own, without QMK in the
+way, which is where a fault in the port is easiest to see.
 
 Three properties of the linked image are then checked, because each is decided by the linker
 rather than by any source file, and each fails *silently* on hardware:

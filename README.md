@@ -65,7 +65,7 @@ and the two rules that keep a mistake survivable.
 | --- | --- |
 | Working firmware | **Yes.** It runs from flash, enumerates, binds three HID interfaces, types and lights. Typing was measured at 5204 key events across four minutes of continuous use. It used to hang within a second of being used; the cause was a system-timer priority that is not a priority on a part with three priority bits, which put the tick above the kernel's own interrupt mask. [`docs/scheduler-stall.md`](docs/scheduler-stall.md) |
 | ChibiOS LPC546xx port | **Runs on the keyboard.** Boots through `crt0`, `halInit()` and `chSysInit()` into QMK's main loop, from SRAM and from flash alike. |
-| USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0030` for version 0.3.0, and the kernel binds all three HID interfaces. |
+| USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0100` for version 1.0.0, and the kernel binds all three HID interfaces. |
 | QMK layout, keymap and VIA definition | **Generated**, not written, from ckb-next's geometry and the stock firmware's own tables; a fresh run reproduces all three files byte for byte. The definition names the keycodes this board adds and carries a lighting menu holding the effects this firmware is *built* with -- VIA's own menu sends a position in a list of all 45, which is a different number. `tools/via-definition-check` runs it through the same reader the application does before a browser ever sees it. [`docs/qmk-layout.md`](docs/qmk-layout.md) |
 | Key matrix pins | **Proven on hardware**, read against `bcdDevice` so it is this firmware and not the bootloader's own keyboard: 67 presses across 16 keys while the device reported `0.01`. The settle time is 500 us -- these are optical switches, and the 20 us first guessed is far too short for an emitter and phototransistor to answer. [`docs/pin-mapping.md`](docs/pin-mapping.md) |
 | Resting by itself | **Dark when the host sleeps, and after being left alone if asked.** QMK has a hook for the first and a timeout for the second, and neither is reachable here: the hook is called only from the loop that waits on a suspended host, which this keyboard compiles out because it never reaches the watchdog feed, and the timeout is a compile-time constant and so cannot be a setting. `lighting_sleep.c` decides both from the main loop instead. The idle one is `Never` until asked for, because a keyboard that goes dark on its own without being told to looks broken. |
@@ -95,10 +95,10 @@ and the two rules that keep a mistake survivable.
 | Corsair's bootloader | **Dumped.** 64 KB read out over SWD and checked: its vector checksum is valid, so the image is complete. Not redistributable, so not in this repository. |
 | Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |
 | Telling our firmware from Corsair's | **Only `bcdDevice` does it.** Corsair's bootloader presents a working keyboard of its own under the same vendor and product id, so typing proves nothing on its own. A whole 104-key sweep was once collected from the bootloader and credited to this firmware. `tools/watch-input.py` now refuses to attribute keystrokes it cannot place. |
-| Test hardware | **One K100**, running this firmware, with its SWD header wired to a Raspberry Pi. |
+| Test hardware | **One K100**, running this firmware as the keyboard it is used on. Its SWD header was wired to a Raspberry Pi through the bring-up and is no longer attached; nothing since has needed a programmer. |
 
-Start with [`NOTES.md`](NOTES.md) for the research and
-[`ARCHITECTURE.md`](ARCHITECTURE.md) for the plan.
+Start with [`ARCHITECTURE.md`](ARCHITECTURE.md) for how the thing is put together and
+[`NOTES.md`](NOTES.md) for the hardware research it rests on.
 
 ## Hardware
 
@@ -128,9 +128,12 @@ tools/
   k100_container.py       Corsair's firmware container, read and written
   pack-firmware.py        wraps a build in that container; --verify proves it can
   k100-bragi/             Rust Bragi client: identify, mode transitions, flash
+  k100-update.py          installs a build, bootloader trip included: one command
+  k100-backup.py          the keymap, macros, colours and settings off and back on
   extract-ckb-keymap/     dumps ckb-next's authoritative layout
   generate-qmk-layout.py  generates the QMK and VIA definitions
   via-definition-check/   checks the generated definition with VIA's own reader
+  watch-input.py          whether keystrokes reach the host, and on which device
 chibios/       the ChibiOS-Contrib LPC546xx port, and its checks under test/
 qmk/keyboards/corsair/k100/   generated QMK keyboard definition
 via/                          generated VIA definition
@@ -158,7 +161,7 @@ shut. This does not replace Corsair's bootloader; it uses Corsair's own update p
 the same one their software uses.
 
 ```sh
-python3 tools/k100-update.py k100-qmk-0.3.0.bin
+python3 tools/k100-update.py k100-qmk-1.0.0.bin
 ```
 
 It checks the image before it touches the keyboard, asks whatever is running to hand itself to
@@ -173,8 +176,8 @@ needs watching: `tools/via-bootloader.py` for the jump, then `k100-bragi flash <
 --device 0x1b7c --commit`, which without `--commit` is a dry run that checks the image against
 the keyboard and sends nothing.
 
-The keyboard reboots itself and comes back as `bcdDevice 0030`, which is this firmware's
-version 0.3.0. The keymap, the lighting and everything else VIA stores live in the keyboard's
+The keyboard reboots itself and comes back as `bcdDevice 0100`, which is this firmware's
+version 1.0.0. The keymap, the lighting and everything else VIA stores live in the keyboard's
 EEPROM and survive the write -- except when a release says otherwise, which it does when the
 shape of what is stored has changed.
 

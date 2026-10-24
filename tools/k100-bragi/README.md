@@ -1,9 +1,12 @@
 # k100-bragi
 
-A Bragi client for the Corsair K100, written to establish the firmware **recovery** path
-before any custom firmware exists. It is deliberately staged: read-only first, then
-reversible transitions, and flashing only once the framing has been confirmed against real
-hardware.
+A Bragi client for the Corsair K100. It speaks Corsair's own update protocol, and it is what
+writes flash — both their images and this project's.
+
+It was written to establish the **recovery** path before any custom firmware existed, in
+stages: read-only first, then reversible transitions, and flashing only once the framing had
+been confirmed against real hardware. Those stages are behind it, and the ordering is why
+there is a project rather than a brick.
 
 Protocol provenance is in `docs/bragi-firmware-update.md`; the safety reasoning is in
 `docs/recovery.md`.
@@ -66,23 +69,27 @@ Note that **`SelfOperated` is the power-on state and most commands are refused i
 `InvalidState`. `files` therefore wraps its work in host control via
 `Device::with_host_control`, which restores the previous mode afterwards even on failure.
 
-## Why flashing is still a stub
+## Flashing
 
-The command set is known: `OPEN_FILE`, then `WRITE_BUFFER_BEGIN` carrying a 4-byte
-little-endian total length plus the first chunk, then `WRITE_BUFFER` for the remainder, then
+`flash <image> --device 0x1b7c --commit` writes it. Without `--commit` it checks the image
+against the keyboard and sends nothing, which is the dry run.
+
+The command set: `OPEN_FILE`, then `WRITE_BUFFER_BEGIN` carrying a 4-byte little-endian total
+length plus the first chunk, then `WRITE_BUFFER` for the remainder, then
 `APPLY_FIRMWARE_EXTENDED` (22) — the K100 manifest asks for `apply-extended` specifically.
+The firmware file ID is **3**, from the `Ft` enum in Corsair's updater bundle, and arguments
+begin at body byte 2, not byte 3 as that bundle has them.
 
-Both of the things that used to be unknown are now settled: the firmware file ID is **3**,
-from the `Ft` enum in Corsair's updater bundle, and the header layout is two-byte, confirmed
-on hardware. Argument placement is settled too — arguments begin at body byte 2, not byte 3
-as the updater bundle has them.
+**It works, and has written both Corsair's images and this project's many times.** The two
+things that could not be checked without doing it are answered: the upload sequence works as
+read, and the bootloader validates nothing beyond the CRC — custom images carrying only a
+correct CRC start and run. The route was proven in the order **rule 2** of
+`docs/recovery.md` asks for: a verified official image first, then a custom one.
 
-What remains unverified is the part that cannot be checked without doing it: whether the
-bootloader validates anything beyond the CRC, and whether the upload sequence works as read.
-`roundtrip::flash` therefore still refuses, and the next step is **rule 2** of
-`docs/recovery.md` — prove the round trip with a verified official image before any custom
-one. Note that this unit runs firmware 0.32.6 while the published packages offer 0.35.288 and
-0.30.257, so flashing either is an upgrade rather than a restore to its current state.
+After the write it confirms what came back. The container header carries a minor and a patch
+and **no major** — it is `0x2c` bytes and the version is its last three — so what is compared
+is the part the header can be compared against, and the report says so rather than printing a
+major the header never held. `docs/firmware-format.md` has the layout.
 
 ## Safety properties worth knowing
 
