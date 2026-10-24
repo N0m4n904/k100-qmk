@@ -66,7 +66,7 @@ and the two rules that keep a mistake survivable.
 | --- | --- |
 | Working firmware | **Yes.** It runs from flash, enumerates, binds three HID interfaces, types and lights. Typing was measured at 5204 key events across four minutes of continuous use. It used to hang within a second of being used; the cause was a system-timer priority that is not a priority on a part with three priority bits, which put the tick above the kernel's own interrupt mask. [`docs/scheduler-stall.md`](docs/scheduler-stall.md) |
 | ChibiOS LPC546xx port | **Runs on the keyboard.** Boots through `crt0`, `halInit()` and `chSysInit()` into QMK's main loop, from SRAM and from flash alike. |
-| USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0021` for version 0.2.1, and the kernel binds all three HID interfaces. |
+| USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0030` for version 0.3.0, and the kernel binds all three HID interfaces. |
 | QMK layout, keymap and VIA definition | **Generated**, not written, from ckb-next's geometry and the stock firmware's own tables; a fresh run reproduces all three files byte for byte. The definition names the keycodes this board adds and carries a lighting menu holding the effects this firmware is *built* with -- VIA's own menu sends a position in a list of all 45, which is a different number. `tools/via-definition-check` runs it through the same reader the application does before a browser ever sees it. [`docs/qmk-layout.md`](docs/qmk-layout.md) |
 | Key matrix pins | **Proven on hardware**, read against `bcdDevice` so it is this firmware and not the bootloader's own keyboard: 67 presses across 16 keys while the device reported `0.01`. The settle time is 500 us -- these are optical switches, and the 20 us first guessed is far too short for an emitter and phototransistor to answer. [`docs/pin-mapping.md`](docs/pin-mapping.md) |
 | The two rotary controls | **Both work.** Neither rotation is matrix-scanned, so they are encoders on `P1_28`-`P1_31`, read out of the stock firmware's pin-interrupt configuration. Which pair is which was a guess from the order the image's own tables list them in, and turning them confirmed it: wheel to the brightness, roller to the volume. The roller came out inverted, so its two cases are crossed in `encoders.c` -- `ENCODER_DIRECTION_FLIP` would have turned the wheel round with it. |
@@ -154,7 +154,7 @@ shut. This does not replace Corsair's bootloader; it uses Corsair's own update p
 the same one their software uses.
 
 ```sh
-python3 tools/k100-update.py k100-qmk-0.2.1.bin
+python3 tools/k100-update.py k100-qmk-0.3.0.bin
 ```
 
 It checks the image before it touches the keyboard, asks whatever is running to hand itself to
@@ -169,8 +169,8 @@ needs watching: `tools/via-bootloader.py` for the jump, then `k100-bragi flash <
 --device 0x1b7c --commit`, which without `--commit` is a dry run that checks the image against
 the keyboard and sends nothing.
 
-The keyboard reboots itself and comes back as `bcdDevice 0021`, which is this firmware's
-version 0.2.1. The keymap, the lighting and everything else VIA stores live in the keyboard's
+The keyboard reboots itself and comes back as `bcdDevice 0030`, which is this firmware's
+version 0.3.0. The keymap, the lighting and everything else VIA stores live in the keyboard's
 EEPROM and survive the write -- except when a release says otherwise, which it does when the
 shape of what is stored has changed.
 
