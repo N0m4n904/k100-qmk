@@ -691,6 +691,131 @@
               ]
             }
           ]
+        },
+        {
+          "label": "Locks",
+          "content": [
+            {
+              "label": "Caps Lock",
+              "type": "color",
+              "content": [
+                "id_k100_lock_caps",
+                0,
+                16
+              ]
+            },
+            {
+              "label": "Caps Lock brightness",
+              "type": "dropdown",
+              "options": [
+                [
+                  "Full",
+                  255
+                ],
+                [
+                  "Bright",
+                  192
+                ],
+                [
+                  "Half",
+                  128
+                ],
+                [
+                  "Dim",
+                  64
+                ],
+                [
+                  "Off",
+                  0
+                ]
+              ],
+              "content": [
+                "id_k100_lock_caps_value",
+                0,
+                17
+              ]
+            },
+            {
+              "label": "Num Lock",
+              "type": "color",
+              "content": [
+                "id_k100_lock_numlock",
+                0,
+                18
+              ]
+            },
+            {
+              "label": "Num Lock brightness",
+              "type": "dropdown",
+              "options": [
+                [
+                  "Full",
+                  255
+                ],
+                [
+                  "Bright",
+                  192
+                ],
+                [
+                  "Half",
+                  128
+                ],
+                [
+                  "Dim",
+                  64
+                ],
+                [
+                  "Off",
+                  0
+                ]
+              ],
+              "content": [
+                "id_k100_lock_numlock_value",
+                0,
+                19
+              ]
+            },
+            {
+              "label": "Scroll Lock",
+              "type": "color",
+              "content": [
+                "id_k100_lock_scroll",
+                0,
+                20
+              ]
+            },
+            {
+              "label": "Scroll Lock brightness",
+              "type": "dropdown",
+              "options": [
+                [
+                  "Full",
+                  255
+                ],
+                [
+                  "Bright",
+                  192
+                ],
+                [
+                  "Half",
+                  128
+                ],
+                [
+                  "Dim",
+                  64
+                ],
+                [
+                  "Off",
+                  0
+                ]
+              ],
+              "content": [
+                "id_k100_lock_scroll_value",
+                0,
+                21
+              ]
+            }
+          ]
         }
       ]
     },

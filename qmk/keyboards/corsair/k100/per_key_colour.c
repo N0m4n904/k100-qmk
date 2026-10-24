@@ -54,18 +54,37 @@
 
 #include "k100.h"
 #include "led_zones.h"
+#include "lock_leds.h"
 
 _Static_assert(K100_PER_KEY_LEDS == RGB_MATRIX_LED_COUNT,
                "the colour table is per LED, so it is as long as the LED map");
 _Static_assert(sizeof(k100_colour_t) == 3,
                "a colour is stored by its offset in the region, so it may not be padded");
-_Static_assert(VIA_EEPROM_CUSTOM_CONFIG_SIZE >= K100_PER_KEY_LEDS * sizeof(k100_colour_t),
-               "the custom config region is too small for one colour per LED; see config.h");
+_Static_assert(VIA_EEPROM_CUSTOM_CONFIG_SIZE >=
+                   (K100_PER_KEY_LEDS + K100_LOCK_COUNT) * sizeof(k100_colour_t),
+               "the custom config region is too small for the colours; see config.h");
+_Static_assert(K100_VIA_LOCK_FIRST >= K100_VIA_ZONE_FIRST + 2 * K100_ZONE_COUNT,
+               "the lock controls start inside the zones' run of values");
 
 /** What an unpainted LED is: white, and as bright as the wheel is set. */
 #define K100_COLOUR_DEFAULT ((k100_colour_t){.hue = 0, .sat = 0, .val = UINT8_MAX})
 
 static k100_colour_t colours[K100_PER_KEY_LEDS];
+
+/*
+ * What a key shows while its lock is on.
+ *
+ * Stored beside the per-LED colours and written the same way, because it is the same kind of
+ * thing: a colour somebody chose, which has to survive a power cycle to be worth choosing.
+ * Red at full to begin with -- an unpainted keyboard is white, so a default that cannot be
+ * seen against it would read as a feature that does not work.
+ */
+static k100_colour_t locks[K100_LOCK_COUNT];
+
+#define K100_LOCK_COLOUR_DEFAULT ((k100_colour_t){.hue = 0, .sat = UINT8_MAX, .val = UINT8_MAX})
+
+/** Where the lock colours sit in the region: after every LED's own. */
+#define K100_LOCKS_OFFSET (K100_PER_KEY_LEDS * sizeof(k100_colour_t))
 
 /*
  * The brightness the next painted key is given.
@@ -85,6 +104,11 @@ static void store(uint8_t led) {
     via_update_custom_config(&colours[led], offset_of(led), sizeof(colours[led]));
 }
 
+static void store_lock(uint8_t lock) {
+    via_update_custom_config(&locks[lock], K100_LOCKS_OFFSET + lock * sizeof(locks[0]),
+                             sizeof(locks[0]));
+}
+
 /**
  * @brief   Back to white and fully lit everywhere, in RAM and in the region.
  *
@@ -99,6 +123,11 @@ static void forget(void) {
         colours[led] = K100_COLOUR_DEFAULT;
     }
     via_update_custom_config(colours, 0, sizeof(colours));
+
+    for (uint8_t lock = 0; lock < K100_LOCK_COUNT; lock++) {
+        locks[lock] = K100_LOCK_COLOUR_DEFAULT;
+        store_lock(lock);
+    }
 }
 
 /*
@@ -118,6 +147,7 @@ static void forget(void) {
  */
 void via_init_kb(void) {
     via_read_custom_config(colours, 0, sizeof(colours));
+    via_read_custom_config(locks, K100_LOCKS_OFFSET, sizeof(locks));
 }
 
 /*
@@ -237,6 +267,19 @@ void k100_per_key_colour_get(uint8_t *value_data) {
 
     value_data[2] = colours[led].hue;
     value_data[3] = colours[led].sat;
+
+    /*
+     * The brightness goes in the byte after the two VIA asks for, which it
+     * never looks at: it reads the hue and the saturation out of a reply by
+     * position and ignores the rest of the report.
+     *
+     * Free, and the difference between a backup of a painted keyboard and
+     * half of one. The only thing that clears these colours is a change to
+     * the shape of the region they live in, and what makes such a change
+     * survivable is being able to read all of it out first -- which, without
+     * this, nothing could: the brightness is stored and was not readable.
+     */
+    value_data[4] = colours[led].val;
 }
 
 void k100_per_key_colour_set(uint8_t *value_data) {
@@ -260,4 +303,59 @@ void k100_per_key_colour_set(uint8_t *value_data) {
             store(other);
         }
     }
+}
+
+/*
+ * The lock colours, which are read and written like a zone's and for the same reasons: a
+ * colour control for the colour, a brightness beside it that acts at once, and zero
+ * brightness as the way to say "do not show it on the key at all".
+ *
+ * Unlike a zone there is nothing to repaint here. What shows them is the indicator hook,
+ * which runs every frame and reads these as it goes; see indicators.c.
+ */
+k100_colour_t k100_lock_colour(uint8_t lock) {
+    return lock < K100_LOCK_COUNT ? locks[lock] : (k100_colour_t){0, 0, 0};
+}
+
+void k100_lock_colour_get(uint8_t lock, uint8_t *value_data) {
+    if (lock >= K100_LOCK_COUNT) {
+        return;
+    }
+
+    value_data[0] = locks[lock].hue;
+    value_data[1] = locks[lock].sat;
+}
+
+void k100_lock_colour_set(uint8_t lock, uint8_t *value_data) {
+    if (lock >= K100_LOCK_COUNT) {
+        return;
+    }
+
+    locks[lock].hue = value_data[0];
+    locks[lock].sat = value_data[1];
+
+    // The same courtesy a zone gets: a colour set on something switched off turns it on,
+    // because a control that appears to do nothing is worse than one that does too much.
+    if (locks[lock].val == 0) {
+        locks[lock].val = UINT8_MAX;
+    }
+
+    store_lock(lock);
+}
+
+void k100_lock_value_get(uint8_t lock, uint8_t *value_data) {
+    if (lock >= K100_LOCK_COUNT) {
+        return;
+    }
+
+    value_data[0] = locks[lock].val;
+}
+
+void k100_lock_value_set(uint8_t lock, uint8_t *value_data) {
+    if (lock >= K100_LOCK_COUNT) {
+        return;
+    }
+
+    locks[lock].val = value_data[0];
+    store_lock(lock);
 }

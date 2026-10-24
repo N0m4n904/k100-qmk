@@ -14,11 +14,19 @@
  * turn and the order matched the printed icons, Macro first. Two of them this
  * firmware leaves dark, and deliberately -- an indicator that lights for
  * something it is not reporting is worse than one that never lights.
+ *
+ * The same three locks the host reports are also shown **on the keys that carry
+ * them**, in a colour each that is the user's to pick. That is the same fact in
+ * a second place, and the second place is the one somebody is looking at: an
+ * icon above the number pad is a long way from the key that was just pressed.
+ * Which LED sits under which lock key is generated out of the measured table,
+ * and the colours are stored beside the painted ones; see per_key_colour.c.
  */
 
 #include "quantum.h"
 
 #include "k100.h"
+#include "lock_leds.h"
 
 /**
  * @brief The status LEDs, in the order they appear in the LED map.
@@ -34,6 +42,52 @@ enum k100_indicator {
     K100_INDICATOR_CAPS_LOCK,
     K100_INDICATOR_SCROLL_LOCK,
 };
+
+/**
+ * @brief   Whether each lock the host reports is on, in the generated order.
+ *
+ * @details Built *at* the places lock_leds.h defines rather than in the order they are
+ *          written here, so that reordering the generator's list moves this with it and a
+ *          lock that leaves the list stops the build. QMK's names for the three bits are the
+ *          one thing that cannot be generated, so they are the one thing written out.
+ */
+static bool lock_is_on(uint8_t lock, led_t host) {
+    const bool state[K100_LOCK_COUNT] = {
+        [K100_LOCK_CAPS]    = host.caps_lock,
+        [K100_LOCK_NUMLOCK] = host.num_lock,
+        [K100_LOCK_SCROLL]  = host.scroll_lock,
+    };
+
+    return state[lock];
+}
+
+/**
+ * @brief   Paints the key that carries a lock, while that lock is on.
+ *
+ * @details After the effect and before the probe, because this is a fact about the keyboard
+ *          and the effect underneath it is decoration. The stored brightness scales the one
+ *          the wheel sets, like every other colour here, so dimming the keyboard dims this
+ *          too and a brightness of zero is a user saying they would rather see the effect.
+ */
+static void show_locks(led_t host) {
+    for (uint8_t lock = 0; lock < K100_LOCK_COUNT; lock++) {
+        const k100_colour_t colour = k100_lock_colour(lock);
+
+        if (colour.val == 0 || !lock_is_on(lock, host)) {
+            continue;
+        }
+
+        /* Scaled by hand and converted with the plain conversion: `scale8` and
+           rgb_matrix's own hue conversion are both internal to rgb_matrix.c, and
+           `hsv_to_rgb` is what that one calls anyway, so the colour comes out the
+           same as the effects' do. */
+        const hsv_t hsv = {.h = colour.hue, .s = colour.sat,
+                           .v = (uint8_t)((uint16_t)colour.val * rgb_matrix_config.hsv.v / UINT8_MAX)};
+        const rgb_t rgb = hsv_to_rgb(hsv);
+
+        rgb_matrix_set_color(k100_lock_leds[lock], rgb.r, rgb.g, rgb.b);
+    }
+}
 
 /** @brief One icon, on or off, since that is all these LEDs can be. */
 static void indicator(uint8_t index, bool lit) {
@@ -71,6 +125,10 @@ bool rgb_matrix_indicators_kb(void) {
        its own volume keys would be reporting what it last asked for rather
        than what is so. */
     indicator(K100_INDICATOR_MUTE, false);
+
+    /* The keys that carry the locks, which is the same news as the icons above
+       in the place it is being looked for. */
+    show_locks(host);
 
     /* Last, so that a probed LED shows even where an icon would otherwise sit:
        the point of it is to find out what a given index lights. */

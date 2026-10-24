@@ -30,6 +30,7 @@
 
 #include "k100.h"
 #include "led_zones.h"
+#include "lock_leds.h"
 
 /** Set from VIA, kept nowhere: a diagnostic that outlived a power cycle would
     be a keyboard with one white LED and no explanation for it. */
@@ -129,6 +130,33 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 k100_zone_colour_set(zone, value_data);
             } else {
                 k100_zone_value_set(zone, value_data);
+            }
+            return;
+        }
+    }
+
+    // The lock colours are a second such run, and read the same way: a colour at an even
+    // offset from K100_VIA_LOCK_FIRST and a brightness at the odd one after it, in the order
+    // lock_leds.h lists the locks.
+    if (*value_id >= K100_VIA_LOCK_FIRST &&
+        *value_id < K100_VIA_LOCK_FIRST + 2 * K100_LOCK_COUNT) {
+        const uint8_t offset = *value_id - K100_VIA_LOCK_FIRST;
+        const uint8_t lock   = offset / 2;
+        const bool    colour = offset % 2 == 0;
+
+        if (*command_id == id_custom_get_value) {
+            if (colour) {
+                k100_lock_colour_get(lock, value_data);
+            } else {
+                k100_lock_value_get(lock, value_data);
+            }
+            return;
+        }
+        if (*command_id == id_custom_set_value) {
+            if (colour) {
+                k100_lock_colour_set(lock, value_data);
+            } else {
+                k100_lock_value_set(lock, value_data);
             }
             return;
         }

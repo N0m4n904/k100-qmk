@@ -68,6 +68,14 @@ enum k100_via_value {
      * useless if setting it does not show.
      */
     K100_VIA_ZONE_FIRST = 6,
+    /**
+     * The first of the lock colours: a colour and a brightness for each lock a key reports.
+     *
+     * Numbered like the zones, two values each in the order lock_leds.h lists them, and
+     * placed after the zones' run -- which the firmware checks rather than trusts, because
+     * two controls on one number would be one control doing two things.
+     */
+    K100_VIA_LOCK_FIRST = 16,
 };
 
 /**
@@ -146,6 +154,21 @@ void k100_zone_colour_set(uint8_t zone, uint8_t *value_data);
  */
 void k100_zone_value_get(uint8_t zone, uint8_t *value_data);
 void k100_zone_value_set(uint8_t zone, uint8_t *value_data);
+
+/**
+ * @brief   The colour a key shows while its lock is on, and how bright.
+ *
+ * @details The lock is an index into the generated table in lock_leds.h. Brightness zero is
+ *          how someone says they would rather the key did not show it at all, which is why
+ *          the pair is the same shape as a zone's.
+ */
+void k100_lock_colour_get(uint8_t lock, uint8_t *value_data);
+void k100_lock_colour_set(uint8_t lock, uint8_t *value_data);
+void k100_lock_value_get(uint8_t lock, uint8_t *value_data);
+void k100_lock_value_set(uint8_t lock, uint8_t *value_data);
+
+/** @brief What to paint on a lock's key, as the colour it is stored with. */
+k100_colour_t k100_lock_colour(uint8_t lock);
 
 /**
  * Lights the one LED the probe names, if it is on.

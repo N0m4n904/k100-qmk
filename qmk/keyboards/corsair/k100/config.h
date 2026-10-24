@@ -56,13 +56,14 @@
  * button was given one, again when the macro keys stopped sending F13-F18 and
  * became VIA's macros, again when the Fn layer took on NKRO and the effect
  * speed, again when the per-key colours took a region of their own, and again
- * when each of those colours took a brightness. Every
+ * when each of those colours took a brightness, and again when the lock keys
+ * were given a colour of their own. Every
  * entry here is a keymap change, or a change to the shape of what is stored,
  * that the stored copy would otherwise have outlived -- which is what this
  * number is for, and what forgetting it looks like: a key that still does the
  * old thing however correct the build is.
  */
-#define EECONFIG_MAGIC_NUMBER (uint16_t)0xFEDC
+#define EECONFIG_MAGIC_NUMBER (uint16_t)0xFEDB
 
 /*
  * Room for one colour per LED, which is what VIA's key painter writes.
@@ -70,7 +71,13 @@
  * VIA keeps per-key colours on its own channel and expects the keyboard to
  * store them; this region is what QMK gives a keyboard for exactly that, and
  * declaring a size is what creates it. 190 LEDs at three bytes each -- a hue, a
- * saturation and a brightness.
+ * saturation and a brightness -- and sixteen more.
+ *
+ * Nine of those sixteen are the colours the lock keys show while their locks are
+ * on. The other seven are deliberate slack: growing this region is the one thing
+ * left that clears what a user has stored, so the next small thing to need a few
+ * bytes should not cost them their keymap. Spare bytes read as zero and nothing
+ * looks at them.
  *
  * The brightness is not in what VIA sends and is stored all the same, because it
  * is the only way to say that one key is off: zero saturation is white, not
@@ -84,7 +91,7 @@
  * EEPROM driver's own header for why the whole region is 2 KB rather than the
  * array's 16.
  */
-#define VIA_EEPROM_CUSTOM_CONFIG_SIZE (190 * 3)
+#define VIA_EEPROM_CUSTOM_CONFIG_SIZE (190 * 3 + 16)
 
 /*
  * What tells VIA's stored data apart, instead of the build date.
