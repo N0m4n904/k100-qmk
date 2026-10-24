@@ -134,5 +134,10 @@ bool rgb_matrix_indicators_kb(void) {
        the point of it is to find out what a given index lights. */
     k100_led_probe_paint();
 
+    /* And this hook is also where a frame ends: rgb_matrix calls it once the last
+       slice has been worked out, which makes it the one place that can count
+       frames without counting slices. See lighting_rate.c. */
+    k100_frame_rendered();
+
     return rgb_matrix_indicators_user();
 }

@@ -29,6 +29,12 @@ SRC += encoders.c
 # which index lights which LED is not known on this board.
 SRC += via_values.c
 
+# What the lighting and the main loop are costing, as two numbers rather than an
+# impression. Keyboard level because the loop is: the matrix scan this measures
+# alongside is this board's own, and it is slow enough that an effect has to be
+# asked about rather than assumed.
+SRC += lighting_rate.c
+
 # How the keyboard tells the application that it changed something itself. The
 # keys and the wheel above do, and VIA reads its menu values only when it
 # connects, so without this its idea of the lighting stops being true.

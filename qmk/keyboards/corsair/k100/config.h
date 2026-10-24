@@ -115,6 +115,24 @@
  */
 #define VIA_EEPROM_VERSION EECONFIG_MAGIC_NUMBER
 
+/*
+ * Remember which keys were pressed and how long ago, which is what makes an
+ * effect able to react to one.
+ *
+ * rgb_matrix keeps a ring of the last eight hits -- the LED each landed on, its
+ * position in the layout, and its age in milliseconds -- and the code that fills
+ * it exists only when this is defined. QMK defines it for a keyboard that
+ * compiles one of *its* reactive effects; this keyboard compiles its own, so it
+ * says so here. See rgb_matrix_kb.inc.
+ *
+ * It costs 82 bytes of RAM -- the ring is double buffered, so that a frame being
+ * rendered in slices does not see the ages move underneath it -- and a few
+ * instructions per key event. What the effects themselves cost is the part worth
+ * measuring rather than estimating, and is measured: the frame and scan rates in
+ * VIA's Diagnostics menu, see lighting_rate.c.
+ */
+#define RGB_MATRIX_KEYPRESSES
+
 /* Temporary: USB bring-up diagnostic, see bootloader.c. */
 /*
  * Never block the main loop waiting for the host.

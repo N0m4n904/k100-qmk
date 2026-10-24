@@ -285,7 +285,7 @@ for the effects that read it.
 
 ### Why the rainbows are the keyboard's own
 
-Three of the four effects are, and the two rainbows are there for a reason worth writing
+Five of the six effects are, and the two rainbows are there for a reason worth writing
 down: **QMK's rainbows read the stored colour.** `CYCLE_ALL` and `CYCLE_LEFT_RIGHT` replace
 the hue -- with the clock and with the LED's position -- and keep the saturation they are
 handed, which is the saturation the *plain colour* is set to. A keyboard set to white
@@ -533,6 +533,97 @@ anyone who has not asked for it.
 What a keyboard stores therefore survives every update except the one that reshapes its
 storage -- and that one is deliberate, in one place, for a reason written down, and can be
 dumped and restored around.
+
+### Reacting to a press, as one piece of arithmetic
+
+Two effects react to typing, and both are the same wave. A press starts at the key it landed
+on and travels outwards at a fixed speed, bright at the front and fading behind it, and an
+LED is lit by how far behind that front it is:
+
+```c
+static uint8_t k100_wave(uint16_t front, uint8_t away) {
+    if (front < away) {
+        return 0;                        // the wave has not arrived
+    }
+    const uint16_t behind = front - away;
+    return behind > UINT8_MAX ? 0 : (uint8_t)(UINT8_MAX - behind);
+}
+```
+
+`Reactive` and `Reactive Splash` differ in one thing: what `away` is. For the fade it is
+nothing on the key that was pressed and out of reach everywhere else, so the wave never
+leaves the key. For the splash it is the real distance across the layout, so the wave is a
+ring. That is why the front is measured in the layout's own units and why a press travels 255
+of them in one reaction: the far corner of this keyboard is 233 units from the near one, so a
+wave that has gone 255 has crossed all of it -- and a fade is then exactly *255 minus how far
+the wave got*.
+
+The front is worked out once per slice of a frame rather than once per LED, because it is a
+fact about the press and not about any LED. 190 LEDs by eight remembered presses is the
+difference between eight divisions and fifteen hundred.
+
+**A press is matched by position, not by index.** `rgb_matrix`'s ring records the one LED the
+matrix map names for a key, and four keys here have two lights -- the wheel button, the
+profile-switch key, the Windows-lock key and the mute key -- so the second light would never
+see the press and the key would be half lit on every stroke. Two LEDs under one key carry the
+same position in the layout, and the generator refuses to emit a layout where two *keys*
+share a position, so the position is the key. `per_key_colour.c` pairs them off the same way.
+
+The reaction length comes from the one speed control, between 150 ms and 1.5 s. Not QMK's own
+mapping, which is `65535 / (speed + 1)` ms and reaches 65 seconds at the slow end: a fade
+that outlasts the typing is a keyboard that is simply on.
+
+**What colour a key reacts in is a choice, and the painted keyboard is the default.** Reading
+the painted colours is the richer answer -- a keyboard somebody has painted reacts in their
+own colours, and nothing new had to be stored for it -- but it is not an answer somebody who
+has painted nothing can change, and a reaction nobody can recolour is a feature with a
+decision missing. So `Lighting -> Reactive` holds the source and one colour of the
+reaction's own, and picking that colour selects it. The painted *brightness* is read under
+either, because it is the only way a single key is turned off and a key somebody switched off
+has no business lighting up.
+
+Not the colour control in the Backlight group, which belongs to the plain colour. One knob
+reaching across effects is the fault this keyboard has already had once.
+
+Those three bytes -- a source and a hue and a saturation -- come out of the slack
+`VIA_EEPROM_CUSTOM_CONFIG_SIZE` was given for exactly this, so adding them clears nothing.
+They also need no default written: the LPC EEPROM driver's erase writes **zeros**, and zero
+is "painted, white".
+
+### What the lighting costs, as a number
+
+The lighting and the keyboard are the same loop. Once around it, QMK scans the matrix, hands
+what changed to the host and works out a fifth of the next lighting frame -- so an effect that
+takes longer to work out does not drop frames, it slows the loop, and the keyboard types
+later. This board has less headroom than most: the matrix alone costs 4 ms a scan, because an
+optical switch needs 500 us per strobe before the sense line means anything.
+
+So the keyboard counts and reports three things, in `lighting_rate.c`: how often a whole frame
+reaches the LED drivers, how often the main loop goes round, and how many presses `rgb_matrix`
+is still remembering. The third is what makes the first two mean anything here -- the reactive
+effects work per remembered press, so an idle keyboard measures them doing nothing. The ring
+holds eight and keeps a press for a minute, so the worst case is eight keys tapped once.
+
+```sh
+python3 tools/via-lighting.py --measure
+```
+
+Measured on the keyboard with the ring full:
+
+| Effect | Frames | Main loop |
+| --- | --- | --- |
+| Solid Color | 29 fps | 239 Hz |
+| Rainbow | 28 fps | 231 Hz |
+| Rainbow Sweep | 28 fps | 230 Hz |
+| Off | 30 fps | 239 Hz |
+| Per Key | 29 fps | 232 Hz |
+| Reactive | 28 fps | 229 Hz |
+| Reactive Splash | 25 fps | 209 Hz |
+
+The splash costs about 12% of the loop, which is the `sqrt16` per LED per remembered press,
+and it is the dearest thing this firmware draws. Both numbers fall together, which is what
+says the arithmetic is the cost rather than the frame pacing: `RGB_MATRIX_LED_FLUSH_LIMIT`
+would have held the frame rate still while the loop slowed.
 
 ## Validation
 

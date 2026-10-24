@@ -408,6 +408,14 @@
                 [
                   "Per Key",
                   5
+                ],
+                [
+                  "Reactive",
+                  6
+                ],
+                [
+                  "Reactive Splash",
+                  7
                 ]
               ],
               "content": [
@@ -423,7 +431,7 @@
                 0,
                 255
               ],
-              "showIf": "{id_qmk_rgb_matrix_effect} == 2 || {id_qmk_rgb_matrix_effect} == 3",
+              "showIf": "{id_qmk_rgb_matrix_effect} == 2 || {id_qmk_rgb_matrix_effect} == 3 || {id_qmk_rgb_matrix_effect} == 6 || {id_qmk_rgb_matrix_effect} == 7",
               "content": [
                 "id_qmk_rgb_matrix_effect_speed",
                 3,
@@ -483,6 +491,41 @@
                 "id_k100_paint_value",
                 0,
                 5
+              ]
+            }
+          ]
+        },
+        {
+          "label": "Reactive",
+          "content": [
+            {
+              "label": "Reacts in",
+              "type": "dropdown",
+              "options": [
+                [
+                  "The painted colours",
+                  0
+                ],
+                [
+                  "One colour",
+                  1
+                ]
+              ],
+              "showIf": "{id_qmk_rgb_matrix_effect} == 6 || {id_qmk_rgb_matrix_effect} == 7",
+              "content": [
+                "id_k100_reaction_source",
+                0,
+                23
+              ]
+            },
+            {
+              "label": "That colour",
+              "type": "color",
+              "showIf": "{id_qmk_rgb_matrix_effect} == 6 || {id_qmk_rgb_matrix_effect} == 7",
+              "content": [
+                "id_k100_reaction_colour",
+                0,
+                24
               ]
             }
           ]
@@ -1618,6 +1661,15 @@
                 "id_k100_led_index",
                 0,
                 4
+              ]
+            },
+            {
+              "label": "Lighting rate",
+              "type": "label",
+              "content": [
+                "id_k100_lighting_rate",
+                0,
+                22
               ]
             }
           ]

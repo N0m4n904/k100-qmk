@@ -61,7 +61,7 @@ _Static_assert(K100_PER_KEY_LEDS == RGB_MATRIX_LED_COUNT,
 _Static_assert(sizeof(k100_colour_t) == 3,
                "a colour is stored by its offset in the region, so it may not be padded");
 _Static_assert(VIA_EEPROM_CUSTOM_CONFIG_SIZE >=
-                   (K100_PER_KEY_LEDS + K100_LOCK_COUNT) * sizeof(k100_colour_t),
+                   (K100_PER_KEY_LEDS + K100_LOCK_COUNT) * sizeof(k100_colour_t) + 3,
                "the custom config region is too small for the colours; see config.h");
 _Static_assert(K100_VIA_LOCK_FIRST >= K100_VIA_ZONE_FIRST + 2 * K100_ZONE_COUNT,
                "the lock controls start inside the zones' run of values");
@@ -87,6 +87,47 @@ static k100_colour_t locks[K100_LOCK_COUNT];
 #define K100_LOCKS_OFFSET (K100_PER_KEY_LEDS * sizeof(k100_colour_t))
 
 /*
+ * What the reactive effects light a key in.
+ *
+ * Two things, and both belong here because both are colours somebody chose: where the
+ * reaction takes its colour from, and the one colour it takes when that is not the painted
+ * one.
+ *
+ * The painted keyboard is the default source and is the richer answer -- somebody who has
+ * painted their keyboard sees it react in their own colours, and nothing new had to be stored
+ * to make that true. It is not an answer somebody who has painted nothing can *change*,
+ * though, and a reaction nobody can recolour is a feature with a decision missing.
+ *
+ * A hue and a saturation, and no brightness. Deciding the brightness is what a reaction *is*,
+ * so one stored here would be a second control fighting the first. The painted entry's own
+ * brightness is still read even so, because it is the only way a single key is turned off,
+ * and a key somebody switched off has no business lighting up under a different effect.
+ *
+ * Three bytes, out of the slack this region was given for exactly this: so that the next
+ * small thing to need a few bytes would not cost anybody their keymap. Four are left. See
+ * config.h.
+ */
+enum k100_reaction_source {
+    K100_REACTION_PAINTED,
+    K100_REACTION_CHOSEN,
+};
+
+typedef struct {
+    uint8_t source;
+    uint8_t hue;
+    uint8_t sat;
+} k100_reaction_t;
+
+_Static_assert(sizeof(k100_reaction_t) == 3,
+               "the reaction is stored by its offset in the region, so it may not be padded");
+
+/** Painted, white, and so what an erased region already reads as: a keyboard that has never
+    been told any of this behaves exactly as one that was told the defaults. */
+static k100_reaction_t reaction;
+
+#define K100_REACTION_OFFSET (K100_LOCKS_OFFSET + K100_LOCK_COUNT * sizeof(k100_colour_t))
+
+/*
  * The brightness the next painted key is given.
  *
  * Deliberately not stored. It is a brush and not a property of the keyboard, and
@@ -109,6 +150,10 @@ static void store_lock(uint8_t lock) {
                              sizeof(locks[0]));
 }
 
+static void store_reaction(void) {
+    via_update_custom_config(&reaction, K100_REACTION_OFFSET, sizeof(reaction));
+}
+
 /**
  * @brief   Back to white and fully lit everywhere, in RAM and in the region.
  *
@@ -128,6 +173,9 @@ static void forget(void) {
         locks[lock] = K100_LOCK_COLOUR_DEFAULT;
         store_lock(lock);
     }
+
+    reaction = (k100_reaction_t){.source = K100_REACTION_PAINTED, .hue = 0, .sat = 0};
+    store_reaction();
 }
 
 /*
@@ -148,6 +196,7 @@ static void forget(void) {
 void via_init_kb(void) {
     via_read_custom_config(colours, 0, sizeof(colours));
     via_read_custom_config(locks, K100_LOCKS_OFFSET, sizeof(locks));
+    via_read_custom_config(&reaction, K100_REACTION_OFFSET, sizeof(reaction));
 }
 
 /*
@@ -358,4 +407,44 @@ void k100_lock_value_set(uint8_t lock, uint8_t *value_data) {
 
     locks[lock].val = value_data[0];
     store_lock(lock);
+}
+
+k100_colour_t k100_reaction_colour(uint8_t led) {
+    const k100_colour_t painted = k100_per_key_colour(led);
+
+    if (reaction.source == K100_REACTION_PAINTED) {
+        return painted;
+    }
+
+    // The painted brightness and not the painted colour: a key turned off stays off.
+    return (k100_colour_t){.hue = reaction.hue, .sat = reaction.sat, .val = painted.val};
+}
+
+void k100_reaction_source_get(uint8_t *value_data) {
+    value_data[0] = reaction.source;
+}
+
+void k100_reaction_source_set(uint8_t *value_data) {
+    reaction.source = value_data[0] == K100_REACTION_PAINTED ? K100_REACTION_PAINTED
+                                                             : K100_REACTION_CHOSEN;
+    store_reaction();
+}
+
+void k100_reaction_colour_get(uint8_t *value_data) {
+    value_data[0] = reaction.hue;
+    value_data[1] = reaction.sat;
+}
+
+void k100_reaction_colour_set(uint8_t *value_data) {
+    reaction.hue = value_data[0];
+    reaction.sat = value_data[1];
+
+    /*
+     * And picking a colour is how the reaction comes to use one, which is the same courtesy
+     * the zones get: a control whose use shows nothing is worse than one that does a little
+     * more than it says. Going back to the painted keyboard is the choice beside it, which is
+     * where somebody looks for it.
+     */
+    reaction.source = K100_REACTION_CHOSEN;
+    store_reaction();
 }

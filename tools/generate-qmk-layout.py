@@ -151,14 +151,28 @@ FN_OVERRIDES = {
 # built-in and enables through rules.mk rather than through keyboard.json -- so each is
 # keyed by the name its own kind is known by: a built-in by the lowercase name
 # keyboard.json takes, ours by the C name the effect is declared with. Only the plain
-# colour is a built-in here, which is why the three below carry that mark.
+# colour is a built-in here, which is why everything after it carries that mark.
+#
+# `speed` is what the one speed slider means to each. For the rainbows it is how fast the
+# hues move; for the reactive pair it is how long a press takes to fade and how fast a
+# splash crosses the keyboard, which is one length in rgb_matrix_kb.inc.
+#
+# `reacts` is whether the effect lights a key because it was pressed, which is what decides
+# whether the controls for the reaction's own colour are worth showing.
 ANIMATIONS = {
-    "solid_color": {"label": "Solid Color", "colour": True, "speed": False},
-    "K100_RAINBOW": {"label": "Rainbow", "colour": False, "speed": True, "custom": True},
+    "solid_color": {"label": "Solid Color", "colour": True, "speed": False, "reacts": False},
+    "K100_RAINBOW": {"label": "Rainbow", "colour": False, "speed": True, "reacts": False,
+                     "custom": True},
     "K100_RAINBOW_SWEEP": {"label": "Rainbow Sweep", "colour": False, "speed": True,
-                           "custom": True},
-    "K100_LIGHTS_OFF": {"label": "Off", "colour": False, "speed": False, "custom": True},
-    "K100_PER_KEY": {"label": "Per Key", "colour": False, "speed": False, "custom": True},
+                           "reacts": False, "custom": True},
+    "K100_LIGHTS_OFF": {"label": "Off", "colour": False, "speed": False, "reacts": False,
+                        "custom": True},
+    "K100_PER_KEY": {"label": "Per Key", "colour": False, "speed": False, "reacts": False,
+                     "custom": True},
+    "K100_REACTIVE": {"label": "Reactive", "colour": False, "speed": True, "reacts": True,
+                      "custom": True},
+    "K100_REACTIVE_SPLASH": {"label": "Reactive Splash", "colour": False, "speed": True,
+                             "reacts": True, "custom": True},
 }
 
 # QMK's channel for the RGB matrix and the prefix VIA's own menu gives its four values,
@@ -861,7 +875,8 @@ PAINT_VALUES = [("Full", 255), ("Bright", 192), ("Half", 128), ("Dim", 64), ("Of
 
 def lighting_menu(per_key_value: int, paint_value: int,
                   zones: list[tuple[str, str, int, int]], zone_first: int,
-                  locks: list[tuple[str, str, int]], lock_first: int) -> dict:
+                  locks: list[tuple[str, str, int]], lock_first: int,
+                  reaction_source: int, reaction_colour: int) -> dict:
     """VIA's lighting controls, declared here rather than taken from its built-in set.
 
     VIA ships a `qmk_rgb_matrix` menu that a definition can ask for by name, and it is the
@@ -902,6 +917,18 @@ def lighting_menu(per_key_value: int, paint_value: int,
     the brush does not: a zone is one thing with two properties, not a hundred keys waiting to
     be painted. Two values per zone, from K100_VIA_ZONE_FIRST in the order led_zones.h lists
     them, which the firmware relies on.
+
+    The fourth group is what the two reactive effects light a key in, and it exists because
+    the first answer to that was not a choice. They read the painted colours, which is the
+    richer one -- a painted keyboard reacts in its own colours -- and it leaves somebody who
+    has painted nothing with white flashes and no control over them. So the painted keyboard
+    is one of two sources rather than the only one, with a colour of the reaction's own beside
+    it, and picking that colour selects it: a control whose use shows nothing is worse than
+    one that does slightly more than it says. The group appears only while an effect that
+    reacts is running, which is what `reacts` in ANIMATIONS is for.
+
+    Not the colour control in the first group, which is the plain colour's. One knob reaching
+    across effects is the fault this keyboard has already had.
     """
     return {
         "label": "Lighting",
@@ -929,6 +956,17 @@ def lighting_menu(per_key_value: int, paint_value: int,
                 {"label": "Brightness", "type": "dropdown",
                  "options": [[label, value] for label, value in PAINT_VALUES],
                  "content": [f"{K100_VALUE}paint_value", K100_CHANNEL, paint_value]},
+            ],
+        }, {
+            "label": "Reactive",
+            "content": [
+                {"label": "Reacts in", "type": "dropdown",
+                 "options": [["The painted colours", 0], ["One colour", 1]],
+                 **only_for(effect_numbers("reacts")),
+                 "content": [f"{K100_VALUE}reaction_source", K100_CHANNEL, reaction_source]},
+                {"label": "That colour", "type": "color",
+                 **only_for(effect_numbers("reacts")),
+                 "content": [f"{K100_VALUE}reaction_colour", K100_CHANNEL, reaction_colour]},
             ],
         }, {
             "label": "Zones",
@@ -1012,7 +1050,8 @@ def reading_order(slot: Slot) -> tuple:
     return (1, (strip.group(1), int(strip.group(2) or 0)), slot.index)
 
 
-def diagnostics_group(probe_value: int, index_value: int, slots: list[Slot]) -> dict:
+def diagnostics_group(probe_value: int, index_value: int, rate_value: int,
+                      slots: list[Slot]) -> dict:
     """The LED probe: light one LED by index, and see what lights.
 
     This is the instrument LED_SLOTS was measured with, and it is what any claim about the
@@ -1033,6 +1072,12 @@ def diagnostics_group(probe_value: int, index_value: int, slots: list[Slot]) -> 
 
     The list appears only while the probe is on, which is `showIf` pointed at this keyboard's
     own value rather than at the lighting's.
+
+    Beside it, what the lighting is costing: the rate the whole LED map reaches the drivers at
+    and the rate the main loop goes round at, which are the same loop and so the two halves of
+    one answer. An effect is picked in the menu above this one and read here, which is the
+    whole reason it is a number the keyboard reports rather than something to form an
+    impression of. See lighting_rate.c.
     """
     return {
         "label": "Diagnostics",
@@ -1044,11 +1089,13 @@ def diagnostics_group(probe_value: int, index_value: int, slots: list[Slot]) -> 
                          for slot in sorted(slots, key=reading_order)],
              "showIf": f"{{{K100_VALUE}led_probe}} == 1",
              "content": [f"{K100_VALUE}led_index", K100_CHANNEL, index_value]},
+            {"label": "Lighting rate", "type": "label",
+             "content": [f"{K100_VALUE}lighting_rate", K100_CHANNEL, rate_value]},
         ],
     }
 
 
-def firmware_menu(version_value: int, probe_value: int, index_value: int,
+def firmware_menu(version_value: int, probe_value: int, index_value: int, rate_value: int,
                   slots: list[Slot]) -> dict:
     """A menu that shows which firmware is on the keyboard, asked of the keyboard.
 
@@ -1068,7 +1115,7 @@ def firmware_menu(version_value: int, probe_value: int, index_value: int,
                      "content": [f"{K100_VALUE}version", K100_CHANNEL, version_value]},
                 ],
             },
-            diagnostics_group(probe_value, index_value, slots),
+            diagnostics_group(probe_value, index_value, rate_value, slots),
         ],
     }
 
@@ -1164,10 +1211,13 @@ def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, in
         "menus": [lighting_menu(values["K100_VIA_PER_KEY_COLOUR"],
                                 values["K100_VIA_PAINT_VALUE"],
                                 zones, values["K100_VIA_ZONE_FIRST"],
-                                locks, values["K100_VIA_LOCK_FIRST"]),
+                                locks, values["K100_VIA_LOCK_FIRST"],
+                                values["K100_VIA_REACTION_SOURCE"],
+                                values["K100_VIA_REACTION_COLOUR"]),
                   firmware_menu(values["K100_VIA_VERSION"],
                                 values["K100_VIA_LED_PROBE"],
                                 values["K100_VIA_LED_INDEX"],
+                                values["K100_VIA_LIGHTING_RATE"],
                                 slots)],
     }
 
@@ -1236,7 +1286,8 @@ def main() -> int:
               ("K100_VIA_PER_KEY_COLOUR", "K100_VIA_VERSION",
                "K100_VIA_LED_PROBE", "K100_VIA_LED_INDEX",
                "K100_VIA_PAINT_VALUE", "K100_VIA_ZONE_FIRST",
-               "K100_VIA_LOCK_FIRST")}
+               "K100_VIA_LOCK_FIRST", "K100_VIA_LIGHTING_RATE",
+               "K100_VIA_REACTION_SOURCE", "K100_VIA_REACTION_COLOUR")}
 
     # Everything that scans but did not land in the matrix must be an encoder, or the join
     # has silently dropped a key.

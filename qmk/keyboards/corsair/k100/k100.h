@@ -76,6 +76,18 @@ enum k100_via_value {
      * two controls on one number would be one control doing two things.
      */
     K100_VIA_LOCK_FIRST = 16,
+    /**
+     * How fast the lighting and the main loop are running, as text.
+     *
+     * After the locks' run rather than in the gap the zones left, because a value that moves
+     * when a zone is added is a value the definition and the firmware would have to be kept
+     * in step about by hand. See lighting_rate.c for what the two numbers are.
+     */
+    K100_VIA_LIGHTING_RATE = 22,
+    /** Whether a reactive effect lights a key in what it is painted or in one chosen colour. */
+    K100_VIA_REACTION_SOURCE = 23,
+    /** That one colour, for when it is the one chosen. */
+    K100_VIA_REACTION_COLOUR = 24,
 };
 
 /**
@@ -169,6 +181,34 @@ void k100_lock_value_set(uint8_t lock, uint8_t *value_data);
 
 /** @brief What to paint on a lock's key, as the colour it is stored with. */
 k100_colour_t k100_lock_colour(uint8_t lock);
+
+/**
+ * @brief   What a key lights up in when it is pressed under a reactive effect.
+ *
+ * @details Either what the key painter put on it -- which is the default, and makes a painted
+ *          keyboard react in its own colours -- or the one colour chosen for the reaction.
+ *          Its brightness is the painted one either way, because that is how a single key is
+ *          turned off and a key that is off should stay off. See per_key_colour.c.
+ */
+k100_colour_t k100_reaction_colour(uint8_t led);
+
+void k100_reaction_source_get(uint8_t *value_data);
+void k100_reaction_source_set(uint8_t *value_data);
+void k100_reaction_colour_get(uint8_t *value_data);
+void k100_reaction_colour_set(uint8_t *value_data);
+
+/**
+ * @brief   Counts one finished lighting frame. See lighting_rate.c.
+ *
+ * @details Called from the indicator hook, which rgb_matrix runs exactly once per frame --
+ *          after the last slice has been worked out and before it is sent to the drivers. A
+ *          frame that is not rendered is not counted, so the rate falls to zero when the
+ *          lighting is off, which is the truth about it.
+ */
+void k100_frame_rendered(void);
+
+/** @brief The frame and scan rates, as the line of text VIA displays. */
+void k100_lighting_rate_get(uint8_t *value_data);
 
 /**
  * Lights the one LED the probe names, if it is on.

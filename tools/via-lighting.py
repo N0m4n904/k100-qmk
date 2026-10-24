@@ -9,10 +9,18 @@ these read and write here, the app's sliders reach the same code.
     python3 tools/via-lighting.py                       # read all four
     python3 tools/via-lighting.py --effect 2            # rainbow, until reboot
     python3 tools/via-lighting.py --colour 0,255 --brightness 200 --save
+    python3 tools/via-lighting.py --measure             # what each effect costs
 
 A write is kept in RAM unless --save is given, so anything set here is undone by
 unplugging the keyboard. That is QMK's split, not this tool's: the app's sliders
 set values live and save them separately.
+
+`--measure` runs every effect in turn and reads back what the keyboard says it
+is managing: how often a whole frame reaches the LED drivers, and how often the
+main loop goes round, which is the same loop and so what typing latency is made
+of. Tap eight keys first and read the hit count beside each line -- the reactive
+effects work per remembered press, so an idle keyboard measures them doing
+nothing. See lighting_rate.c for what the numbers are counted in.
 
 Effect names come from the VIA definition rather than from a list of their own,
 which makes a read a check of the definition too: the number the firmware
@@ -27,6 +35,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
+from collections.abc import Iterator
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -52,6 +62,15 @@ VALUES = {
 #: Where the app's menu is declared, read for the effect names.
 DEFINITION = Path(__file__).resolve().parent.parent / "via/k100-iso-de.json"
 
+#: The dropdown that carries them, by the name VIA knows it as.
+EFFECT = "id_qmk_rgb_matrix_effect"
+
+#: The diagnostic that reports what the lighting is costing, looked up in the
+#: definition by this name rather than by a number written down here: the
+#: firmware picks the number and the definition repeats it, so the definition is
+#: where to ask. See lighting_rate.c.
+RATE = "id_k100_lighting_rate"
+
 
 #: The values a write lands in unchanged, and so can be checked by reading them
 #: back. Brightness is not one of them: the firmware scales it by its own
@@ -63,34 +82,49 @@ DEFINITION = Path(__file__).resolve().parent.parent / "via/k100-iso-de.json"
 EXACT = ("effect", "speed", "colour")
 
 
-def effect_names() -> dict[int, str]:
-    """The effect numbers the app offers, by value, from the definition's menu.
+def menu_items() -> Iterator[dict]:
+    """Every control the definition declares, in the order it declares them.
 
-    Empty if the definition is missing or declares no lighting menu, in which
-    case the numbers are reported bare -- a missing file is not a reason to fail
-    a read of the keyboard.
+    Nothing if the definition is missing or unreadable -- a file that is not there is not a
+    reason to fail a read of the keyboard, only a reason to report numbers without their
+    names.
     """
     try:
         definition = json.loads(DEFINITION.read_text())
     except (OSError, ValueError):
-        return {}
+        return
 
     for menu in definition.get("menus", []):
         # A menu is either one of VIA's own by name or a declaration of its own.
         # Only the second kind says anything about the numbers.
         if not isinstance(menu, dict):
             continue
-        for submenu in menu.get("content", []):
-            for item in submenu.get("content", []):
-                if item.get("content", [])[:1] != ["id_qmk_rgb_matrix_effect"]:
-                    continue
-                options = item["options"]
-                # VIA takes either plain labels, numbered by position, or
-                # labels carrying their own value.
-                if all(isinstance(option, str) for option in options):
-                    return dict(enumerate(options))
-                return {value: label for label, value, *_ in options}
+        for group in menu.get("content", []):
+            yield from group.get("content", [])
+
+
+def effect_names() -> dict[int, str]:
+    """The effect numbers the app offers, by value, from the definition's menu."""
+    for item in menu_items():
+        if item.get("content", [])[:1] != [EFFECT]:
+            continue
+
+        options = item["options"]
+        # VIA takes either plain labels, numbered by position, or labels
+        # carrying their own value.
+        if all(isinstance(option, str) for option in options):
+            return dict(enumerate(options))
+        return {value: label for label, value, *_ in options}
     return {}
+
+
+def rate_address() -> tuple[int, int] | None:
+    """Which channel and value the lighting rate is read on, from the definition."""
+    for item in menu_items():
+        content = item.get("content", [])
+        if content[:1] == [RATE]:
+            return content[1], content[2]
+    return None
 
 
 def read(node: Path, name: str) -> list[int] | None:
@@ -117,6 +151,54 @@ def write(node: Path, name: str, data: list[int]) -> None:
     exchange(node, bytes([CUSTOM_SET_VALUE, CHANNEL, value_id, *data]))
 
 
+def read_rate(node: Path, address: tuple[int, int]) -> str:
+    """What the keyboard says it is managing, in its own words.
+
+    Text rather than numbers, because it is a `label` in the app's menu and the keyboard
+    words it: the host displays what it is handed instead of deciding how to phrase a
+    measurement it did not take.
+    """
+    channel, value_id = address
+    reply = exchange(node, bytes([CUSTOM_GET_VALUE, channel, value_id]))
+
+    if reply is None or reply[0] == UNHANDLED:
+        return "not answered -- is this firmware new enough to report it?"
+
+    return bytes(reply[3:]).split(b"\x00")[0].decode("ascii", "replace")
+
+
+def measure(node: Path, names: dict[int, str], settle_s: float) -> int:
+    """Every effect in turn, and what the keyboard manages while it runs.
+
+    Each one is left running for longer than the window the keyboard averages over, so that
+    what comes back is that effect's number and not the last one's. Nothing is saved, so the
+    effect the keyboard was showing is the effect it is showing afterwards.
+    """
+    address = rate_address()
+    if address is None:
+        print(f"the definition declares no {RATE}, so there is nothing to read. Regenerate "
+              f"it with tools/generate-qmk-layout.py.", file=sys.stderr)
+        return 1
+
+    before = read(node, "effect")
+    if before is None:
+        return 1
+
+    print(f"\nmeasured over {settle_s:g} s per effect. Tap eight keys if the hit count below "
+          f"reads zero:\nthe reactive effects work per remembered press, and none remembered "
+          f"is none of their cost.\n")
+
+    for number, name in sorted(names.items()):
+        write(node, "effect", [number])
+        time.sleep(settle_s)
+        print(f"  {number}  {name:<16} {read_rate(node, address)}")
+
+    write(node, "effect", before)
+    print(f"\nback to {before[0]} ({names.get(before[0], 'not in the definition')}), and "
+          f"nothing was saved")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -129,6 +211,10 @@ def main() -> int:
     parser.add_argument("--colour", help="hue,saturation, each 0 to 255")
     parser.add_argument("--save", action="store_true",
                         help="also write the result to the part's EEPROM")
+    parser.add_argument("--measure", action="store_true",
+                        help="run each effect in turn and read what it costs")
+    parser.add_argument("--settle", type=float, default=2.5, metavar="SECONDS",
+                        help="how long each effect runs while measuring")
     args = parser.parse_args()
 
     entry = device(args.vid, args.pid)
@@ -200,6 +286,9 @@ def main() -> int:
 
     if args.save and asked:
         print("\nsaved to EEPROM, so it survives a reboot.")
+
+    if args.measure:
+        return measure(node, names, args.settle)
 
     return 0
 

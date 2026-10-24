@@ -92,9 +92,12 @@ def colour(text: str) -> tuple[int, int]:
     return (int(hue), int(sat))
 
 
-def zone_value(family: str, what: str = "") -> tuple[int, int]:
-    """The channel and value one of a zone's controls is sent on, out of the definition."""
-    wanted = f"id_k100_zone_{family}{what}"
+def menu_value(wanted: str) -> tuple[int, int] | None:
+    """The channel and value a named control is sent on, out of the definition.
+
+    The definition is where to ask: the firmware picks these numbers and the definition only
+    repeats them, so a tool that wrote its own copy down would be testing itself.
+    """
 
     def walk(item):
         if isinstance(item, dict):
@@ -109,10 +112,57 @@ def zone_value(family: str, what: str = "") -> tuple[int, int]:
                     return found
         return None
 
-    found = walk(json.loads(DEFINITION.read_text()).get("menus", []))
+    return walk(json.loads(DEFINITION.read_text()).get("menus", []))
+
+
+def zone_value(family: str, what: str = "") -> tuple[int, int]:
+    """The channel and value one of a zone's controls is sent on."""
+    found = menu_value(f"id_k100_zone_{family}{what}")
     if found is None:
         raise SystemExit(f"{DEFINITION} has no zone called {family}")
     return found
+
+
+#: What the reaction's source byte means, from `enum k100_reaction_source` in
+#: per_key_colour.c.
+REACTION_PAINTED = 0
+REACTION_CHOSEN = 1
+
+
+def reaction(node: Path, wanted: str) -> int:
+    """Reads or sets what the reactive effects light a key in.
+
+    One option for both halves, because the firmware treats them as one: picking a colour is
+    what selects it, so `--reaction 10,255` says everything, and `--reaction painted` is the
+    way back.
+    """
+    source = menu_value("id_k100_reaction_source")
+    chosen = menu_value("id_k100_reaction_colour")
+    if source is None or chosen is None:
+        raise SystemExit(f"{DEFINITION} declares no reaction colour; regenerate it with "
+                         f"tools/generate-qmk-layout.py")
+
+    if wanted == "painted":
+        if exchange(node, bytes([CUSTOM_SET_VALUE, *source, REACTION_PAINTED])) is None:
+            print("the reaction's source was not set", file=sys.stderr)
+            return 1
+    elif wanted:
+        hue, sat = colour(wanted)
+        if exchange(node, bytes([CUSTOM_SET_VALUE, *chosen, hue, sat])) is None:
+            print("the reaction's colour was not set", file=sys.stderr)
+            return 1
+
+    source_reply = exchange(node, bytes([CUSTOM_GET_VALUE, *source]))
+    colour_reply = exchange(node, bytes([CUSTOM_GET_VALUE, *chosen]))
+    if source_reply is None or colour_reply is None:
+        print("the reaction was not read", file=sys.stderr)
+        return 1
+
+    if source_reply[3] == REACTION_PAINTED:
+        print("reaction the painted colours")
+    else:
+        print(f"reaction one colour, hue {colour_reply[3]}, saturation {colour_reply[4]}")
+    return 0
 
 
 def main() -> int:
@@ -136,12 +186,16 @@ def main() -> int:
     parser.add_argument("--all", type=int, metavar="N", nargs="?", const=190,
                         help="read the first N LEDs and report the ones that carry a "
                              "colour, which is what a stored picture looks like from here")
+    parser.add_argument("--reaction", nargs="?", const="", metavar="painted|HUE,SAT",
+                        help="what the reactive effects light a key in: the painted colours, "
+                             "or one colour, which picking selects. Reads it when given "
+                             "nothing")
     args = parser.parse_args()
 
     if all(each is None for each in (args.led, args.brightness, args.all, args.zone,
-                                     args.dump, args.load)):
-        raise SystemExit("--led, --zone, --brightness, --all, --dump, --load, or a "
-                         "combination")
+                                     args.dump, args.load, args.reaction)):
+        raise SystemExit("--led, --zone, --brightness, --all, --dump, --load, --reaction, "
+                         "or a combination")
 
     entry = device(args.vid, args.pid)
     if entry is None:
@@ -156,6 +210,11 @@ def main() -> int:
         return 1
     node, protocol = found
     print(f"VIA on {node}, protocol {protocol:#06x}")
+
+    if args.reaction is not None:
+        failed = reaction(node, args.reaction)
+        if failed:
+            return failed
 
     if args.brightness is not None:
         if exchange(node, bytes([CUSTOM_SET_VALUE, K100_CHANNEL, PAINT_VALUE,

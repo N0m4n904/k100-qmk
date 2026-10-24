@@ -180,6 +180,15 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 case K100_VIA_PAINT_VALUE:
                     k100_paint_value_get(value_data);
                     return;
+                case K100_VIA_LIGHTING_RATE:
+                    k100_lighting_rate_get(value_data);
+                    return;
+                case K100_VIA_REACTION_SOURCE:
+                    k100_reaction_source_get(value_data);
+                    return;
+                case K100_VIA_REACTION_COLOUR:
+                    k100_reaction_colour_get(value_data);
+                    return;
             }
             break;
 
@@ -188,7 +197,8 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 case K100_VIA_PER_KEY_COLOUR:
                     k100_per_key_colour_set(value_data);
                     return;
-                // The version is not ours to be told.
+                // The version is not ours to be told, and nor is the frame rate:
+                // a measurement is something the keyboard answers.
                 case K100_VIA_LED_PROBE:
                     probe_lit = value_data[0] != 0;
                     return;
@@ -197,6 +207,12 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                     return;
                 case K100_VIA_PAINT_VALUE:
                     k100_paint_value_set(value_data);
+                    return;
+                case K100_VIA_REACTION_SOURCE:
+                    k100_reaction_source_set(value_data);
+                    return;
+                case K100_VIA_REACTION_COLOUR:
+                    k100_reaction_colour_set(value_data);
                     return;
             }
             break;
