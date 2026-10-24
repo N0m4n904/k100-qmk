@@ -831,6 +831,10 @@ def lighting_menu(per_key_value: int, paint_value: int,
     key painted afterwards takes it, with `Off` at the bottom of the same control, because a
     key that is off is a key whose brightness is zero.
 
+    The brush's brightness appears in both groups, bound to the one value, because it applies
+    to both and a control that cannot be seen cannot be used: a zone set to `Off` from the
+    Zones group has to be switchable back on from the Zones group.
+
     The third group is the lights the painter cannot reach at all: the three bars, the ring
     around the wheel and the logo have no key to click on, so each gets a colour of its own
     and takes it as a whole. Same storage, same brush brightness -- including its `Off`, which
@@ -867,9 +871,18 @@ def lighting_menu(per_key_value: int, paint_value: int,
         }, {
             "label": "Zones",
             "content": [
-                {"label": label, "type": "color",
-                 "content": [f"{K100_VALUE}zone_{family}", K100_CHANNEL, zone_first + number]}
-                for number, (label, family, _, _) in enumerate(zones)
+                *({"label": label, "type": "color",
+                   "content": [f"{K100_VALUE}zone_{family}", K100_CHANNEL,
+                               zone_first + number]}
+                  for number, (label, family, _, _) in enumerate(zones)),
+                # The same brush, named and bound the same way, so it is in reach of the
+                # thing it applies to. One value, one cached name, two places it is shown --
+                # which is what keeps them from disagreeing. Without it a zone set to `Off`
+                # could not be turned back on from here at all: the colour control sends a
+                # hue and a saturation, and neither is a brightness.
+                {"label": "Brightness", "type": "dropdown",
+                 "options": [[label, value] for label, value in PAINT_VALUES],
+                 "content": [f"{K100_VALUE}paint_value", K100_CHANNEL, paint_value]},
             ],
         }],
     }

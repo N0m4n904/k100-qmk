@@ -534,6 +534,37 @@
                 0,
                 10
               ]
+            },
+            {
+              "label": "Brightness",
+              "type": "dropdown",
+              "options": [
+                [
+                  "Full",
+                  255
+                ],
+                [
+                  "Bright",
+                  192
+                ],
+                [
+                  "Half",
+                  128
+                ],
+                [
+                  "Dim",
+                  64
+                ],
+                [
+                  "Off",
+                  0
+                ]
+              ],
+              "content": [
+                "id_k100_paint_value",
+                0,
+                5
+              ]
             }
           ]
         }
