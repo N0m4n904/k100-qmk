@@ -547,7 +547,7 @@ def rgb_layout(slots: list[Slot], to_qmk) -> list[dict]:
              for slot in slots]
 
     # Two key LEDs at one position have to be two lights under one key, because that is how
-    # the firmware finds them: VIA's key painter writes one index and per_key_colour.c gives
+    # the firmware finds them: VIA's key painter writes one index and lighting_store.c gives
     # the colour to every other LED at the same place. Two different keys landing on one
     # position would quietly take each other's colour, which is what this refuses.
     together: dict[tuple[int, int], list[int]] = {}
@@ -1054,10 +1054,22 @@ def also_when(shown: dict, condition: str) -> dict:
 
 
 # What `Reacts in` offers and the number each sends, from `enum k100_reaction_source` in
-# per_key_colour.c. The chosen one is named because the colour beside it is shown only for
+# lighting_store.c. The chosen one is named because the colour beside it is shown only for
 # that answer, and the number would otherwise be written down twice.
 REACTION_SOURCES = [("The painted colours", 0), ("One colour", 1)]
 REACTION_CHOSEN = 1
+
+
+# How long the keyboard may be left alone before the lighting rests, as the number of minutes
+# each entry sends. Zero is never and is the default, because a keyboard that goes dark on its
+# own without being asked to looks broken.
+#
+# A list rather than a slider, for the reason the brush's brightness has one: VIA draws a
+# range with no number beside it, and "how long" is a question a control has to be able to
+# answer. The lighting also rests while the host is asleep, which is not a preference and so
+# has no control here. See lighting_sleep.c.
+SLEEP_AFTER = [("Never", 0), ("1 minute", 1), ("5 minutes", 5), ("10 minutes", 10),
+               ("30 minutes", 30), ("1 hour", 60)]
 
 
 # How bright a painted key is, and the one way to turn a single key off.
@@ -1073,7 +1085,7 @@ def lighting_menu(per_key_value: int, paint_value: int,
                   zones: list[tuple[str, str, int, int]], zone_first: int,
                   locks: list[tuple[str, str, int]], lock_first: int,
                   reaction_source: int, reaction_colour: int, buttons_react: int,
-                  lights_react: int) -> dict:
+                  lights_react: int, sleep_after: int) -> dict:
     """VIA's lighting controls, declared here rather than taken from its built-in set.
 
     VIA ships a `qmk_rgb_matrix` menu that a definition can ask for by name, and it is the
@@ -1099,7 +1111,7 @@ def lighting_menu(per_key_value: int, paint_value: int,
     on, which is channel zero, value one -- VIA's number, not this keyboard's, which is why
     the keyboard's own values start at two. Only the keys can be painted, because only keys
     are drawn; the bars, the logo and the wheel's ring have no key to click. See
-    per_key_colour.c.
+    lighting_store.c.
 
     Beside it is the one thing the palette cannot send: how bright a painted key is. The
     application's palette carries a hue and a saturation, and neither can say "off" -- zero
@@ -1134,7 +1146,7 @@ def lighting_menu(per_key_value: int, paint_value: int,
 
     What none of them is, is the *same* colour. One knob reaching across effects is the fault
     this keyboard has already had, and the reaction's colour is stored separately for that
-    reason; see per_key_colour.c.
+    reason; see lighting_store.c.
 
     Last of the three, whether the four buttons above the keys react at all. They are keys and
     a reaction had them flashing with the typing, which is not what a strip of mode buttons
@@ -1174,6 +1186,11 @@ def lighting_menu(per_key_value: int, paint_value: int,
                 {"label": "Bars and logo react", "type": "toggle",
                  **only_for(effect_numbers("travels")),
                  "content": [f"{K100_VALUE}lights_react", K100_CHANNEL, lights_react]},
+                # Unconditional, unlike the four above it: when the lighting rests is a
+                # question about the keyboard rather than about whichever effect is running.
+                {"label": "Lights off after", "type": "dropdown",
+                 "options": [[label, minutes] for label, minutes in SLEEP_AFTER],
+                 "content": [f"{K100_VALUE}sleep_after", K100_CHANNEL, sleep_after]},
             ],
         }, {
             "label": "Per Key",
@@ -1266,7 +1283,7 @@ def reading_order(slot: Slot) -> tuple:
     return (1, (strip.group(1), int(strip.group(2) or 0)), slot.index)
 
 
-def diagnostics_group(probe_value: int, index_value: int, rate_value: int,
+def diagnostics_group(probe_value: int, index_value: int, rate_value: int, nkro_value: int,
                       slots: list[Slot]) -> dict:
     """The LED probe: light one LED by index, and see what lights.
 
@@ -1294,6 +1311,11 @@ def diagnostics_group(probe_value: int, index_value: int, rate_value: int,
     one answer. An effect is picked in the menu above this one and read here, which is the
     whole reason it is a number the keyboard reports rather than something to form an
     impression of. See lighting_rate.c.
+
+    And whether NKRO is on, which Fn+N toggles and nothing showed. The honest test is still
+    holding seven keys and counting what arrives -- the boot report has six places, and that
+    is the whole of the difference -- but "hold seven keys" is a poor way to answer "is it
+    on", and the keyboard knows the answer.
     """
     return {
         "label": "Diagnostics",
@@ -1307,12 +1329,14 @@ def diagnostics_group(probe_value: int, index_value: int, rate_value: int,
              "content": [f"{K100_VALUE}led_index", K100_CHANNEL, index_value]},
             {"label": "Lighting rate", "type": "label",
              "content": [f"{K100_VALUE}lighting_rate", K100_CHANNEL, rate_value]},
+            {"label": "NKRO", "type": "label",
+             "content": [f"{K100_VALUE}nkro", K100_CHANNEL, nkro_value]},
         ],
     }
 
 
 def firmware_menu(version_value: int, probe_value: int, index_value: int, rate_value: int,
-                  slots: list[Slot]) -> dict:
+                  nkro_value: int, slots: list[Slot]) -> dict:
     """A menu that shows which firmware is on the keyboard, asked of the keyboard.
 
     VIA displays no firmware version anywhere. It reads one, and uses it only to hide menu
@@ -1331,7 +1355,7 @@ def firmware_menu(version_value: int, probe_value: int, index_value: int, rate_v
                      "content": [f"{K100_VALUE}version", K100_CHANNEL, version_value]},
                 ],
             },
-            diagnostics_group(probe_value, index_value, rate_value, slots),
+            diagnostics_group(probe_value, index_value, rate_value, nkro_value, slots),
         ],
     }
 
@@ -1371,7 +1395,7 @@ def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, in
     # asks for per-key colours only if a key names an LED, and then for every
     # index from zero to the largest one named. The first of the two for a key
     # that has two -- the application paints one index, and the firmware gives
-    # the colour to the key's other light; see per_key_colour.c.
+    # the colour to the key's other light; see lighting_store.c.
     under: dict[str, int] = {}
     for slot in slots:
         if slot.key is not None:
@@ -1431,11 +1455,13 @@ def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, in
                                 values["K100_VIA_REACTION_SOURCE"],
                                 values["K100_VIA_REACTION_COLOUR"],
                                 values["K100_VIA_BUTTONS_REACT"],
-                                values["K100_VIA_LIGHTS_REACT"]),
+                                values["K100_VIA_LIGHTS_REACT"],
+                                values["K100_VIA_SLEEP_AFTER"]),
                   firmware_menu(values["K100_VIA_VERSION"],
                                 values["K100_VIA_LED_PROBE"],
                                 values["K100_VIA_LED_INDEX"],
                                 values["K100_VIA_LIGHTING_RATE"],
+                                values["K100_VIA_NKRO"],
                                 slots)],
     }
 
@@ -1506,7 +1532,8 @@ def main() -> int:
                "K100_VIA_PAINT_VALUE", "K100_VIA_ZONE_FIRST",
                "K100_VIA_LOCK_FIRST", "K100_VIA_LIGHTING_RATE",
                "K100_VIA_REACTION_SOURCE", "K100_VIA_REACTION_COLOUR",
-               "K100_VIA_BUTTONS_REACT", "K100_VIA_LIGHTS_REACT")}
+               "K100_VIA_BUTTONS_REACT", "K100_VIA_LIGHTS_REACT",
+               "K100_VIA_SLEEP_AFTER", "K100_VIA_NKRO")}
 
     # Everything that scans but did not land in the matrix must be an encoder, or the join
     # has silently dropped a key.

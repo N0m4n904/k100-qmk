@@ -20,7 +20,7 @@
  * a second place, and the second place is the one somebody is looking at: an
  * icon above the number pad is a long way from the key that was just pressed.
  * Which LED sits under which lock key is generated out of the measured table,
- * and the colours are stored beside the painted ones; see per_key_colour.c.
+ * and the colours are stored beside the painted ones; see lighting_store.c.
  */
 
 #include "quantum.h"

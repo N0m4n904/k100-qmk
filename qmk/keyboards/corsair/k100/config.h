@@ -51,7 +51,8 @@
  * a key that does nothing at all while every other part of the path measures
  * correct.
  *
- * 0xFEE3 is upstream's. Moved down when the default lighting became white,
+ * 0xFEE3 is upstream's. Moved down when the lighting region was given room to grow into, and
+ * before that when the default lighting became white,
  * again when the Windows lock key was given a keycode, again when the wheel
  * button was given one, again when the macro keys stopped sending F13-F18 and
  * became VIA's macros, again when the Fn layer took on NKRO and the effect
@@ -63,7 +64,7 @@
  * number is for, and what forgetting it looks like: a key that still does the
  * old thing however correct the build is.
  */
-#define EECONFIG_MAGIC_NUMBER (uint16_t)0xFEDB
+#define EECONFIG_MAGIC_NUMBER (uint16_t)0xFEDA
 
 /*
  * Room for one colour per LED, which is what VIA's key painter writes.
@@ -73,17 +74,27 @@
  * declaring a size is what creates it. 190 LEDs at three bytes each -- a hue, a
  * saturation and a brightness -- and sixteen more.
  *
- * Nine of those sixteen are the colours the lock keys show while their locks are
- * on. The other seven are deliberate slack: growing this region is the one thing
- * left that clears what a user has stored, so the next small thing to need a few
- * bytes should not cost them their keymap. Spare bytes read as zero and nothing
- * looks at them.
+ * Nine of those forty-eight are the colours the lock keys show while their locks
+ * are on, five are what the reactive effects do, and one is how long the
+ * lighting waits before it rests. The remaining thirty-three are deliberate
+ * slack, and the slack is the point of the number.
+ *
+ * Growing this region is the one thing left that clears what a user has stored,
+ * which is why it was last grown *on purpose* rather than under pressure: there
+ * were two bytes left, every small setting was costing one, and the next one
+ * would have forced the reset anyway at whatever moment it happened to be
+ * wanted. It was done once, deliberately, with tools/k100-backup.py proven
+ * around it, and thirty-three bytes is a long time at the rate settings arrive.
+ *
+ * Spare bytes read as zero, and every default in lighting_store.c is zero for
+ * that reason: a keyboard that has never been told any of this behaves exactly
+ * as one that was told the defaults.
  *
  * The brightness is not in what VIA sends and is stored all the same, because it
  * is the only way to say that one key is off: zero saturation is white, not
  * dark. The application's palette carries a hue and a saturation, so the
  * brightness is set as a property of the brush instead; see
- * K100_VIA_PAINT_VALUE and per_key_colour.c.
+ * K100_VIA_PAINT_VALUE and lighting_store.c.
  *
  * It comes out of what the dynamic keymap leaves, so the macro buffer shrinks by
  * the same amount: 855 bytes before any of this was taken, and the keyboard
@@ -91,7 +102,7 @@
  * EEPROM driver's own header for why the whole region is 2 KB rather than the
  * array's 16.
  */
-#define VIA_EEPROM_CUSTOM_CONFIG_SIZE (190 * 3 + 16)
+#define VIA_EEPROM_CUSTOM_CONFIG_SIZE (190 * 3 + 48)
 
 /*
  * What tells VIA's stored data apart, instead of the build date.
@@ -132,6 +143,26 @@
  * VIA's Diagnostics menu, see lighting_rate.c.
  */
 #define RGB_MATRIX_KEYPRESSES
+
+/*
+ * Let the lighting be turned off while nothing is using it.
+ *
+ * This is what makes `rgb_matrix_set_suspend_state()` do anything: without it
+ * the call compiles to nothing and the flag it sets is never read, so a
+ * keyboard cannot be told to rest. With it, the lighting task renders one black
+ * frame, flushes it and then stops sending frames until it is told otherwise.
+ *
+ * **QMK's own route to it does not exist on this keyboard.** The only caller of
+ * `suspend_power_down()` is the loop in protocol_pre_task() that waits for a
+ * suspended host, and that loop is compiled out here by NO_USB_STARTUP_CHECK --
+ * deliberately, because it never reaches housekeeping and the watchdog this
+ * firmware inherits is fed from there. So nothing told the lighting that the
+ * host had gone to sleep, and it stayed lit all night.
+ *
+ * lighting_sleep.c decides it instead, from the main loop, where the watchdog
+ * keeps being fed.
+ */
+#define RGB_MATRIX_SLEEP
 
 /* Temporary: USB bring-up diagnostic, see bootloader.c. */
 /*

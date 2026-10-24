@@ -906,6 +906,15 @@ void housekeeping_task_kb(void) {
         lpcWwdtFeed();
     }
 
+    /*
+     * Also every iteration and also before the early returns: whether the
+     * lighting should be dark is a question about the host and the clock, and
+     * both keep moving while this function is busy deciding it is not needed.
+     * See lighting_sleep.c, which is here rather than in a QMK hook because the
+     * hook for it is inside the very loop this keyboard cannot run.
+     */
+    k100_lighting_sleep_task();
+
 #ifdef K100_USB_DIAGNOSTIC
     /* Once, not every iteration: this one reports that the loop was reached, and
        a marker that ran on every pass would stop it being a loop. */

@@ -40,7 +40,7 @@ enum k100_via_value {
      * VIA's key painter reaches per-key colours on channel zero, value one,
      * and that is fixed in the application. This keyboard's own values
      * therefore start at two; the version used to be here, which would have
-     * answered the painter with a version string. See per_key_colour.c.
+     * answered the painter with a version string. See lighting_store.c.
      */
     K100_VIA_PER_KEY_COLOUR = 1,
     /** The firmware version, as text for VIA to display. */
@@ -92,6 +92,15 @@ enum k100_via_value {
     K100_VIA_BUTTONS_REACT = 25,
     /** Whether a wave crossing the keyboard runs over the bars and the logo as well. */
     K100_VIA_LIGHTS_REACT = 26,
+    /** How many minutes the keyboard may be left alone before the lighting rests; 0 is never. */
+    K100_VIA_SLEEP_AFTER = 27,
+    /**
+     * Whether every key can be reported at once, as text.
+     *
+     * Read only. Fn+N is what changes it, and this is so that somebody can see which way it
+     * went without holding seven keys down to find out.
+     */
+    K100_VIA_NKRO = 28,
 };
 
 /**
@@ -125,7 +134,7 @@ typedef struct {
     uint8_t val;
 } k100_colour_t;
 
-/** @brief What the key painter has put on this LED. See per_key_colour.c. */
+/** @brief What the key painter has put on this LED. See lighting_store.c. */
 k100_colour_t k100_per_key_colour(uint8_t led);
 
 /**
@@ -192,7 +201,7 @@ k100_colour_t k100_lock_colour(uint8_t lock);
  * @details Either what the key painter put on it -- which is the default, and makes a painted
  *          keyboard react in its own colours -- or the one colour chosen for the reaction.
  *          Its brightness is the painted one either way, because that is how a single key is
- *          turned off and a key that is off should stay off. See per_key_colour.c.
+ *          turned off and a key that is off should stay off. See lighting_store.c.
  */
 k100_colour_t k100_reaction_colour(uint8_t led);
 
@@ -226,6 +235,21 @@ bool k100_lights_react(void);
 
 void k100_lights_react_get(uint8_t *value_data);
 void k100_lights_react_set(uint8_t *value_data);
+
+/**
+ * @brief   How many minutes of being left alone before the lighting rests, or zero for never.
+ *
+ * @details Zero by default, because a keyboard that goes dark on its own without being asked
+ *          to looks broken. The other reason the lighting rests -- the host going to sleep --
+ *          is not a preference and has no setting. See lighting_sleep.c.
+ */
+uint8_t k100_sleep_after(void);
+
+void k100_sleep_after_get(uint8_t *value_data);
+void k100_sleep_after_set(uint8_t *value_data);
+
+/** @brief Decides whether the lighting should be dark, once per trip round the main loop. */
+void k100_lighting_sleep_task(void);
 
 /**
  * @brief   Counts one finished lighting frame. See lighting_rate.c.

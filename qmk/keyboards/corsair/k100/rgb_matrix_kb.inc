@@ -46,7 +46,7 @@
  * keyboard somebody has painted reacts in their own colours, or one colour
  * chosen for the reaction. Either way it is not the colour the plain-colour
  * effect uses, which is the mistake this keyboard already made once: one knob
- * reaching across three effects. See per_key_colour.c for both.
+ * reaching across three effects. See lighting_store.c for both.
  *
  * Both leave the bars and the logo showing their painted colour, which is the
  * only honest answer: no key press ever lands on them, so there is nothing for
@@ -143,7 +143,7 @@ bool K100_RAINBOW_SWEEP(effect_params_t* params) {
 /**
  * @brief   What the key painter put on one LED, as light.
  *
- * @details The colours come from per_key_colour.c, which is where they are
+ * @details The colours come from lighting_store.c, which is where they are
  *          stored and how the application sets them. Each carries its own
  *          brightness, and the wheel's scales it rather than replacing it: the
  *          whole keyboard dims together, a key set to half stays half of
@@ -295,7 +295,7 @@ static uint8_t k100_away(uint8_t led, uint8_t hit) {
  *          would never see the press, and each would be half lit on every
  *          stroke. Two LEDs under one key carry the same position in the layout,
  *          and the generator refuses to emit a layout where two *keys* share a
- *          position, so the position is the key. per_key_colour.c pairs them off
+ *          position, so the position is the key. lighting_store.c pairs them off
  *          the same way.
  */
 static uint8_t k100_fade_level(uint8_t led, const uint16_t *front) {
@@ -371,7 +371,7 @@ static uint8_t k100_splash_level(uint8_t led, const uint16_t *front) {
  *          from the wave. Everything else is simply lit as painted: the bars, the
  *          ring and the logo, which were never pressed, and the buttons above the
  *          keys, which were but are not watched while typing. See k100_reacts()
- *          for which is which and per_key_colour.c for both settings; the effect
+ *          for which is which and lighting_store.c for both settings; the effect
  *          itself has no opinion about either, and that is the point of the split.
  */
 static bool k100_run_reactive(effect_params_t *params, bool reaches_lights,

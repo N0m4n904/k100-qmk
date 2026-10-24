@@ -25,7 +25,37 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from k100_stored import Refused, ask, menu_value  # noqa: E402
 from k100_usb import PRODUCT, VENDOR, identity, is_ours  # noqa: E402
+from k100_via import CUSTOM_GET_VALUE, interface  # noqa: E402
+
+
+def reported_nkro(device: Path) -> str | None:
+    """Whether the keyboard says every key can be reported at once, or nothing if it will not say.
+
+    Printed beside the stream of keypresses because the two are halves of one question. An
+    NKRO report leaves the keyboard on a different endpoint than a boot-protocol one, so the
+    kernel binds it as a different input device and **the node a press arrives on is what
+    proves the switch happened** -- while which way it went is the keyboard's to say. Watching
+    one without the other leaves either half guessable.
+
+    Nothing rather than a failure when the keyboard does not answer: this is a keystroke
+    watcher, and a firmware too old to report its NKRO state still delivers keystrokes.
+    """
+    where = menu_value("id_k100_nkro")
+    if where is None:
+        return None
+
+    found = interface(device)
+    if found is None:
+        return None
+
+    try:
+        reply = ask(found[0], bytes([CUSTOM_GET_VALUE, *where]))
+    except Refused:
+        return None
+
+    return bytes(reply[3:]).split(b"\x00")[0].decode("ascii", "replace") or None
 
 # struct input_event on a 64-bit kernel: two longs of timestamp, then the type,
 # code and value.
@@ -86,6 +116,11 @@ def main() -> int:
         return 1
 
     print(f"running  bcdDevice {before[0]}  {before[1]}")
+
+    nkro = reported_nkro(device)
+    if nkro is not None:
+        print(f"NKRO     {nkro}, as the keyboard reports it")
+
     print(f"listening on {' '.join(streams.values())} for {args.seconds:.0f}s")
     print("press a key now")
 

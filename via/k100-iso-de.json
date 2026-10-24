@@ -497,6 +497,41 @@
                 0,
                 26
               ]
+            },
+            {
+              "label": "Lights off after",
+              "type": "dropdown",
+              "options": [
+                [
+                  "Never",
+                  0
+                ],
+                [
+                  "1 minute",
+                  1
+                ],
+                [
+                  "5 minutes",
+                  5
+                ],
+                [
+                  "10 minutes",
+                  10
+                ],
+                [
+                  "30 minutes",
+                  30
+                ],
+                [
+                  "1 hour",
+                  60
+                ]
+              ],
+              "content": [
+                "id_k100_sleep_after",
+                0,
+                27
+              ]
             }
           ]
         },
@@ -1685,6 +1720,15 @@
                 "id_k100_lighting_rate",
                 0,
                 22
+              ]
+            },
+            {
+              "label": "NKRO",
+              "type": "label",
+              "content": [
+                "id_k100_nkro",
+                0,
+                28
               ]
             }
           ]

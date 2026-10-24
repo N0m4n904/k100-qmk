@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 /*
- * A colour of its own for every LED.
+ * Everything the keyboard remembers about its lighting.
+ *
+ * It owns VIA's custom configuration region, which is this keyboard's whole share of the
+ * part's EEPROM beyond the keymap and the macros: a colour for every LED, a colour for each
+ * lock key, what the reactive effects do, and how long the lighting waits before it rests.
+ * One file, because one region -- what sits at which offset is a single question, and two
+ * files answering it separately is how a stored layout comes apart.
+ *
+ * It was called per_key_colour.c while the colours were all there was, which stopped being
+ * true some features ago.
  *
  * VIA paints keys: a palette appears beside the keyboard, and dragging across
  * it sends one colour per key. The protocol for that is not in QMK -- the
@@ -133,10 +142,22 @@ static k100_reaction_t reaction;
 
 #define K100_REACTION_OFFSET (K100_LOCKS_OFFSET + K100_LOCK_COUNT * sizeof(k100_colour_t))
 
+/*
+ * How many minutes of being left alone before the lighting rests, and zero for never.
+ *
+ * Minutes rather than a scale, because that is the unit the question is asked in. Zero is the
+ * default and reads out of an erased region for free -- a keyboard that goes dark on its own
+ * without being asked to looks broken, and "it turned itself off" is a bug report rather than
+ * a feature working. See lighting_sleep.c, which also turns it off while the host sleeps, and
+ * that one is not a preference.
+ */
+static uint8_t sleep_after;
+
+#define K100_SLEEP_OFFSET (K100_REACTION_OFFSET + sizeof(k100_reaction_t))
+
 /* Stated here rather than with the other checks at the top, because this is the first point
    at which everything the region holds has been declared. */
-_Static_assert(VIA_EEPROM_CUSTOM_CONFIG_SIZE >=
-                   K100_REACTION_OFFSET + sizeof(k100_reaction_t),
+_Static_assert(VIA_EEPROM_CUSTOM_CONFIG_SIZE >= K100_SLEEP_OFFSET + sizeof(sleep_after),
                "the custom config region is too small for what it is asked to hold; "
                "see VIA_EEPROM_CUSTOM_CONFIG_SIZE in config.h");
 
@@ -167,6 +188,10 @@ static void store_reaction(void) {
     via_update_custom_config(&reaction, K100_REACTION_OFFSET, sizeof(reaction));
 }
 
+static void store_sleep(void) {
+    via_update_custom_config(&sleep_after, K100_SLEEP_OFFSET, sizeof(sleep_after));
+}
+
 /**
  * @brief   Back to white and fully lit everywhere, in RAM and in the region.
  *
@@ -190,6 +215,9 @@ static void forget(void) {
     reaction = (k100_reaction_t){.source = K100_REACTION_PAINTED, .hue = 0, .sat = 0,
                                  .buttons = false, .lights = false};
     store_reaction();
+
+    sleep_after = 0;
+    store_sleep();
 }
 
 /*
@@ -211,6 +239,7 @@ void via_init_kb(void) {
     via_read_custom_config(colours, 0, sizeof(colours));
     via_read_custom_config(locks, K100_LOCKS_OFFSET, sizeof(locks));
     via_read_custom_config(&reaction, K100_REACTION_OFFSET, sizeof(reaction));
+    via_read_custom_config(&sleep_after, K100_SLEEP_OFFSET, sizeof(sleep_after));
 }
 
 /*
@@ -487,4 +516,17 @@ void k100_lights_react_get(uint8_t *value_data) {
 void k100_lights_react_set(uint8_t *value_data) {
     reaction.lights = value_data[0] != 0;
     store_reaction();
+}
+
+uint8_t k100_sleep_after(void) {
+    return sleep_after;
+}
+
+void k100_sleep_after_get(uint8_t *value_data) {
+    value_data[0] = sleep_after;
+}
+
+void k100_sleep_after_set(uint8_t *value_data) {
+    sleep_after = value_data[0];
+    store_sleep();
 }

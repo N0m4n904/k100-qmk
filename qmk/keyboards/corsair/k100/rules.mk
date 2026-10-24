@@ -45,10 +45,15 @@ SRC += lighting_rate.c
 # connects, so without this its idea of the lighting stops being true.
 SRC += via_ui_sync.c
 
-# One colour per LED, which is what VIA's key painter writes and the keyboard
-# stores. Keyboard level because the storage is: the region it lives in is
-# declared in this keyboard's config.h.
-SRC += per_key_colour.c
+# Everything the keyboard remembers about its lighting, and the one thing that
+# knows where in its EEPROM region each of it sits. Keyboard level because the
+# storage is: the region is declared in this keyboard's config.h.
+SRC += lighting_store.c
+
+# When the lighting goes dark by itself: the host has gone to sleep, or nobody
+# has touched the keyboard for a while. Keyboard level because the first one is
+# unreachable here by QMK's own route, and the file says why.
+SRC += lighting_sleep.c
 
 # Our own RGB effect, in rgb_matrix_kb.inc, which QMK includes into
 # rgb_matrix.c rather than compiling on its own -- so no SRC entry, just this.

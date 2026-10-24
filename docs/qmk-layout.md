@@ -270,6 +270,37 @@ same set, so a renamed or added key stops the build instead of shifting every LE
   Layers 2 and 3 exist in the stored keymap, are transparent throughout, and nothing selects
   them.
 
+### Watching Fn+N actually switch
+
+It was the keycode and nothing more for a long time: stored, QMK's own, and never seen doing
+anything. The keymap read back off the keyboard says `0x7013` at N on layer 1, which is
+`NK_TOGG` -- but a stored keycode is not a working feature.
+
+What makes it observable is where the reports go. `send_keyboard()` writes to
+`USB_ENDPOINT_IN_KEYBOARD` and `send_nkro()` to `USB_ENDPOINT_IN_SHARED`, which are different
+endpoints on different interfaces, so the kernel binds them as different input devices. Each
+press of Fn+N therefore has to move the keystrokes from one event node to the other, and
+`tools/watch-input.py` names the node every press arrives on.
+
+Measured, pressing A with Fn+N between each:
+
+```
+event10  keycode 30  press
+event7   keycode 30  press
+event10  keycode 30  press
+event7   keycode 30  press
+event10  keycode 30  press
+```
+
+Strictly alternating, which is the switch working end to end. Fn+N itself produced no event,
+which is also right: QMK consumes it and sends the host nothing.
+
+Which way it went is the keyboard's to say rather than something to deduce from a node
+number, so it says it: `NKRO` under Diagnostics reads `on` or `off` from `keymap_config.nkro`,
+and `watch-input.py` prints the same line before it starts listening. The test without any of
+this is still to hold seven keys and count what arrives -- the boot report has six places, and
+that is the whole of the difference.
+
 ## The lighting menu is declared, not VIA's own
 
 VIA ships a `qmk_rgb_matrix` menu that a definition can ask for by name, and it is the
@@ -436,7 +467,7 @@ dynamic keymap's second keycode had been. `eeconfig_init_kb()` is the hook that 
 inside that erase, and putting the RAM copy back in step there is the fix.
 
 Two further details are worth knowing. **A key with two LEDs gets the colour on both**: the
-application paints one index, and `per_key_colour.c` gives the same colour to every other LED
+application paints one index, and `lighting_store.c` gives the same colour to every other LED
 at the same position -- which is how it finds them, because two lights under one key carry one
 position and the generator refuses to emit a layout where two LEDs share a position without
 sharing a key. And **only keys can be painted**, because only keys are drawn: the LightEdge
@@ -549,6 +580,35 @@ The knowing lives in `tools/k100_stored.py` and the command is presentation on t
 `via-per-key.py` and the backup cannot disagree about what is stored or where. A file written
 here holds its colours under the same key the colour dump uses, so `--load` reads either.
 
+**The macro buffer changes size, and that is the case this was built for.** It is whatever the
+2 KB EEPROM has left once the dynamic keymap and the stored lighting are in it, so growing the
+lighting shrinks it -- which is exactly what the reshape below did, from 269 bytes to 237. So
+the macros are *fitted* to the buffer on the way back rather than written at the length they
+were saved, and what is compared afterwards is their **content**, not the buffer: 269 bytes of
+nothing and 237 bytes of nothing hold the same macros, and a tool that called those different
+would be crying wolf about the one situation it exists for.
+
+Fitted, not truncated. QMK skips bytes past the end of its buffer rather than writing them, so
+a buffer that is too long is written safely and silently short -- which is how a restore would
+drop the last macro without a word. A restore that would cut into real macro content refuses
+and writes nothing.
+
+### Growing the region on purpose
+
+The lighting's region was `190 * 3 + 16` and had two bytes left, with every new setting
+costing one. The next one would have forced a reseed anyway, at whatever moment it happened to
+be wanted -- so it was done deliberately instead: `190 * 3 + 48`, which leaves thirty-three
+spare after everything stored today, with `EECONFIG_MAGIC_NUMBER` moved once and
+`k100-backup.py` proven around it.
+
+Measured through the whole thing, which is the point of having the tool: save, flash the
+reshape, restore, and the keyboard reads back identical in all four -- keymap, macros, colours
+and settings -- across a change that also shrank the macro buffer by 32 bytes.
+
+It costs those 32 bytes of macro space, because the region comes out of what the dynamic
+keymap leaves. That is the trade, written down: a third of the spare macro buffer for a
+lighting region that will not need reseeding again for a long time.
+
 ### What an update no longer throws away
 
 VIA marks its stored data with the **build date**, to the day:
@@ -607,7 +667,7 @@ matrix map names for a key, and four keys here have two lights -- the wheel butt
 profile-switch key, the Windows-lock key and the mute key -- so the second light would never
 see the press and the key would be half lit on every stroke. Two LEDs under one key carry the
 same position in the layout, and the generator refuses to emit a layout where two *keys*
-share a position, so the position is the key. `per_key_colour.c` pairs them off the same way.
+share a position, so the position is the key. `lighting_store.c` pairs them off the same way.
 
 The reaction length comes from the one speed control, between 150 ms and 1.5 s. Not QMK's own
 mapping, which is `65535 / (speed + 1)` ms and reaches 65 seconds at the slow end: a fade
@@ -694,6 +754,39 @@ Those three bytes -- a source and a hue and a saturation -- come out of the slac
 `VIA_EEPROM_CUSTOM_CONFIG_SIZE` was given for exactly this, so adding them clears nothing.
 They also need no default written: the LPC EEPROM driver's erase writes **zeros**, and zero
 is "painted, white".
+
+### When the lighting goes dark by itself
+
+Two reasons, one mechanism, because they are the same statement -- nothing is using the
+lighting, so stop drawing it:
+
+- **the host is asleep.** Not a preference, and so not a setting.
+- **nobody is here**, for as long as `Lights off after` says. A setting, and `Never` until
+  somebody asks for it: a keyboard that goes dark on its own without being told to looks
+  broken, and "it turned itself off" is a bug report rather than a feature working.
+
+QMK has both of these already, and **neither is reachable on this keyboard.**
+
+`suspend_power_down_kb()` is called from one place: the loop in `protocol_pre_task()` that
+spins while the host is suspended. That loop is compiled out here by `NO_USB_STARTUP_CHECK`,
+for a reason that is not negotiable -- it never reaches `housekeeping_task_kb()`, which is
+where the watchdog inherited from Corsair's bootloader is fed and where the recovery that
+hands a dead keyboard back to that bootloader lives. A keyboard that slept through its own
+watchdog would reset instead of resting. So nothing told the lighting that the host had gone
+to sleep, and 190 LEDs stayed lit all night.
+
+And `RGB_MATRIX_TIMEOUT` is a compile-time constant, which cannot be a setting.
+
+So `lighting_sleep.c` decides it instead, once per trip round the main loop, where the
+watchdog keeps being fed either way. What it needs was all there and only the last step was
+missing: the LPC USB driver raises `USB_EVENT_SUSPEND` from the controller's `DSUS` bit,
+QMK's `usb_event_queue_task()` turns that into the device state this reads, and
+`RGB_MATRIX_SLEEP` -- which this keyboard now defines -- is what makes
+`rgb_matrix_set_suspend_state()` do anything at all. Without it the call compiles to nothing.
+
+The idle side reads `last_input_activity_elapsed()`, which counts **keys and both rotaries**.
+That matters on a keyboard whose wheel sets the brightness: turning it up and watching the
+lighting go out a minute later would be correct and useless.
 
 ### What the lighting costs, as a number
 

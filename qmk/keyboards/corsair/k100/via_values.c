@@ -60,6 +60,26 @@ static void describe_version(uint8_t *out) {
     out[at]   = '\0';
 }
 
+/**
+ * @brief   Whether every key can be reported at once, as text for VIA to display.
+ *
+ * @details Fn+N toggles it, and until now nothing said which way it had gone. The honest test
+ *          is still holding seven keys and counting what arrives -- the boot report has six
+ *          places and that is the whole of the difference -- but "hold seven keys" is a poor
+ *          way to answer "is it on", and the keyboard knows.
+ *
+ *          QMK's own flag rather than a copy: the keycode writes `keymap_config` and stores
+ *          it, so a second variable here would be a second answer to a question that has one.
+ */
+static void describe_nkro(uint8_t *out) {
+    const char *state = keymap_config.nkro ? "on" : "off";
+
+    while (*state != '\0') {
+        *out++ = (uint8_t)*state++;
+    }
+    *out = '\0';
+}
+
 /** No LED, for a probe that is showing none. There are 190 and this is not one. */
 #define PROBE_NONE UINT8_MAX
 
@@ -195,6 +215,12 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 case K100_VIA_LIGHTS_REACT:
                     k100_lights_react_get(value_data);
                     return;
+                case K100_VIA_SLEEP_AFTER:
+                    k100_sleep_after_get(value_data);
+                    return;
+                case K100_VIA_NKRO:
+                    describe_nkro(value_data);
+                    return;
             }
             break;
 
@@ -226,12 +252,15 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 case K100_VIA_LIGHTS_REACT:
                     k100_lights_react_set(value_data);
                     return;
+                case K100_VIA_SLEEP_AFTER:
+                    k100_sleep_after_set(value_data);
+                    return;
             }
             break;
 
         case id_custom_save:
             // Answered rather than refused. What is stored on this channel is
-            // written as it arrives -- see per_key_colour.c, which the part's
+            // written as it arrives -- see lighting_store.c, which the part's
             // one-word-at-a-time EEPROM makes the simpler of the two -- and the
             // application sends a save after every change, so refusing would
             // fill its error log with failures that are not failures.

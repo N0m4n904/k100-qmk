@@ -86,7 +86,7 @@ def zone_value(family: str, what: str = "") -> tuple[int, int]:
 
 
 #: What the reaction's source byte means, from `enum k100_reaction_source` in
-#: per_key_colour.c.
+#: lighting_store.c.
 REACTION_PAINTED = 0
 REACTION_CHOSEN = 1
 
