@@ -864,6 +864,26 @@ def only_for(effects: list[int]) -> dict:
     return {"showIf": " || ".join(f"{{{EFFECT_VALUE}}} == {number}" for number in effects)}
 
 
+def also_when(shown: dict, condition: str) -> dict:
+    """A `showIf` that needs both: whatever already restricted a control, and one thing more.
+
+    The first is bracketed because it is a chain of `||` and this is an `&&`. VIA's evaluator
+    reads brackets as sub-expressions, so the result does not depend on which of the two binds
+    tighter -- and neither does a reader of it.
+    """
+    restricted = shown.get("showIf")
+    if restricted is None:
+        return {"showIf": condition}
+    return {"showIf": f"({restricted}) && {condition}"}
+
+
+# What `Reacts in` offers and the number each sends, from `enum k100_reaction_source` in
+# per_key_colour.c. The chosen one is named because the colour beside it is shown only for
+# that answer, and the number would otherwise be written down twice.
+REACTION_SOURCES = [("The painted colours", 0), ("One colour", 1)]
+REACTION_CHOSEN = 1
+
+
 # How bright a painted key is, and the one way to turn a single key off.
 #
 # A dropdown rather than a range, for the reason the LED probe has one: VIA draws a range with
@@ -931,7 +951,9 @@ def lighting_menu(per_key_value: int, paint_value: int,
     colours -- and it leaves somebody who has painted nothing with white flashes and no way
     to change them. So the painted keyboard is one of two sources, with a colour of the
     reaction's own beside it, and picking that colour selects it: a control whose use shows
-    nothing is worse than one that does slightly more than it says.
+    nothing is worse than one that does slightly more than it says. The colour itself shows
+    only for the answer that uses it, because a control that is visible under a setting it has
+    no effect on is a question with no answer.
 
     What none of them is, is the *same* colour. One knob reaching across effects is the fault
     this keyboard has already had, and the reaction's colour is stored separately for that
@@ -955,11 +977,12 @@ def lighting_menu(per_key_value: int, paint_value: int,
                  **only_for(effect_numbers("colour")),
                  "content": [f"{RGB_MATRIX_VALUE}color", RGB_MATRIX_CHANNEL, 4]},
                 {"label": "Reacts in", "type": "dropdown",
-                 "options": [["The painted colours", 0], ["One colour", 1]],
+                 "options": [[label, value] for label, value in REACTION_SOURCES],
                  **only_for(effect_numbers("reacts")),
                  "content": [f"{K100_VALUE}reaction_source", K100_CHANNEL, reaction_source]},
                 {"label": "Reaction color", "type": "color",
-                 **only_for(effect_numbers("reacts")),
+                 **also_when(only_for(effect_numbers("reacts")),
+                             f"{{{K100_VALUE}reaction_source}} == {REACTION_CHOSEN}"),
                  "content": [f"{K100_VALUE}reaction_colour", K100_CHANNEL, reaction_colour]},
             ],
         }, {

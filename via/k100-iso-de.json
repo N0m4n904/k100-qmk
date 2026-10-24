@@ -471,7 +471,7 @@
             {
               "label": "Reaction color",
               "type": "color",
-              "showIf": "{id_qmk_rgb_matrix_effect} == 6 || {id_qmk_rgb_matrix_effect} == 7",
+              "showIf": "({id_qmk_rgb_matrix_effect} == 6 || {id_qmk_rgb_matrix_effect} == 7) && {id_k100_reaction_source} == 1",
               "content": [
                 "id_k100_reaction_colour",
                 0,
