@@ -42,7 +42,7 @@ MACRO_SET_BUFFER = 0x0F
 
 #: VIA's own channel for a keyboard's values, and the value its key painter uses on it.
 #: Neither is this keyboard's to choose -- the application has the number 1 built in, which is
-#: why the keyboard's own values start at 2. See qmk/keyboards/corsair/k100/per_key_colour.c.
+#: why the keyboard's own values start at 2. See qmk/keyboards/corsair/k100/lighting_store.c.
 K100_CHANNEL = 0
 PER_KEY_COLOUR = 1
 
@@ -58,9 +58,14 @@ LEDS = 190
 #: keyboard's own settings is sent on.
 DEFINITION = Path(__file__).parent.parent / "via" / "k100-iso-de.json"
 
-#: The reaction's settings, by the name the definition knows each by. A hue and a saturation
-#: arrive together, which is why the colour counts as one.
-REACTION_SETTINGS = ("reaction_source", "reaction_colour", "buttons_react", "lights_react")
+#: The keyboard's own settings, by the name the definition knows each by. A hue and a
+#: saturation arrive together, which is why the colour counts as one.
+#:
+#: Each is one byte wide unless it is a colour. A name the definition does not declare is left
+#: out rather than guessed at, so a backup taken against an older definition is still a
+#: backup of what that firmware had.
+SETTINGS = ("reaction_source", "reaction_colour", "buttons_react", "lights_react",
+            "sleep_after")
 
 
 def menu_value(wanted: str) -> tuple[int, int] | None:
@@ -137,9 +142,46 @@ def write_keymap(node: Path, keymap: bytes) -> None:
     write_buffer(node, KEYMAP_SET_BUFFER, keymap)
 
 
+def macro_buffer_size(node: Path) -> int:
+    """How many bytes this keyboard has left for macros, which it works out for itself.
+
+    Not a constant: it is whatever the 2 KB EEPROM has left once the dynamic keymap and this
+    keyboard's own stored lighting are in it, so growing either shrinks this. That has
+    happened -- deliberately, to give the lighting room -- and it is why the macros are fitted
+    to the buffer on the way back rather than written at the length they were saved.
+    """
+    return int.from_bytes(ask(node, bytes([MACRO_GET_BUFFER_SIZE]))[1:3], "big")
+
+
 def read_macros(node: Path) -> bytes:
-    size = int.from_bytes(ask(node, bytes([MACRO_GET_BUFFER_SIZE]))[1:3], "big")
-    return read_buffer(node, MACRO_GET_BUFFER, size)
+    return read_buffer(node, MACRO_GET_BUFFER, macro_buffer_size(node))
+
+
+def macro_content(buffer: bytes) -> bytes:
+    """What a macro buffer actually holds, as opposed to how long it is.
+
+    The macros are packed from the front and every macro ends in a NUL, so the trailing
+    emptiness is free space rather than data. Comparing the content instead of the whole
+    buffer is what lets a backup be checked across a change in the buffer's *size*: 269 bytes
+    of nothing and 237 bytes of nothing hold the same macros, and a tool that called those
+    different would be crying wolf about the one case it exists for.
+    """
+    return buffer.rstrip(b"\x00")
+
+
+def fit_macros(saved: bytes, size: int) -> bytes:
+    """The saved buffer as this keyboard's buffer, padded or trimmed, or a refusal.
+
+    Trimmed only where there is nothing to trim. QMK skips bytes past the end of its buffer
+    rather than writing them, so a buffer that is too long is written safely and silently
+    short -- which is exactly how a restore would lose the last macro without saying a word.
+    """
+    content = macro_content(saved)
+    if len(content) > size:
+        raise Refused(f"the saved macros hold {len(content)} bytes and this keyboard's buffer "
+                      f"is {size}; restoring would cut them off, so nothing was written")
+
+    return saved[:size].ljust(size, b"\x00")
 
 
 def write_macros(node: Path, macros: bytes) -> None:
@@ -164,7 +206,7 @@ def write_colours(node: Path, stored: list[list[int]], paint_value: tuple[int, i
     """Puts them back, grouped by brightness.
 
     The brightness is the brush's and setting it is a command of its own, so this sets the
-    brush once per distinct value instead of once per LED. See per_key_colour.c for why the
+    brush once per distinct value instead of once per LED. See lighting_store.c for why the
     brightness is a property of the brush at all: the application's palette carries a hue and
     a saturation, and neither can say "off".
     """
@@ -183,16 +225,14 @@ def write_colours(node: Path, stored: list[list[int]], paint_value: tuple[int, i
                              hue, sat]))
 
 
-def read_reaction(node: Path) -> dict[str, list[int]]:
-    """What the reactive effects are set to, by the names the definition gives the settings.
+def read_settings(node: Path) -> dict[str, list[int]]:
+    """Every setting the keyboard answers for, by the names the definition gives them.
 
-    A few bytes, and worth carrying for the same reason as the rest: they are a choice
-    somebody made, and a reshape takes them with everything else. A setting the definition
-    does not declare is left out rather than guessed at, so a backup taken against an older
-    definition is still a backup of what that firmware had.
+    A few bytes, and worth carrying for the same reason as the rest: they are choices somebody
+    made, and a reshape takes them with everything else.
     """
     found = {}
-    for name in REACTION_SETTINGS:
+    for name in SETTINGS:
         where = menu_value(f"id_k100_{name}")
         if where is None:
             continue
@@ -204,12 +244,12 @@ def read_reaction(node: Path) -> dict[str, list[int]]:
     return found
 
 
-def write_reaction(node: Path, settings: dict[str, list[int]]) -> None:
+def write_settings(node: Path, settings: dict[str, list[int]]) -> None:
     """Puts them back, the colour first.
 
     Order matters by one step: setting the colour is what selects it as the source, so the
     source has to be written afterwards or a keyboard restored to "the painted colours" would
-    come back set to one colour. See k100_reaction_colour_set() in per_key_colour.c.
+    come back set to one colour. See k100_reaction_colour_set() in lighting_store.c.
     """
     for name in sorted(settings, key=lambda name: name != "reaction_colour"):
         where = menu_value(f"id_k100_{name}")

@@ -37,8 +37,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from k100_stored import (  # noqa: E402
-    DEFINITION, Refused, layers, menu_value, read_colours, read_keymap, read_macros,
-    read_reaction, write_colours, write_keymap, write_macros, write_reaction,
+    DEFINITION, Refused, fit_macros, layers, macro_buffer_size, macro_content, menu_value,
+    read_colours, read_keymap, read_macros, read_settings, write_colours, write_keymap,
+    write_macros, write_settings,
 )
 from k100_usb import PRODUCT, VENDOR, device, identity  # noqa: E402
 from k100_via import interface  # noqa: E402
@@ -50,6 +51,23 @@ def matrix() -> tuple[int, int]:
     return declared["rows"], declared["cols"]
 
 
+#: The four things a backup carries, in the order they are reported.
+PARTS = ("keymap", "macros", "leds", "settings")
+
+
+def holds(part: str, saved, now) -> bool:
+    """Whether the keyboard now holds what the file does, for one of the four.
+
+    The macros are the one that is not a plain comparison. Their buffer is whatever the 2 KB
+    EEPROM has left, so growing the stored lighting shrinks it -- and 269 bytes of nothing and
+    237 bytes of nothing hold the same macros. What is compared is the content; the length is
+    the keyboard's business.
+    """
+    if part == "macros":
+        return macro_content(bytes.fromhex(now)) == macro_content(bytes.fromhex(saved))
+    return now == saved
+
+
 def read_all(node: Path, rows: int, cols: int) -> dict:
     return {
         "matrix": {"rows": rows, "cols": cols},
@@ -57,7 +75,7 @@ def read_all(node: Path, rows: int, cols: int) -> dict:
         "keymap": read_keymap(node, rows, cols).hex(),
         "macros": read_macros(node).hex(),
         "leds": read_colours(node),
-        "reaction": read_reaction(node),
+        "settings": read_settings(node),
     }
 
 
@@ -68,10 +86,11 @@ def describe(state: dict) -> None:
 
     print(f"keymap   {len(state['keymap']) // 2} bytes, {state['layers']} layers of "
           f"{state['matrix']['rows']} by {state['matrix']['cols']}")
-    print(f"macros   {len(macros)} bytes, {len(macros.rstrip(bytes(1)))} of them used")
+    print(f"macros   {len(macro_content(macros))} bytes of macros in a "
+          f"{len(macros)}-byte buffer")
     print(f"colours  {len(state['leds'])} LEDs, {painted} set to something other than "
           f"plain white")
-    print(f"reaction {', '.join(f'{name} {value}' for name, value in state['reaction'].items())}")
+    print(f"settings {', '.join(f'{name} {value}' for name, value in state['settings'].items())}")
 
 
 def restore(node: Path, saved: dict, rows: int, cols: int) -> int:
@@ -99,17 +118,16 @@ def restore(node: Path, saved: dict, rows: int, cols: int) -> int:
         return 1
 
     write_colours(node, saved["leds"], paint_value)
-    write_reaction(node, saved["reaction"])
-    write_macros(node, bytes.fromhex(saved["macros"]))
+    write_settings(node, saved["settings"])
+    write_macros(node, fit_macros(bytes.fromhex(saved["macros"]), macro_buffer_size(node)))
     write_keymap(node, bytes.fromhex(saved["keymap"]))
 
     print("written, and now read back:")
 
     now = read_all(node, rows, cols)
-    wrong = [part for part in ("keymap", "macros", "leds", "reaction")
-             if now[part] != saved[part]]
+    wrong = [part for part in PARTS if not holds(part, saved[part], now[part])]
 
-    for part in ("keymap", "macros", "leds", "reaction"):
+    for part in PARTS:
         print(f"  {part:<9}{'identical' if part not in wrong else 'DOES NOT MATCH'}")
 
     if wrong:
@@ -162,6 +180,10 @@ def main() -> int:
             return 0
 
         saved = json.loads(args.restore.read_text())
+        # Backups written before these settings outgrew the reaction they started as called
+        # them something narrower. A backup tool that cannot read its own older files is not
+        # one.
+        saved.setdefault("settings", saved.pop("reaction", {}))
         describe(saved)
         print()
         return restore(node, saved, rows, cols)
