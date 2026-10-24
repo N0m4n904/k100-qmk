@@ -88,6 +88,8 @@ enum k100_via_value {
     K100_VIA_REACTION_SOURCE = 23,
     /** That one colour, for when it is the one chosen. */
     K100_VIA_REACTION_COLOUR = 24,
+    /** Whether the four buttons above the keys react to typing, or just stay lit. */
+    K100_VIA_BUTTONS_REACT = 25,
 };
 
 /**
@@ -196,6 +198,19 @@ void k100_reaction_source_get(uint8_t *value_data);
 void k100_reaction_source_set(uint8_t *value_data);
 void k100_reaction_colour_get(uint8_t *value_data);
 void k100_reaction_colour_set(uint8_t *value_data);
+
+/**
+ * @brief   Whether the four buttons above the keys react to typing at all.
+ *
+ * @details They are keys, so without this they flash along with the typing -- and a strip of
+ *          mode buttons above the function row is not what anybody is watching while they
+ *          type. So they stay lit by default, and this is for somebody who would rather they
+ *          joined in. Which LEDs they are is generated into button_leds.h.
+ */
+bool k100_buttons_react(void);
+
+void k100_buttons_react_get(uint8_t *value_data);
+void k100_buttons_react_set(uint8_t *value_data);
 
 /**
  * @brief   Counts one finished lighting frame. See lighting_rate.c.

@@ -591,6 +591,23 @@ visible -- `Color` shows for the plain colour alone, and these two for the effec
 Which is not to say it is the *same* colour. One knob reaching across effects is the fault
 this keyboard has already had, and the reaction's colour is stored separately for it.
 
+**The four buttons above the keys do not react by default.** Profile switch, the iCUE wheel's
+button, the Windows lock and mute are keys -- they are pressed, they are in the matrix, the
+painter reaches them -- so a reaction had them flashing along with the typing, which is not
+what a strip of mode buttons above the function row is for. They stay lit as painted, and
+`Top buttons react` is for somebody who would rather they joined in.
+
+Which LEDs those are is generated into `button_leds.h` from the same measured table as
+everything else. The defining property is checked rather than assumed: each of these carries
+**two** lights, which is why the keyboard draws them as round buttons, and a name in the
+generator's `BUTTONS` that turns out to have one or three stops the build. Their matrix row
+is not the rule -- row 7 carries the four media keys as well, and those are single-LED keys
+in the function row where typing reaches them.
+
+The ring around the wheel needs no setting of its own: it is not a key, so nothing is ever
+pressed on it and it already keeps the colour and brightness its zone is set to. The same
+goes for the three bars and the logo.
+
 Those three bytes -- a source and a hue and a saturation -- come out of the slack
 `VIA_EEPROM_CUSTOM_CONFIG_SIZE` was given for exactly this, so adding them clears nothing.
 They also need no default written: the LPC EEPROM driver's erase writes **zeros**, and zero

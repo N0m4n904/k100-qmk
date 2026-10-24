@@ -81,6 +81,7 @@ RGB_MATRIX_EFFECT(K100_REACTIVE_SPLASH)
  * when it comes out of a file that compiles perfectly well on its own.
  */
 #include "k100.h"
+#include "button_leds.h"
 
 /*
  * The numbers the VIA menu's entries send.
@@ -286,6 +287,36 @@ static uint8_t k100_fade_level(uint8_t led, const uint16_t *front) {
     return level;
 }
 
+/**
+ * @brief   Whether this LED may be dimmed by a reaction at all.
+ *
+ * @details Only the keys, because only a key can be pressed: the bars, the ring and the logo
+ *          have nothing to react to and keep what their own menu set them to.
+ *
+ *          And not the four buttons above the keys unless somebody asked for it. They *are*
+ *          keys -- they switch a profile, step the lighting, lock the GUI keys and mute the
+ *          host -- so without this they flash along with the typing, and a strip of mode
+ *          buttons above the function row is not what anybody is watching while they type.
+ *          Which LEDs those are is generated; see button_leds.h.
+ */
+static bool k100_reacts(uint8_t led) {
+    if ((g_led_config.flags[led] & LED_FLAG_KEYLIGHT) == 0) {
+        return false;
+    }
+
+    if (k100_buttons_react()) {
+        return true;
+    }
+
+    for (uint8_t at = 0; at < K100_BUTTON_LEDS; at++) {
+        if (k100_button_leds[at] == led) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static uint8_t k100_splash_level(uint8_t led, const uint16_t *front) {
     uint8_t level = 0;
 
@@ -299,16 +330,13 @@ static uint8_t k100_splash_level(uint8_t led, const uint16_t *front) {
 /**
  * @brief   Paints the painted keyboard, with the keys as bright as a reaction says.
  *
- * @details The lights that are not keys keep their painted colour and their
- *          painted brightness, because nothing was ever pressed on them -- the
- *          bars, the ring and the logo are set in their own menu and this leaves
- *          them alone.
- *
- *          A key takes the colour the reaction is set to, which is its painted
- *          one unless somebody has chosen otherwise, and takes its brightness
- *          from the wave. See per_key_colour.c for that choice; the effect itself
- *          has no opinion about which colour it is painting, and that is the
- *          point of the split.
+ * @details What reacts takes the colour the reaction is set to -- its painted
+ *          one unless somebody has chosen otherwise -- and takes its brightness
+ *          from the wave. Everything else is simply lit as painted: the bars, the
+ *          ring and the logo, which were never pressed, and the buttons above the
+ *          keys, which were but are not watched while typing. See k100_reacts()
+ *          for which is which and per_key_colour.c for both settings; the effect
+ *          itself has no opinion about either, and that is the point of the split.
  */
 static bool k100_run_reactive(effect_params_t *params,
                               uint8_t (*level)(uint8_t led, const uint16_t *front)) {
@@ -320,12 +348,13 @@ static bool k100_run_reactive(effect_params_t *params,
     for (uint8_t i = led_min; i < led_max; i++) {
         RGB_MATRIX_TEST_LED_FLAGS();
 
-        const bool key = (g_led_config.flags[i] & LED_FLAG_KEYLIGHT) != 0;
+        hsv_t hsv;
 
-        hsv_t hsv = k100_light(key ? k100_reaction_colour(i) : k100_per_key_colour(i));
-
-        if (key) {
+        if (k100_reacts(i)) {
+            hsv   = k100_light(k100_reaction_colour(i));
             hsv.v = scale8(hsv.v, level(i, front));
+        } else {
+            hsv = k100_light(k100_per_key_colour(i));
         }
 
         const rgb_t rgb = rgb_matrix_hsv_to_rgb(hsv);

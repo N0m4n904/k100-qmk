@@ -189,6 +189,9 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 case K100_VIA_REACTION_COLOUR:
                     k100_reaction_colour_get(value_data);
                     return;
+                case K100_VIA_BUTTONS_REACT:
+                    k100_buttons_react_get(value_data);
+                    return;
             }
             break;
 
@@ -213,6 +216,9 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                     return;
                 case K100_VIA_REACTION_COLOUR:
                     k100_reaction_colour_set(value_data);
+                    return;
+                case K100_VIA_BUTTONS_REACT:
+                    k100_buttons_react_set(value_data);
                     return;
             }
             break;

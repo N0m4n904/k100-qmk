@@ -60,9 +60,6 @@ _Static_assert(K100_PER_KEY_LEDS == RGB_MATRIX_LED_COUNT,
                "the colour table is per LED, so it is as long as the LED map");
 _Static_assert(sizeof(k100_colour_t) == 3,
                "a colour is stored by its offset in the region, so it may not be padded");
-_Static_assert(VIA_EEPROM_CUSTOM_CONFIG_SIZE >=
-                   (K100_PER_KEY_LEDS + K100_LOCK_COUNT) * sizeof(k100_colour_t) + 3,
-               "the custom config region is too small for the colours; see config.h");
 _Static_assert(K100_VIA_LOCK_FIRST >= K100_VIA_ZONE_FIRST + 2 * K100_ZONE_COUNT,
                "the lock controls start inside the zones' run of values");
 
@@ -103,9 +100,12 @@ static k100_colour_t locks[K100_LOCK_COUNT];
  * brightness is still read even so, because it is the only way a single key is turned off,
  * and a key somebody switched off has no business lighting up under a different effect.
  *
- * Three bytes, out of the slack this region was given for exactly this: so that the next
- * small thing to need a few bytes would not cost anybody their keymap. Four are left. See
- * config.h.
+ * And one more byte: whether the four buttons above the keys react at all. They are keys, so
+ * a reaction had them flashing with the typing, which is not what a strip of mode buttons
+ * above the function row is for. They stay lit unless this says otherwise.
+ *
+ * Four bytes, out of the slack this region was given for exactly this: so that the next small
+ * thing to need a few bytes would not cost anybody their keymap. Three are left. See config.h.
  */
 enum k100_reaction_source {
     K100_REACTION_PAINTED,
@@ -116,16 +116,25 @@ typedef struct {
     uint8_t source;
     uint8_t hue;
     uint8_t sat;
+    uint8_t buttons;
 } k100_reaction_t;
 
-_Static_assert(sizeof(k100_reaction_t) == 3,
+_Static_assert(sizeof(k100_reaction_t) == 4,
                "the reaction is stored by its offset in the region, so it may not be padded");
 
-/** Painted, white, and so what an erased region already reads as: a keyboard that has never
-    been told any of this behaves exactly as one that was told the defaults. */
+/** Painted, white, and the buttons staying lit -- which is what an erased region already
+    reads as, so a keyboard that has never been told any of this behaves exactly as one that
+    was told the defaults. */
 static k100_reaction_t reaction;
 
 #define K100_REACTION_OFFSET (K100_LOCKS_OFFSET + K100_LOCK_COUNT * sizeof(k100_colour_t))
+
+/* Stated here rather than with the other checks at the top, because this is the first point
+   at which everything the region holds has been declared. */
+_Static_assert(VIA_EEPROM_CUSTOM_CONFIG_SIZE >=
+                   K100_REACTION_OFFSET + sizeof(k100_reaction_t),
+               "the custom config region is too small for what it is asked to hold; "
+               "see VIA_EEPROM_CUSTOM_CONFIG_SIZE in config.h");
 
 /*
  * The brightness the next painted key is given.
@@ -174,7 +183,8 @@ static void forget(void) {
         store_lock(lock);
     }
 
-    reaction = (k100_reaction_t){.source = K100_REACTION_PAINTED, .hue = 0, .sat = 0};
+    reaction = (k100_reaction_t){.source = K100_REACTION_PAINTED, .hue = 0, .sat = 0,
+                                 .buttons = false};
     store_reaction();
 }
 
@@ -446,5 +456,18 @@ void k100_reaction_colour_set(uint8_t *value_data) {
      * where somebody looks for it.
      */
     reaction.source = K100_REACTION_CHOSEN;
+    store_reaction();
+}
+
+bool k100_buttons_react(void) {
+    return reaction.buttons != 0;
+}
+
+void k100_buttons_react_get(uint8_t *value_data) {
+    value_data[0] = reaction.buttons;
+}
+
+void k100_buttons_react_set(uint8_t *value_data) {
+    reaction.buttons = value_data[0] != 0;
     store_reaction();
 }
