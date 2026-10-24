@@ -440,9 +440,99 @@ application paints one index, and `per_key_colour.c` gives the same colour to ev
 at the same position -- which is how it finds them, because two lights under one key carry one
 position and the generator refuses to emit a layout where two LEDs share a position without
 sharing a key. And **only keys can be painted**, because only keys are drawn: the LightEdge
-bars, the logo and the wheel's ring have nothing to click on. The storage covers them anyway,
-so a menu that sets them is an addition rather than another change to the shape of what is
-stored -- and every such change costs every keyboard its stored keymap.
+bars, the logo and the wheel's ring have nothing to click on. They have controls of their own
+instead, below.
+
+### The zones: what the painter cannot reach
+
+The 55 lights that are not keys -- 22 along the top, 11 down each side, 8 around the wheel and
+3 behind the logo -- get a **colour and a brightness each**, in a `Zones` group beside the
+painter. Both act the moment they are set, which is the difference between a zone and a
+painted key: a key is one of a hundred and takes whatever the brush was carrying, while a bar
+is one thing with two properties, and a control that only takes effect the next time something
+*else* is used is a control that does nothing when it is used. The brush stays with the
+painter. A colour set on a zone that is off turns it on, because the alternative is a colour
+field that appears to do nothing; dimming and switching off stay with the brightness beside it.
+
+They write the same per-LED table, so a zone costs no storage and resets nothing, and reading
+one back answers with its first LED -- a zone has one colour, so its first LED is its colour.
+
+Which LEDs a zone is made of is **generated** out of the measured table, into `led_zones.h`: a
+run of indices each, in the order the menu offers them. The definition numbers its controls
+from `K100_VIA_ZONE_FIRST`, two per zone, in that same order, so the firmware and the
+definition share one number and one order rather than a list either could get wrong. Three
+things the generator refuses, each of which would have shipped a zone that paints the wrong
+lights:
+
+- a zone that is **not one run** of indices, because a run is all the firmware is told;
+- a light claimed by **two** zones;
+- a light claimed by **none** -- the painter paints keys and these paint zones, so a light in
+  neither is a light nothing can set.
+
+A zone is made of **lights** rather than of names that start the same way, which is what keeps
+the wheel's button out of the wheel's ring: `ctrlwheelb` starts with `ctrlwheel`, and a key
+belongs to whoever presses it. The logo needed the same care from the other side -- its three
+are `logoleft`, `logo` and `logoright`, so a stem with a number would have found one of them.
+
+### A lock on the key that carries it
+
+Caps, Num and Scroll Lock light **their own keys** while they are on, in a colour and at a
+brightness picked in VIA. That is the same news the icons above the number pad carry, in the
+place somebody is looking: an icon over the number pad is a long way from the key just
+pressed. A brightness of zero is how to say one of them should stay out of the way.
+
+Which LED sits under which lock key is generated into `lock_leds.h`, and so is each lock's
+*place* in the order. `indicators.c` builds its own list **at** those places rather than in
+that order, with designated initialisers, so reordering the generator's list moves it too and
+a lock that leaves the list stops the build. QMK's three names for the host's bits are the one
+thing that cannot be generated, so they are the one thing written out.
+
+The colours live beside the painted ones so that they survive a power cycle, which is what
+makes them worth choosing at all. That is what took the region from 570 bytes to **586** --
+nine for the locks and seven kept back on purpose, because growing it is the one thing left
+that clears what a user has stored, and the next small feature should not cost somebody their
+keymap. The macro buffer is what is left over: 269 bytes, which the keyboard reports.
+
+### Taking it off the keyboard and putting it back
+
+Growing that region erases it, and that is not a thing to be endured when it can be undone.
+`tools/via-per-key.py --dump` reads every stored colour into a file and `--load` writes it
+back; the load is grouped by brightness, so it costs one command per distinct brightness
+rather than one per LED.
+
+What makes the dump complete is one byte. A per-key read reports the brightness **after** the
+hue and the saturation VIA asks for, in a byte the application never looks at -- it reads a
+reply by position and ignores the rest. Without it a backup would have carried two thirds of
+each colour, which is worse than none: it would have looked like a backup.
+
+Exercised in that order, which is the whole proof: dump, flash the reshape, read back **0 of
+190** colours -- it really does clear everything -- load, and `cmp` says the keyboard reads
+back byte for byte identical to the dump taken before the flash.
+
+### What an update no longer throws away
+
+VIA marks its stored data with the **build date**, to the day:
+
+```c
+char *p = QMK_BUILDDATE;  // "2026-10-24-06:27:37"
+magic0 = ((p[2] & 0x0F) << 4) | (p[3] & 0x0F);   // year
+magic1 = ((p[5] & 0x0F) << 4) | (p[6] & 0x0F);   // month
+magic2 = ((p[8] & 0x0F) << 4) | (p[9] & 0x0F);   // day
+```
+
+So a firmware built on another calendar day resets the keymap and the macros of a keyboard
+whose storage did not change at all, and two builds on one day that *do* change it keep them
+-- which is the case the check exists for. It is the wrong question asked twice over.
+
+`qmk/patches/0006-via-eeprom-marker-is-not-a-date.patch` lets a keyboard name the marker
+instead, and this one names `EECONFIG_MAGIC_NUMBER`: the number that already moves when the
+shape of what is stored changes, with every move that has happened listed beside it in
+`config.h`. Keyboards that name nothing keep the build date, so the patch changes nothing for
+anyone who has not asked for it.
+
+What a keyboard stores therefore survives every update except the one that reshapes its
+storage -- and that one is deliberate, in one place, for a reason written down, and can be
+dumped and restored around.
 
 ## Validation
 
