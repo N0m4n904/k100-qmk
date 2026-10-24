@@ -18,9 +18,10 @@ flash goes wrong, all three measured.
 Corsair's own bootloader, and `k100-bragi flash` writes this firmware through Corsair's own
 update path. See [Installing it](#installing-it).
 
-**Not finished:** one thing in the lighting is still open -- in which order the eleven
-segments of each side bar run -- and no effect this firmware has can show it, because every
-segment of a side bar carries the same horizontal position. Recovering a keyboard whose
+**Not finished:** every LED is measured, and one bit about two of them is not -- which end of
+each side bar its run starts at, since the indices were written down without a top or a bottom
+beside them. Nothing this firmware draws would show it either way: every segment of a side bar
+carries the same horizontal position. Recovering a keyboard whose
 firmware does not boot has never been exercised on a keyboard that was actually in that
 state: both halves of it are proven separately, and nobody has yet had to put them together.
 

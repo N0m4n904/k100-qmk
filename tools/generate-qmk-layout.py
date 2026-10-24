@@ -207,16 +207,19 @@ UNPLACED_POSITION = (0, 0)
 #   * 173 to 178 are the six single-colour status icons. They are left unplaced on purpose --
 #     indicators.c drives them by index, and no effect should reach them.
 #
-# One thing is still open, and it is narrower than it looks: in which order the eleven
-# segments of each side bar run. Everything else is settled. The ring is, because ckb-next
-# names its segments by angle -- 22.5 degrees through 337.5, clockwise from the top -- and the
-# probe found 120 at the top and 127 to the left of it, which is the same way round. The top
-# bar is, because its order was walked segment by segment, out-of-sequence ones and all.
+# All three bars were walked segment by segment, which is why the top bar's order is in here
+# with four of its segments out of sequence -- nobody writes 150, 149, 152, 151 down from a
+# range. The side bars came out in plain ascending runs, 157 to 167 and 179 to 189, and that
+# is the order they light in, not a range somebody assumed. The ring was walked too, and
+# agrees with ckb-next, which names its segments by angle: 22.5 degrees through 337.5,
+# clockwise from the top.
 #
-# No effect this firmware has can show a side bar in the wrong order, which is worth knowing
-# before anyone spends an evening on it: every segment of one carries the same x, so a sweep
-# across the keyboard lights the whole bar together whichever end 157 and 179 are. It would
-# take an effect that reads y, and settling it takes the probe and someone looking.
+# What the measurement does not say is which *end* each side bar's run starts at -- the
+# indices were written down without a top or a bottom beside them -- so the table follows
+# ckb-next, where leftbar1 and rightbar1 are the topmost segments. If that is the wrong way
+# round, the bar is upside down and nothing here shows it: every segment of a side bar carries
+# the same x, so a sweep across the keyboard lights the whole bar together either way. It
+# takes an effect that reads y.
 LED_SLOTS = (
     "g1", "esc", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
     None, "prtscn", "scroll", "pause", "stop", "prev", "play", "next",

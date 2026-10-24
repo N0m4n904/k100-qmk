@@ -216,15 +216,19 @@ the top row**, where they are printed, rather than with the other keys of their 
 profile-switch key, the lock key and the mute key -- have **two LEDs each**, which is why 119
 keys take 123 slots.
 
-One thing is still open: **in which order the eleven segments of each side bar run.** The
-ring is not among them -- ckb-next names its segments by angle, 22.5 degrees through 337.5
-clockwise from the top, and the probe found 120 at the top with 127 to the left of it, which
-is the same way round -- and neither is the top bar, whose order was walked segment by segment.
+**All three light bars were walked**, segment by segment, like everything else. The top bar
+is the proof that these are sequences and not ranges: four of its segments are out of order,
+at 150, 149, 152 and 151, between the eleventh at 141 and the sixteenth at 142. The side bars
+came out in plain ascending runs, 157 to 167 and 179 to 189, and that is the order they light
+in. The ring agrees with ckb-next, which names its segments by angle -- 22.5 degrees through
+337.5, clockwise from the top -- and the walk found 120 at the top with 127 to the left of it.
 
-It is also the one open question that no effect here can answer. Every segment of a side bar
-carries the same x, so a sweep across the keyboard lights the whole bar at once whichever end
-157 and 179 are; only an effect that reads y would show a bar running backwards. Settling it
-means lighting all 22 with the probe and writing down what comes up, as the rest was settled.
+What is **not** in the measurement is which end each side bar's run starts at: the indices
+were written down without a top or a bottom beside them. The table follows ckb-next, where
+`leftbar1` and `rightbar1` are the topmost segments. If that is the wrong way round a bar is
+upside down, and nothing here would show it -- every segment of a side bar carries the same x,
+so a sweep across the keyboard lights the whole bar at once either way. It takes an effect
+that reads y, or one LED lit with the probe and one look.
 
 The generator refuses to emit if the measured table and the keys the matrix scans are not the
 same set, so a renamed or added key stops the build instead of shifting every LED after it.
