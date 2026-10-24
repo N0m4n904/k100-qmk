@@ -48,11 +48,13 @@
  * effect uses, which is the mistake this keyboard already made once: one knob
  * reaching across three effects. See per_key_colour.c for both.
  *
- * Both leave the lights that are not keys showing their painted colour, which is
- * the only honest answer: no key press ever lands on a light bar, the ring or the
- * logo, so there is nothing for them to react to. Someone who wants them dark
- * under a reactive effect has the control for it already -- each zone's own
- * brightness, `Off` included.
+ * Both leave the bars and the logo showing their painted colour, which is the
+ * only honest answer: no key press ever lands on them, so there is nothing for
+ * them to react to. Someone who wants them dark under a reactive effect has the
+ * control for it already -- each zone's own brightness, `Off` included. The ring
+ * around the wheel is the exception, and only because it is not really a
+ * separate thing: it answers to the button in the middle of it, two layout units
+ * away, and reacts exactly when that button does.
  *
  * New effects are appended rather than inserted, because the numbers VIA sends
  * are the order these are declared in, and appending is the one change that
@@ -82,6 +84,7 @@ RGB_MATRIX_EFFECT(K100_REACTIVE_SPLASH)
  */
 #include "k100.h"
 #include "button_leds.h"
+#include "follower_leds.h"
 
 /*
  * The numbers the VIA menu's entries send.
@@ -251,20 +254,27 @@ static void k100_wave_fronts(uint16_t *front, uint16_t react_ms) {
 }
 
 /**
- * @brief   Whether a remembered press was on the key this LED sits under.
+ * @brief   Which key light an LED answers to: its own, or the one it follows.
  *
- * @details Matched **by position rather than by index**, which is what gets the
- *          four keys with two lights right. The ring records the one LED the
- *          matrix map names, so the second light under the wheel button, the
- *          profile-switch key, the Windows-lock key and the mute key would never
- *          see the press -- a key half lit on every stroke. Two LEDs under one
- *          key carry the same position in the layout, and the generator refuses
- *          to emit a layout where two *keys* share a position, so the position is
- *          the key. per_key_colour.c pairs them off the same way.
+ * @details The ring around the iCUE wheel is the reason this exists. Its eight
+ *          lights are not keys, so nothing is ever pressed on them and a
+ *          reaction would have nothing to give them -- while the button in the
+ *          middle of them is a key, two layout units away. A wheel whose centre
+ *          lights up inside a circle that stays at full brightness is a wheel
+ *          that is not reacting, so the ring answers to that button. Everything
+ *          else answers to itself, which is most of the keyboard and costs one
+ *          comparison. See follower_leds.h.
  */
-static bool k100_hit_here(uint8_t led, uint8_t hit) {
-    return g_last_hit_tracker.x[hit] == g_led_config.point[led].x &&
-           g_last_hit_tracker.y[hit] == g_led_config.point[led].y;
+static uint8_t k100_answers_to(uint8_t led) {
+    for (uint8_t at = 0; at < K100_FOLLOWER_COUNT; at++) {
+        const k100_follower_t run = k100_followers[at];
+
+        if (led >= run.first && led < run.first + run.count) {
+            return run.follows;
+        }
+    }
+
+    return led;
 }
 
 /** How far an LED is from a remembered press, in the layout's own units. */
@@ -275,11 +285,25 @@ static uint8_t k100_away(uint8_t led, uint8_t hit) {
     return sqrt16((uint16_t)(dx * dx + dy * dy));
 }
 
+/**
+ * @brief   How lit an LED is from a press on the key it answers to.
+ *
+ * @details The press is matched **by position rather than by index**, which is
+ *          what gets the four keys with two lights right: rgb_matrix records the
+ *          one LED the matrix map names, so the second light under the wheel
+ *          button, the profile-switch key, the Windows-lock key and the mute key
+ *          would never see the press, and each would be half lit on every
+ *          stroke. Two LEDs under one key carry the same position in the layout,
+ *          and the generator refuses to emit a layout where two *keys* share a
+ *          position, so the position is the key. per_key_colour.c pairs them off
+ *          the same way.
+ */
 static uint8_t k100_fade_level(uint8_t led, const uint16_t *front) {
-    uint8_t level = 0;
+    const led_point_t at    = g_led_config.point[k100_answers_to(led)];
+    uint8_t           level = 0;
 
     for (uint8_t hit = 0; hit < g_last_hit_tracker.count; hit++) {
-        if (k100_hit_here(led, hit)) {
+        if (g_last_hit_tracker.x[hit] == at.x && g_last_hit_tracker.y[hit] == at.y) {
             level = qadd8(level, k100_wave(front[hit], 0));
         }
     }
@@ -288,19 +312,27 @@ static uint8_t k100_fade_level(uint8_t led, const uint16_t *front) {
 }
 
 /**
- * @brief   Whether this LED may be dimmed by a reaction at all.
+ * @brief   Whether a reaction decides this LED's brightness at all.
  *
- * @details Only the keys, because only a key can be pressed: the bars, the ring and the logo
- *          have nothing to react to and keep what their own menu set them to.
+ * @details Asked of the key the LED answers to rather than of the LED, which is
+ *          what puts the wheel's ring on the same side of every answer below as
+ *          the button it surrounds -- including this first one, where a light
+ *          that is not a key would otherwise be shown the door.
  *
- *          And not the four buttons above the keys unless somebody asked for it. They *are*
- *          keys -- they switch a profile, step the lighting, lock the GUI keys and mute the
- *          host -- so without this they flash along with the typing, and a strip of mode
- *          buttons above the function row is not what anybody is watching while they type.
- *          Which LEDs those are is generated; see button_leds.h.
+ *          The bars and the logo answer to themselves, are not keys, and so keep
+ *          whatever their own menu set them to: nothing is ever pressed on them.
+ *
+ *          Nor do the four buttons above the keys react unless somebody asked for
+ *          it. They *are* keys -- they switch a profile, step the lighting, lock
+ *          the GUI keys and mute the host -- so without this they flash along
+ *          with the typing, and a strip of mode buttons above the function row is
+ *          not what anybody is watching while they type. Which LEDs those are is
+ *          generated; see button_leds.h.
  */
 static bool k100_reacts(uint8_t led) {
-    if ((g_led_config.flags[led] & LED_FLAG_KEYLIGHT) == 0) {
+    const uint8_t key = k100_answers_to(led);
+
+    if ((g_led_config.flags[key] & LED_FLAG_KEYLIGHT) == 0) {
         return false;
     }
 
@@ -309,7 +341,7 @@ static bool k100_reacts(uint8_t led) {
     }
 
     for (uint8_t at = 0; at < K100_BUTTON_LEDS; at++) {
-        if (k100_button_leds[at] == led) {
+        if (k100_button_leds[at] == key) {
             return false;
         }
     }

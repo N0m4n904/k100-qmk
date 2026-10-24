@@ -604,9 +604,21 @@ generator's `BUTTONS` that turns out to have one or three stops the build. Their
 is not the rule -- row 7 carries the four media keys as well, and those are single-LED keys
 in the function row where typing reaches them.
 
-The ring around the wheel needs no setting of its own: it is not a key, so nothing is ever
-pressed on it and it already keeps the colour and brightness its zone is set to. The same
-goes for the three bars and the logo.
+**The ring around the wheel follows the button in the middle of it**, and so is on the same
+side of that setting. It is not a key, so nothing is ever pressed on it and a reaction would
+have nothing to give it -- but a wheel whose centre lights up inside a circle that stays at
+full brightness is a wheel that is not reacting, which is what somebody looking at it sees.
+The measured layout puts all eight of its lights within two units of the button, so they are
+not near it, they are part of it.
+
+The firmware says that once, in `k100_answers_to()`, and every other answer is then asked of
+the key an LED answers to rather than of the LED -- including whether it is a key at all. One
+generated row, `{120, 8, 128}` in `follower_leds.h`, and the ring needs no case of its own
+anywhere. Being a follower does not take it out of its zone: the colour is still
+`Lighting -> Zones -> Wheel ring`, and this is only about which press it answers to.
+
+The three bars and the logo answer to themselves, are not keys, and keep whatever their zone
+was set to.
 
 Those three bytes -- a source and a hue and a saturation -- come out of the slack
 `VIA_EEPROM_CUSTOM_CONFIG_SIZE` was given for exactly this, so adding them clears nothing.
