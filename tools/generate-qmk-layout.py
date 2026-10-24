@@ -918,17 +918,24 @@ def lighting_menu(per_key_value: int, paint_value: int,
     be painted. Two values per zone, from K100_VIA_ZONE_FIRST in the order led_zones.h lists
     them, which the firmware relies on.
 
-    The fourth group is what the two reactive effects light a key in, and it exists because
-    the first answer to that was not a choice. They read the painted colours, which is the
-    richer one -- a painted keyboard reacts in its own colours -- and it leaves somebody who
-    has painted nothing with white flashes and no control over them. So the painted keyboard
-    is one of two sources rather than the only one, with a colour of the reaction's own beside
-    it, and picking that colour selects it: a control whose use shows nothing is worse than
-    one that does slightly more than it says. The group appears only while an effect that
-    reacts is running, which is what `reacts` in ANIMATIONS is for.
+    What the two reactive effects light a key in sits in the first group too, next to the
+    effect that uses it and under the same kind of condition -- because "the colour of
+    whatever effect is running" is one question, and a reader looks for it in one place. It
+    had a group of its own first, which is a section somebody has to find, and a section
+    nobody finds is a feature that does not exist. There is still never more than one colour
+    control visible: `Color` is the plain colour's and shows for that effect alone, and these
+    two show for the effects that react.
 
-    Not the colour control in the first group, which is the plain colour's. One knob reaching
-    across effects is the fault this keyboard has already had.
+    They are a choice because the first answer was not one. The reactive effects read the
+    painted colours, which is the richer answer -- a painted keyboard reacts in its own
+    colours -- and it leaves somebody who has painted nothing with white flashes and no way
+    to change them. So the painted keyboard is one of two sources, with a colour of the
+    reaction's own beside it, and picking that colour selects it: a control whose use shows
+    nothing is worse than one that does slightly more than it says.
+
+    What none of them is, is the *same* colour. One knob reaching across effects is the fault
+    this keyboard has already had, and the reaction's colour is stored separately for that
+    reason; see per_key_colour.c.
     """
     return {
         "label": "Lighting",
@@ -947,6 +954,13 @@ def lighting_menu(per_key_value: int, paint_value: int,
                 {"label": "Color", "type": "color",
                  **only_for(effect_numbers("colour")),
                  "content": [f"{RGB_MATRIX_VALUE}color", RGB_MATRIX_CHANNEL, 4]},
+                {"label": "Reacts in", "type": "dropdown",
+                 "options": [["The painted colours", 0], ["One colour", 1]],
+                 **only_for(effect_numbers("reacts")),
+                 "content": [f"{K100_VALUE}reaction_source", K100_CHANNEL, reaction_source]},
+                {"label": "Reaction color", "type": "color",
+                 **only_for(effect_numbers("reacts")),
+                 "content": [f"{K100_VALUE}reaction_colour", K100_CHANNEL, reaction_colour]},
             ],
         }, {
             "label": "Per Key",
@@ -956,17 +970,6 @@ def lighting_menu(per_key_value: int, paint_value: int,
                 {"label": "Brightness", "type": "dropdown",
                  "options": [[label, value] for label, value in PAINT_VALUES],
                  "content": [f"{K100_VALUE}paint_value", K100_CHANNEL, paint_value]},
-            ],
-        }, {
-            "label": "Reactive",
-            "content": [
-                {"label": "Reacts in", "type": "dropdown",
-                 "options": [["The painted colours", 0], ["One colour", 1]],
-                 **only_for(effect_numbers("reacts")),
-                 "content": [f"{K100_VALUE}reaction_source", K100_CHANNEL, reaction_source]},
-                {"label": "That colour", "type": "color",
-                 **only_for(effect_numbers("reacts")),
-                 "content": [f"{K100_VALUE}reaction_colour", K100_CHANNEL, reaction_colour]},
             ],
         }, {
             "label": "Zones",

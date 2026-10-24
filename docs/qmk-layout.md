@@ -577,13 +577,19 @@ that outlasts the typing is a keyboard that is simply on.
 the painted colours is the richer answer -- a keyboard somebody has painted reacts in their
 own colours, and nothing new had to be stored for it -- but it is not an answer somebody who
 has painted nothing can change, and a reaction nobody can recolour is a feature with a
-decision missing. So `Lighting -> Reactive` holds the source and one colour of the
-reaction's own, and picking that colour selects it. The painted *brightness* is read under
-either, because it is the only way a single key is turned off and a key somebody switched off
-has no business lighting up.
+decision missing. So `Lighting -> Backlight` carries the source and one colour of the
+reaction's own, under the effect that uses them, and picking that colour selects it. The
+painted *brightness* is read under either, because it is the only way a single key is turned
+off and a key somebody switched off has no business lighting up.
 
-Not the colour control in the Backlight group, which belongs to the plain colour. One knob
-reaching across effects is the fault this keyboard has already had once.
+They sit beside the effect because "the colour of whatever effect is running" is one
+question and a reader looks for it in one place. A group of their own was the first answer and
+the wrong one: a section somebody has to find is a feature that does not exist, and the
+Backlight group is where a colour control has always been. There is still never more than one
+visible -- `Color` shows for the plain colour alone, and these two for the effects that react.
+
+Which is not to say it is the *same* colour. One knob reaching across effects is the fault
+this keyboard has already had, and the reaction's colour is stored separately for it.
 
 Those three bytes -- a source and a hue and a saturation -- come out of the slack
 `VIA_EEPROM_CUSTOM_CONFIG_SIZE` was given for exactly this, so adding them clears nothing.
