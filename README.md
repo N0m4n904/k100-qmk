@@ -18,12 +18,11 @@ flash goes wrong, all three measured.
 Corsair's own bootloader, and `k100-bragi flash` writes this firmware through Corsair's own
 update path. See [Installing it](#installing-it).
 
-**Not finished:** every LED is measured, and one bit about two of them is not -- which end of
-each side bar its run starts at, since the indices were written down without a top or a bottom
-beside them. Nothing this firmware draws would show it either way: every segment of a side bar
-carries the same horizontal position. Recovering a keyboard whose
-firmware does not boot has never been exercised on a keyboard that was actually in that
-state: both halves of it are proven separately, and nobody has yet had to put them together.
+**Not finished:** nothing in the lighting -- every LED is measured, down to which end each
+light bar starts at. What has never been exercised is a recovery of a keyboard that really
+would not boot. Both parts of that are proven, including on a keyboard running this firmware,
+and the keys that do it are read by the bootloader before any firmware of ours runs; nobody
+has yet had to put them together in anger.
 
 ---
 
@@ -86,7 +85,7 @@ and the two rules that keep a mistake survivable.
 | Firmware distribution | **Understood and verified.** Official images download and validate. |
 | Reflashing a *healthy* keyboard | **Proven on hardware**, in both directions. Corsair's own images, many times; and this firmware, over USB through Corsair's update path, with no programmer: `Fn+Esc` into the bootloader, 33828 bytes in 555 chunks, applied, and the keyboard came back as `bcdDevice 0010` with its three interfaces. |
 | Route back to the bootloader | **Three ways, all measured.** From the keyboard alone: hold `B` and `L` while plugging in, decoded out of the bootloader's own startup matrix scan. From the firmware: `Fn+Esc` forces a watchdog reset, because `WDTOF` — the flag such a reset leaves behind — is what the bootloader keys on, not the EEPROM mode word this project first read it as. Over SWD it is one command. [`docs/recovery.md`](docs/recovery.md) |
-| Recovery from firmware that will not boot, over USB | **Both halves are proven, the whole has never been needed.** Getting into the bootloader without working firmware is holding `B` and `L` while plugging in, decoded out of the bootloader's own startup scan and then watched on the bus. Writing from there is `k100-bragi flash`, which has replaced this firmware over USB many times over. What nobody has done is the two together on a keyboard that really would not boot -- every write so far was to a keyboard that reached the bootloader on purpose. The firmware's own route back also works, and for a while worked rather too well, firing on every cold boot because it could not tell a host that had not woken up from a broken one. Relying on any of this before it had ever been seen to work cost a keyboard. |
+| Recovery from firmware that will not boot, over USB | **Both halves are proven, the whole has never been needed.** Holding `B` and `L` while plugging in was decoded out of the bootloader's own startup scan and then measured **with this firmware installed and eleven minutes into a session**: the keyboard came back as `bcdDevice 000a`. That it works regardless of what the application is doing follows from where the decision is made -- the bootloader scans those two keys before it starts anything, so a wedged application never gets a say. Writing from there is `k100-bragi flash`, which has replaced this firmware over USB many times over. What nobody has done is the two together on a keyboard that really would not boot. The firmware's own route back also works, and for a while worked rather too well, firing on every cold boot because it could not tell a host that had not woken up from a broken one. Relying on any of this before it had ever been seen to work cost a keyboard. |
 | Recovery from firmware that will not boot, over SWD | **Proven on hardware.** A bricked K100 was dumped, erased and restored to stock with a Raspberry Pi and four jumper wires. [`swd/`](swd/README.md) |
 | Corsair's bootloader | **Dumped.** 64 KB read out over SWD and checked: its vector checksum is valid, so the image is complete. Not redistributable, so not in this repository. |
 | Bragi protocol | **Command set recovered and the write path exercised** on a real unit. |
@@ -184,6 +183,24 @@ needs to be.
 route for a keyboard that reaches neither -- that one needs a programmer and an open case.
 
 ## Building
+
+The layout, the keymap and the VIA definition are **generated**, and the two inputs they are
+generated from live outside this repository: ckb-next's source, for where each key and light
+physically is, and one of Corsair's own firmware images, for the matrix and LED tables read
+out of it. Neither is vendored -- the first is somebody else's GPL project and the second is
+Corsair's copyrighted image -- so both are fetched:
+
+```sh
+git clone https://github.com/ckb-next/ckb-next ../ckb-next
+tools/fetch-firmware.py --out fw/
+python3 tools/generate-qmk-layout.py --ckb ../ckb-next \
+    --firmware fw/Heracles_Application_Firmware_v0.35.288.bin
+```
+
+**A fresh run leaves the working tree unchanged**, which is the point of generating them and
+is worth checking rather than believing: `git status` after that is the test. Everything the
+generator knows that neither input does -- which LED index lights which key, measured one at a
+time -- is in `LED_SLOTS` in the script, with the reasoning beside it.
 
 ```sh
 nix develop          # Rust tooling

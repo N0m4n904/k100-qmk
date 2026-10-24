@@ -223,12 +223,16 @@ came out in plain ascending runs, 157 to 167 and 179 to 189, and that is the ord
 in. The ring agrees with ckb-next, which names its segments by angle -- 22.5 degrees through
 337.5, clockwise from the top -- and the walk found 120 at the top with 127 to the left of it.
 
-What is **not** in the measurement is which end each side bar's run starts at: the indices
-were written down without a top or a bottom beside them. The table follows ckb-next, where
-`leftbar1` and `rightbar1` are the topmost segments. If that is the wrong way round a bar is
-upside down, and nothing here would show it -- every segment of a side bar carries the same x,
-so a sweep across the keyboard lights the whole bar at once either way. It takes an effect
-that reads y, or one LED lit with the probe and one look.
+Which end each run starts at is measured as well. The side bars were walked **top to bottom**
+and the top bar **left to right**, so 157 and 179 are the topmost segments of their bars and
+131 is the leftmost of the top one -- which is where ckb-next puts `leftbar1`, `rightbar1` and
+`topbar1`, so the names and the hardware agree end to end. Nothing in the lighting is inferred
+any more.
+
+It was worth asking rather than assuming, and worth saying why: nothing this firmware draws
+would have shown a side bar upside down. Every segment of one carries the same x, so a sweep
+across the keyboard lights the whole bar at once either way; it would take an effect that
+reads y.
 
 The generator refuses to emit if the measured table and the keys the matrix scans are not the
 same set, so a renamed or added key stops the build instead of shifting every LED after it.

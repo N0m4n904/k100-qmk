@@ -214,12 +214,11 @@ UNPLACED_POSITION = (0, 0)
 # agrees with ckb-next, which names its segments by angle: 22.5 degrees through 337.5,
 # clockwise from the top.
 #
-# What the measurement does not say is which *end* each side bar's run starts at -- the
-# indices were written down without a top or a bottom beside them -- so the table follows
-# ckb-next, where leftbar1 and rightbar1 are the topmost segments. If that is the wrong way
-# round, the bar is upside down and nothing here shows it: every segment of a side bar carries
-# the same x, so a sweep across the keyboard lights the whole bar together either way. It
-# takes an effect that reads y.
+# Which end each run starts at was measured too, and asked for rather than assumed: the side
+# bars were written down from top to bottom and the top bar from left to right. So 157 and 179
+# are the topmost segments of their bars and 131 is the leftmost of the top one, which is also
+# where ckb-next puts leftbar1, rightbar1 and topbar1. Nothing in the lighting is inferred any
+# more.
 LED_SLOTS = (
     "g1", "esc", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
     None, "prtscn", "scroll", "pause", "stop", "prev", "play", "next",
