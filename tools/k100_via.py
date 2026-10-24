@@ -81,17 +81,32 @@ def exchange(node: Path, request: bytes) -> bytes | None:
                   file=sys.stderr)
             return None
 
-        # The keyboard's own reports are passed over rather than waited on
-        # separately: one can land between the command and its reply, and the
-        # reply is still the next thing after it.
+        # The reply to *this* command, which means the first report that answers
+        # it rather than the first report that arrives.
+        #
+        # Two kinds of report are not the answer. The keyboard's own UI sync
+        # requests arrive unasked and can land between a command and its reply.
+        # And a reply to an earlier command can still be queued -- a read that
+        # timed out, or a tool that exited without collecting one -- in which
+        # case taking the next report hands every later command the answer to
+        # the one before it, which is the exact fault this keyboard has already
+        # had on the firmware side; see docs/usb-bringup.md. It is invisible
+        # while the answers happen to look plausible and then baffling.
+        #
+        # So the command byte has to match. `id_unhandled` counts as an answer,
+        # because refusing a command is one.
         deadline = time.monotonic() + TIMEOUT_S
         while True:
             ready, _, _ = select.select([fd], [], [], max(deadline - time.monotonic(), 0))
             if not ready:
                 return None
             reply = os.read(fd, REPORT_SIZE)
-            if reply[0] != UI_SYNC_REQUEST:
+            if reply[0] in (request[0], UNHANDLED):
                 return reply
+            if reply[0] != UI_SYNC_REQUEST:
+                print(f"  {node.name}: passed over a stale reply to "
+                      f"{reply[0]:#04x} while waiting for {request[0]:#04x}",
+                      file=sys.stderr)
     except OSError as error:
         print(f"  {node.name}: {error}", file=sys.stderr)
         return None

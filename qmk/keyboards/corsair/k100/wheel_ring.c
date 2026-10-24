@@ -10,6 +10,11 @@
  * scale it is, so turning the wheel fills the ring like a gauge and it goes back
  * to whatever the lighting was doing a moment later.
  *
+ * **The fill arrives by moving**, which is the difference between a gauge and a
+ * lit ring. At the top of the range a full gauge *is* a lit ring, so a static
+ * one says nothing at the setting most keyboards sit at; see
+ * K100_WHEEL_SWEEP_MS.
+ *
  * **Only the brightness, and the roller gets nothing.** The volume is the host's,
  * and a keyboard is never told what it is: `encoders.c` taps KC_VOLU and KC_VOLD,
  * which asks for a change and is not an answer. A ring filled to a level this
@@ -43,7 +48,24 @@
  */
 #define K100_WHEEL_SHOW_MS 1500
 
+/*
+ * How long the fill takes to run out to the level when the gauge appears.
+ *
+ * Not decoration. At the top of the range a full gauge is a lit ring, which is
+ * exactly what the ring looks like when it is doing nothing at all -- measured
+ * on the keyboard at a brightness of 255, where the gauge was reported as hard
+ * to make out, and correctly so: there was nothing to make out. Motion is what
+ * the eye catches, so the fill starts at nothing and runs out to wherever the
+ * knob is, and the first thing that happens when the wheel is touched is the
+ * ring going dark.
+ *
+ * Once per gesture, not once per detent: it runs from the first click of a turn,
+ * so turning on through it tracks the level instead of starting again.
+ */
+#define K100_WHEEL_SWEEP_MS 180
+
 static uint32_t turned_at;
+static uint32_t gesture_at;
 static bool     turned;
 
 /** Whether the ring is showing a level rather than whatever the lighting put there. */
@@ -52,8 +74,23 @@ static bool showing(void) {
 }
 
 void k100_wheel_turned(void) {
+    if (!showing()) {
+        gesture_at = timer_read32();
+    }
+
     turned_at = timer_read32();
     turned    = true;
+}
+
+/** How much of the fill has arrived, while it is still arriving. */
+static uint16_t swept(uint16_t filled) {
+    const uint32_t age = timer_elapsed32(gesture_at);
+
+    if (age >= K100_WHEEL_SWEEP_MS) {
+        return filled;
+    }
+
+    return (uint16_t)((uint32_t)filled * age / K100_WHEEL_SWEEP_MS);
 }
 
 /**
@@ -88,9 +125,9 @@ void k100_wheel_ring_paint(void) {
     /* Against the ceiling the brightness is actually set against, rather than
        against 255: a firmware built with a lower one would otherwise have a
        gauge that never fills. */
-    const uint16_t filled =
+    const uint16_t filled = swept(
         (uint16_t)((uint32_t)rgb_matrix_get_val() * ring.count * UINT8_MAX /
-                   RGB_MATRIX_MAXIMUM_BRIGHTNESS);
+                   RGB_MATRIX_MAXIMUM_BRIGHTNESS));
 
     /* The colour the ring is set to, so the gauge is in the user's own colour and
        not in one chosen here. Its stored brightness is deliberately not read: the
