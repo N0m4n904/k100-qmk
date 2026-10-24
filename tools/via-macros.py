@@ -30,40 +30,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from k100_stored import (  # noqa: E402
+    CHUNK, MACRO_GET_BUFFER, MACRO_GET_BUFFER_SIZE, MACRO_GET_COUNT, MACRO_SET_BUFFER, ask,
+    read_buffer,
+)
 from k100_usb import PRODUCT, VENDOR, device, identity  # noqa: E402
-from k100_via import exchange, interface  # noqa: E402
-
-MACRO_GET_COUNT = 0x0C
-MACRO_GET_BUFFER_SIZE = 0x0D
-MACRO_GET_BUFFER = 0x0E
-MACRO_SET_BUFFER = 0x0F
-
-#: What one report can carry of the buffer, which VIA's own protocol fixes: the
-#: command, the two offset bytes and the length take four of the 32.
-CHUNK = 28
-
-
-def ask(node: Path, request: bytes) -> bytes:
-    reply = exchange(node, request)
-    if reply is None:
-        raise SystemExit(f"the keyboard did not answer {request[0]:#04x}")
-    if reply[: len(request)] != request:
-        raise SystemExit(f"the keyboard answered {request[0]:#04x} with "
-                         f"{reply[:len(request)].hex(' ')}")
-    return reply
-
-
-def read_buffer(node: Path, size: int) -> bytes:
-    buffer = bytearray()
-    while len(buffer) < size:
-        want = min(CHUNK, size - len(buffer))
-        offset = len(buffer)
-        reply = ask(node, bytes([MACRO_GET_BUFFER, offset >> 8, offset & 0xFF, want]))
-        buffer += reply[4:4 + want]
-    return bytes(buffer)
+from k100_via import interface  # noqa: E402
 
 
 def write_buffer(node: Path, offset: int, payload: bytes) -> None:
+    """From an offset, which a whole-buffer write does not need and this does.
+
+    Only the macros are written a part at a time: everything up to the macro being changed
+    stays where it is, so the write starts there rather than at nothing.
+    """
     for at in range(0, len(payload), CHUNK):
         chunk = payload[at:at + CHUNK]
         here = offset + at
@@ -118,7 +98,7 @@ def main() -> int:
         # after it is dropped: the macros are packed one after another, so a
         # longer one would have to push the rest along and that is the
         # application's job, not this tool's.
-        before = read_buffer(node, size).split(b"\x00")[:args.set]
+        before = read_buffer(node, MACRO_GET_BUFFER, size).split(b"\x00")[:args.set]
         kept = b"".join(part + b"\x00" for part in before)
         payload = kept + args.text.encode("ascii") + b"\x00"
         if len(payload) > size:
@@ -128,7 +108,7 @@ def main() -> int:
         print(f"wrote    macro {args.set} as {args.text!r}, "
               f"and cleared any macro after it")
 
-    buffer = read_buffer(node, size)
+    buffer = read_buffer(node, MACRO_GET_BUFFER, size)
     macros = buffer.split(b"\x00")[:count]
     used = len(b"".join(macros)) + len(macros)
     print(f"used     {used} of {size} bytes")

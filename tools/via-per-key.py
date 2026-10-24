@@ -58,15 +58,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from k100_stored import (  # noqa: E402
+    DEFINITION, K100_CHANNEL, LEDS, ONE, PER_KEY_COLOUR, Refused, menu_value, read_colours,
+    write_colours,
+)
 from k100_usb import PRODUCT, VENDOR, device, identity  # noqa: E402
 from k100_via import CUSTOM_GET_VALUE, CUSTOM_SET_VALUE, exchange, interface  # noqa: E402
-
-#: VIA's own channel for a keyboard's values, and the value the painter uses on
-#: it. Neither is this keyboard's to choose: the application has the number 1
-#: built in, which is why the keyboard's own values start at 2. See
-#: qmk/keyboards/corsair/k100/per_key_colour.c.
-K100_CHANNEL = 0
-PER_KEY_COLOUR = 1
 
 #: The brush's brightness, which *is* one of this keyboard's own numbers --
 #: `K100_VIA_PAINT_VALUE` in k100.h, where the generated definition reads it
@@ -74,45 +71,10 @@ PER_KEY_COLOUR = 1
 #: definition would be testing itself.
 PAINT_VALUE = 5
 
-#: A byte the application always sends as one, after the index. Nothing in the
-#: firmware reads it; it is here because the reports have to match.
-ONE = 1
-
-#: Every LED the firmware stores a colour for, which is every LED it has.
-#: K100_PER_KEY_LEDS in k100.h.
-K100_PER_KEY_LEDS = 190
-
-
-#: The definition the application loads, which is also the record of what it sends.
-DEFINITION = Path(__file__).parent.parent / "via" / "k100-iso-de.json"
-
 
 def colour(text: str) -> tuple[int, int]:
     hue, _, sat = text.partition(",")
     return (int(hue), int(sat))
-
-
-def menu_value(wanted: str) -> tuple[int, int] | None:
-    """The channel and value a named control is sent on, out of the definition.
-
-    The definition is where to ask: the firmware picks these numbers and the definition only
-    repeats them, so a tool that wrote its own copy down would be testing itself.
-    """
-
-    def walk(item):
-        if isinstance(item, dict):
-            content = item.get("content")
-            if isinstance(content, list) and content and content[0] == wanted:
-                return (content[1], content[2])
-            return walk(content)
-        if isinstance(item, list):
-            for each in item:
-                found = walk(each)
-                if found:
-                    return found
-        return None
-
-    return walk(json.loads(DEFINITION.read_text()).get("menus", []))
 
 
 def zone_value(family: str, what: str = "") -> tuple[int, int]:
@@ -195,7 +157,7 @@ def main() -> int:
     parser.add_argument("--zone", metavar="NAME",
                         help="a zone by its name in the definition: topbar, leftbar, "
                              "rightbar, ctrlwheel, logo")
-    parser.add_argument("--all", type=int, metavar="N", nargs="?", const=190,
+    parser.add_argument("--all", type=int, metavar="N", nargs="?", const=LEDS,
                         help="read the first N LEDs and report the ones that carry a "
                              "colour, which is what a stored picture looks like from here")
     parser.add_argument("--reaction", nargs="?", const="", metavar="painted|HUE,SAT",
@@ -240,15 +202,16 @@ def main() -> int:
         brush = exchange(node, bytes([CUSTOM_GET_VALUE, K100_CHANNEL, PAINT_VALUE]))
         print(f"brush: brightness {brush[3] if brush else '?'}")
 
+    # The colours alone, which is what this tool is for. tools/k100-backup.py carries these
+    # and the keymap, the macros and the reaction's settings in one file, which is what to
+    # reach for before an update; a file written there holds its colours under the same key,
+    # so --load reads either.
     if args.dump is not None:
-        stored = []
-        for led in range(K100_PER_KEY_LEDS):
-            reply = exchange(node, bytes([CUSTOM_GET_VALUE, K100_CHANNEL, PER_KEY_COLOUR,
-                                          led, ONE]))
-            if reply is None:
-                print(f"LED {led} did not answer; nothing was written", file=sys.stderr)
-                return 1
-            stored.append([reply[5], reply[6], reply[7]])
+        try:
+            stored = read_colours(node)
+        except Refused as refusal:
+            print(refusal, file=sys.stderr)
+            return 1
 
         args.dump.write_text(json.dumps({"leds": stored}, indent=1) + "\n")
         lit = sum(1 for hue, sat, val in stored if (hue, sat) != (0, 0) or val != 255)
@@ -257,33 +220,15 @@ def main() -> int:
 
     if args.load is not None:
         stored = json.loads(args.load.read_text())["leds"]
-        if len(stored) != K100_PER_KEY_LEDS:
-            raise SystemExit(f"{args.load} holds {len(stored)} colours, and this keyboard "
-                             f"has {K100_PER_KEY_LEDS}")
+        try:
+            write_colours(node, stored, (K100_CHANNEL, PAINT_VALUE))
+        except Refused as refusal:
+            print(f"{refusal}; the keyboard may be half written", file=sys.stderr)
+            return 1
 
-        # Grouped by brightness, because the brightness is the brush's and setting it is a
-        # command of its own: one per distinct value instead of one per LED.
-        by_value: dict[int, list[int]] = {}
-        for led, (_, _, val) in enumerate(stored):
-            by_value.setdefault(val, []).append(led)
-
-        for val, leds in sorted(by_value.items()):
-            if exchange(node, bytes([CUSTOM_SET_VALUE, K100_CHANNEL, PAINT_VALUE,
-                                     val])) is None:
-                print("the brush was not set; the keyboard is half written",
-                      file=sys.stderr)
-                return 1
-
-            for led in leds:
-                hue, sat, _ = stored[led]
-                if exchange(node, bytes([CUSTOM_SET_VALUE, K100_CHANNEL, PER_KEY_COLOUR,
-                                         led, ONE, hue, sat])) is None:
-                    print(f"LED {led} was not written; the keyboard is half written",
-                          file=sys.stderr)
-                    return 1
-
+        brightnesses = len({val for _, _, val in stored})
         print(f"loaded   {len(stored)} colours from {args.load}, in "
-              f"{len(by_value)} brightness group(s)")
+              f"{brightnesses} brightness group(s)")
 
     if args.zone is not None:
         if args.dim is not None:

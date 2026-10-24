@@ -509,6 +509,46 @@ Exercised in that order, which is the whole proof: dump, flash the reshape, read
 190** colours -- it really does clear everything -- load, and `cmp` says the keyboard reads
 back byte for byte identical to the dump taken before the flash.
 
+### All four of them, in one file
+
+The colours were the first thing worth saving and not the only thing stored. Four separate
+things live in this keyboard's EEPROM because somebody chose them, and the one change that
+clears them clears all four together:
+
+| | Where it is | What reads it |
+| --- | --- | --- |
+| the keymap | VIA's dynamic keymap, every layer | `id_dynamic_keymap_get_buffer` |
+| the macros | one packed buffer | `id_dynamic_keymap_macro_get_buffer` |
+| the colours | one per LED, with its own brightness | the key painter's own value |
+| the reaction | what the reactive effects do | this keyboard's own values |
+
+```sh
+python3 tools/k100-backup.py --save before.json
+python3 tools/k100-backup.py --restore before.json
+```
+
+The keymap and the macros are taken as *buffers* rather than a position at a time, which is
+what they are: 42 reports instead of 576 for a four-layer eight-by-eighteen keymap.
+
+**A restore is checked rather than hoped about.** Everything is written, then read back and
+compared, and the tool says which of the four match. A backup nobody has restored is a file.
+
+Three things in it are decisions rather than mechanics:
+
+- **The keymap is written last.** Its half-written state is the one worth least -- a keyboard
+  with the wrong keycodes on some keys -- so an interrupted restore has already put the rest
+  back, with the file still on disk to try again with.
+- **The reaction's colour is written before its source**, because setting the colour is what
+  selects it: a keyboard restored to "the painted colours" would otherwise come back set to
+  one colour.
+- **A file carries the matrix and the layer count it came from**, and a restore refuses one
+  that does not match. A keymap buffer written at the wrong shape is not a wrong keymap, it is
+  a scrambled one.
+
+The knowing lives in `tools/k100_stored.py` and the command is presentation on top of it, so
+`via-per-key.py` and the backup cannot disagree about what is stored or where. A file written
+here holds its colours under the same key the colour dump uses, so `--load` reads either.
+
 ### What an update no longer throws away
 
 VIA marks its stored data with the **build date**, to the day:
