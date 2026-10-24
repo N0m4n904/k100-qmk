@@ -51,6 +51,15 @@ enum k100_via_value {
     K100_VIA_LED_INDEX = 4,
     /** How bright the next painted key is, which is also how one is turned off. */
     K100_VIA_PAINT_VALUE = 5,
+    /**
+     * The first of the zone colours, one per light that is not a key.
+     *
+     * A run rather than a value each: the zones are generated from the measured LED table
+     * into led_zones.h, and the definition numbers its colour controls from here in the
+     * same order, so neither side carries a list the other has to agree with. The numbers
+     * after this one up to K100_ZONE_COUNT are therefore taken.
+     */
+    K100_VIA_ZONE_FIRST = 6,
 };
 
 /**
@@ -107,6 +116,17 @@ void k100_per_key_colour_set(uint8_t *value_data);
  */
 void k100_paint_value_get(uint8_t *value_data);
 void k100_paint_value_set(uint8_t *value_data);
+
+/**
+ * @brief   One whole light bar, the wheel's ring or the logo, in one colour.
+ *
+ * @details What VIA's painter cannot reach, because it paints keys and these have no key to
+ *          click on. The zone is an index into the generated table in led_zones.h, in the
+ *          order the menu offers them; the colour arrives and is read back the way a painted
+ *          key's is, and takes the same brush brightness.
+ */
+void k100_zone_colour_get(uint8_t zone, uint8_t *value_data);
+void k100_zone_colour_set(uint8_t zone, uint8_t *value_data);
 
 /**
  * Lights the one LED the probe names, if it is on.

@@ -486,6 +486,56 @@
               ]
             }
           ]
+        },
+        {
+          "label": "Zones",
+          "content": [
+            {
+              "label": "Top bar",
+              "type": "color",
+              "content": [
+                "id_k100_zone_topbar",
+                0,
+                6
+              ]
+            },
+            {
+              "label": "Left bar",
+              "type": "color",
+              "content": [
+                "id_k100_zone_leftbar",
+                0,
+                7
+              ]
+            },
+            {
+              "label": "Right bar",
+              "type": "color",
+              "content": [
+                "id_k100_zone_rightbar",
+                0,
+                8
+              ]
+            },
+            {
+              "label": "Wheel ring",
+              "type": "color",
+              "content": [
+                "id_k100_zone_ctrlwheel",
+                0,
+                9
+              ]
+            },
+            {
+              "label": "Logo",
+              "type": "color",
+              "content": [
+                "id_k100_zone_logo",
+                0,
+                10
+              ]
+            }
+          ]
         }
       ]
     },

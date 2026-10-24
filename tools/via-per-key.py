@@ -17,6 +17,16 @@ saturation is white -- and it belongs to the brush rather than to the stroke, so
     python3 tools/via-per-key.py --brightness 0 --led 0 --colour 0,0  # off
     python3 tools/via-per-key.py --brightness 255                     # brush back to full
 
+Whole zones -- the light bars, the ring around the wheel, the logo -- are what the
+application's painter cannot reach, because it paints keys. They have a colour control each,
+and `--zone` drives those:
+
+    python3 tools/via-per-key.py --zone leftbar --colour 85,255   # left bar green
+    python3 tools/via-per-key.py --zone logo                      # what it is set to
+
+Which number each zone is sent on is read out of the generated VIA definition rather than
+written down here, so this cannot drift from what the application does.
+
 The LED is the index in the firmware's own map -- the same number the LED probe
 in VIA's Diagnostics menu uses, and the one the definition gives each key. A key
 with two LEDs takes the colour on both, which the firmware does for itself, so
@@ -55,9 +65,38 @@ PAINT_VALUE = 5
 ONE = 1
 
 
+#: The definition the application loads, which is also the record of what it sends.
+DEFINITION = Path(__file__).parent.parent / "via" / "k100-iso-de.json"
+
+
 def colour(text: str) -> tuple[int, int]:
     hue, _, sat = text.partition(",")
     return (int(hue), int(sat))
+
+
+def zone_value(family: str) -> tuple[int, int]:
+    """The channel and value one zone's colour is sent on, out of the definition."""
+    import json
+
+    wanted = f"id_k100_zone_{family}"
+
+    def walk(item):
+        if isinstance(item, dict):
+            content = item.get("content")
+            if isinstance(content, list) and content and content[0] == wanted:
+                return (content[1], content[2])
+            return walk(content)
+        if isinstance(item, list):
+            for each in item:
+                found = walk(each)
+                if found:
+                    return found
+        return None
+
+    found = walk(json.loads(DEFINITION.read_text()).get("menus", []))
+    if found is None:
+        raise SystemExit(f"{DEFINITION} has no zone called {family}")
+    return found
 
 
 def main() -> int:
@@ -69,13 +108,17 @@ def main() -> int:
     parser.add_argument("--colour", type=colour, help="hue,saturation, each 0 to 255")
     parser.add_argument("--brightness", type=int,
                         help="0 to 255, what the next painted key is given; 0 is off")
+    parser.add_argument("--zone", metavar="NAME",
+                        help="a zone by its name in the definition: topbar, leftbar, "
+                             "rightbar, ctrlwheel, logo")
     parser.add_argument("--all", type=int, metavar="N", nargs="?", const=190,
                         help="read the first N LEDs and report the ones that carry a "
                              "colour, which is what a stored picture looks like from here")
     args = parser.parse_args()
 
-    if args.led is None and args.brightness is None and args.all is None:
-        raise SystemExit("--led, --brightness, --all, or a combination")
+    if args.led is None and args.brightness is None and args.all is None \
+            and args.zone is None:
+        raise SystemExit("--led, --zone, --brightness, --all, or a combination")
 
     entry = device(args.vid, args.pid)
     if entry is None:
@@ -98,6 +141,21 @@ def main() -> int:
             return 1
         brush = exchange(node, bytes([CUSTOM_GET_VALUE, K100_CHANNEL, PAINT_VALUE]))
         print(f"brush: brightness {brush[3] if brush else '?'}")
+
+    if args.zone is not None:
+        channel, value = zone_value(args.zone)
+
+        if args.colour is not None:
+            hue, sat = args.colour
+            if exchange(node, bytes([CUSTOM_SET_VALUE, channel, value, hue, sat])) is None:
+                print("the zone was not set", file=sys.stderr)
+                return 1
+
+        reply = exchange(node, bytes([CUSTOM_GET_VALUE, channel, value]))
+        if reply is None:
+            print("the zone was not read", file=sys.stderr)
+            return 1
+        print(f"zone {args.zone}: hue {reply[3]}, saturation {reply[4]}")
 
     if args.all is not None:
         painted = []

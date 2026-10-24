@@ -29,6 +29,7 @@
 #include "via.h"
 
 #include "k100.h"
+#include "led_zones.h"
 
 /** Set from VIA, kept nowhere: a diagnostic that outlived a power cycle would
     be a keyboard with one white LED and no explanation for it. */
@@ -103,6 +104,22 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
     if (*channel_id != id_custom_channel) {
         *command_id = id_unhandled;
         return;
+    }
+
+    // The zone colours are a run of values rather than one each, so they are taken before
+    // the switch: the generated definition numbers its controls from K100_VIA_ZONE_FIRST in
+    // the order led_zones.h lists them, which is the only thing the two sides share.
+    if (*value_id >= K100_VIA_ZONE_FIRST && *value_id < K100_VIA_ZONE_FIRST + K100_ZONE_COUNT) {
+        const uint8_t zone = *value_id - K100_VIA_ZONE_FIRST;
+
+        if (*command_id == id_custom_get_value) {
+            k100_zone_colour_get(zone, value_data);
+            return;
+        }
+        if (*command_id == id_custom_set_value) {
+            k100_zone_colour_set(zone, value_data);
+            return;
+        }
     }
 
     switch (*command_id) {

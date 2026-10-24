@@ -53,6 +53,7 @@
 #include "via.h"
 
 #include "k100.h"
+#include "led_zones.h"
 
 _Static_assert(K100_PER_KEY_LEDS == RGB_MATRIX_LED_COUNT,
                "the colour table is per LED, so it is as long as the LED map");
@@ -157,6 +158,38 @@ void k100_paint_value_get(uint8_t *value_data) {
 
 void k100_paint_value_set(uint8_t *value_data) {
     paint_value = value_data[0];
+}
+
+/*
+ * A zone is painted exactly like a key, because it is the same table underneath: the
+ * application sends a hue and a saturation, the brush supplies the brightness, and what comes
+ * back is the first LED of the run -- a zone has one colour, so its first LED is its colour.
+ */
+void k100_zone_colour_get(uint8_t zone, uint8_t *value_data) {
+    if (zone >= K100_ZONE_COUNT) {
+        return;
+    }
+
+    const k100_colour_t colour = k100_per_key_colour(k100_zones[zone].first);
+
+    value_data[0] = colour.hue;
+    value_data[1] = colour.sat;
+}
+
+void k100_zone_colour_set(uint8_t zone, uint8_t *value_data) {
+    if (zone >= K100_ZONE_COUNT) {
+        return;
+    }
+
+    const k100_colour_t wanted = {.hue = value_data[0], .sat = value_data[1],
+                                  .val = paint_value};
+
+    for (uint8_t at = 0; at < k100_zones[zone].count; at++) {
+        const uint8_t led = k100_zones[zone].first + at;
+
+        colours[led] = wanted;
+        store(led);
+    }
 }
 
 void k100_per_key_colour_get(uint8_t *value_data) {
