@@ -161,10 +161,23 @@ void k100_paint_value_set(uint8_t *value_data) {
 }
 
 /*
- * A zone is painted exactly like a key, because it is the same table underneath: the
- * application sends a hue and a saturation, the brush supplies the brightness, and what comes
- * back is the first LED of the run -- a zone has one colour, so its first LED is its colour.
+ * A zone is the same table underneath, written a run at a time, and what comes back is its
+ * first LED -- a zone has one colour and one brightness, so its first LED is both.
+ *
+ * Unlike a painted key it does not take the brush. A bar is one thing with two properties,
+ * and each control sets its own: the colour sets hue and saturation, the brightness sets how
+ * bright, and both show the moment they are used. The brush belongs to the painter, where a
+ * stroke covers keys one at a time and has to be told what to carry.
  */
+static void paint_zone(uint8_t zone, k100_colour_t colour) {
+    for (uint8_t at = 0; at < k100_zones[zone].count; at++) {
+        const uint8_t led = k100_zones[zone].first + at;
+
+        colours[led] = colour;
+        store(led);
+    }
+}
+
 void k100_zone_colour_get(uint8_t zone, uint8_t *value_data) {
     if (zone >= K100_ZONE_COUNT) {
         return;
@@ -181,15 +194,39 @@ void k100_zone_colour_set(uint8_t zone, uint8_t *value_data) {
         return;
     }
 
-    const k100_colour_t wanted = {.hue = value_data[0], .sat = value_data[1],
-                                  .val = paint_value};
+    k100_colour_t wanted = k100_per_key_colour(k100_zones[zone].first);
 
-    for (uint8_t at = 0; at < k100_zones[zone].count; at++) {
-        const uint8_t led = k100_zones[zone].first + at;
+    wanted.hue = value_data[0];
+    wanted.sat = value_data[1];
 
-        colours[led] = wanted;
-        store(led);
+    // A colour set on a zone that is off turns it on, because the alternative is a control
+    // that appears to do nothing. Dimming and switching off stay with the brightness beside
+    // it, which is where someone looks for them.
+    if (wanted.val == 0) {
+        wanted.val = UINT8_MAX;
     }
+
+    paint_zone(zone, wanted);
+}
+
+void k100_zone_value_get(uint8_t zone, uint8_t *value_data) {
+    if (zone >= K100_ZONE_COUNT) {
+        return;
+    }
+
+    value_data[0] = k100_per_key_colour(k100_zones[zone].first).val;
+}
+
+void k100_zone_value_set(uint8_t zone, uint8_t *value_data) {
+    if (zone >= K100_ZONE_COUNT) {
+        return;
+    }
+
+    k100_colour_t wanted = k100_per_key_colour(k100_zones[zone].first);
+
+    wanted.val = value_data[0];
+
+    paint_zone(zone, wanted);
 }
 
 void k100_per_key_colour_get(uint8_t *value_data) {

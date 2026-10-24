@@ -86,6 +86,28 @@
  */
 #define VIA_EEPROM_CUSTOM_CONFIG_SIZE (190 * 3)
 
+/*
+ * What tells VIA's stored data apart, instead of the build date.
+ *
+ * VIA's own marker is the date the firmware was built, to the day, which throws
+ * away the keymap and the macros of every keyboard updated on a day other than
+ * the one its firmware was built on. Most updates change nothing about what is
+ * stored, and a user's remapping is not ours to discard because the calendar
+ * moved. It also fails the other way: two builds on one day that *do* change the
+ * shape of what is stored keep it, which is the case the check exists for.
+ *
+ * So this keyboard says it itself, and says it with the number that already
+ * means exactly this: the one above, which moves when the shape of what is
+ * stored changes and is listed with every move that has happened. Keymap,
+ * macros and painted colours then survive every update that does not move it,
+ * and all three are reset together when one does -- deliberately, in one place,
+ * for a reason written down.
+ *
+ * The patch that makes this possible is qmk/patches/0006; without it a keyboard
+ * cannot have an opinion here, because via_eeprom_is_valid() is not weak.
+ */
+#define VIA_EEPROM_VERSION EECONFIG_MAGIC_NUMBER
+
 /* Temporary: USB bring-up diagnostic, see bootloader.c. */
 /*
  * Never block the main loop waiting for the host.

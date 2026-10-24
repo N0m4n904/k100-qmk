@@ -106,18 +106,30 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
         return;
     }
 
-    // The zone colours are a run of values rather than one each, so they are taken before
-    // the switch: the generated definition numbers its controls from K100_VIA_ZONE_FIRST in
-    // the order led_zones.h lists them, which is the only thing the two sides share.
-    if (*value_id >= K100_VIA_ZONE_FIRST && *value_id < K100_VIA_ZONE_FIRST + K100_ZONE_COUNT) {
-        const uint8_t zone = *value_id - K100_VIA_ZONE_FIRST;
+    // The zone controls are a run of values rather than one each, so they are taken before
+    // the switch: two per zone, a colour and a brightness, from K100_VIA_ZONE_FIRST in the
+    // order led_zones.h lists them. That base and that order are the only things the
+    // firmware and the generated definition share.
+    if (*value_id >= K100_VIA_ZONE_FIRST &&
+        *value_id < K100_VIA_ZONE_FIRST + 2 * K100_ZONE_COUNT) {
+        const uint8_t offset = *value_id - K100_VIA_ZONE_FIRST;
+        const uint8_t zone   = offset / 2;
+        const bool    colour = offset % 2 == 0;
 
         if (*command_id == id_custom_get_value) {
-            k100_zone_colour_get(zone, value_data);
+            if (colour) {
+                k100_zone_colour_get(zone, value_data);
+            } else {
+                k100_zone_value_get(zone, value_data);
+            }
             return;
         }
         if (*command_id == id_custom_set_value) {
-            k100_zone_colour_set(zone, value_data);
+            if (colour) {
+                k100_zone_colour_set(zone, value_data);
+            } else {
+                k100_zone_value_set(zone, value_data);
+            }
             return;
         }
     }

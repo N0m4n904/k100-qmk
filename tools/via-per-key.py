@@ -23,6 +23,10 @@ and `--zone` drives those:
 
     python3 tools/via-per-key.py --zone leftbar --colour 85,255   # left bar green
     python3 tools/via-per-key.py --zone logo                      # what it is set to
+    python3 tools/via-per-key.py --zone ctrlwheel --dim 128       # and how bright it is
+
+A zone's brightness is its own and acts at once, unlike the brush: the colour control sets
+the colour, the brightness control sets the brightness, and neither waits for the other.
 
 Which number each zone is sent on is read out of the generated VIA definition rather than
 written down here, so this cannot drift from what the application does.
@@ -74,11 +78,11 @@ def colour(text: str) -> tuple[int, int]:
     return (int(hue), int(sat))
 
 
-def zone_value(family: str) -> tuple[int, int]:
-    """The channel and value one zone's colour is sent on, out of the definition."""
+def zone_value(family: str, what: str = "") -> tuple[int, int]:
+    """The channel and value one of a zone's controls is sent on, out of the definition."""
     import json
 
-    wanted = f"id_k100_zone_{family}"
+    wanted = f"id_k100_zone_{family}{what}"
 
     def walk(item):
         if isinstance(item, dict):
@@ -108,6 +112,8 @@ def main() -> int:
     parser.add_argument("--colour", type=colour, help="hue,saturation, each 0 to 255")
     parser.add_argument("--brightness", type=int,
                         help="0 to 255, what the next painted key is given; 0 is off")
+    parser.add_argument("--dim", type=int, metavar="VALUE",
+                        help="0 to 255, how bright the zone is; 0 is off")
     parser.add_argument("--zone", metavar="NAME",
                         help="a zone by its name in the definition: topbar, leftbar, "
                              "rightbar, ctrlwheel, logo")
@@ -143,6 +149,16 @@ def main() -> int:
         print(f"brush: brightness {brush[3] if brush else '?'}")
 
     if args.zone is not None:
+        if args.dim is not None:
+            channel, value = zone_value(args.zone, "_value")
+            if exchange(node, bytes([CUSTOM_SET_VALUE, channel, value, args.dim])) is None:
+                print("the zone's brightness was not set", file=sys.stderr)
+                return 1
+
+        channel, value = zone_value(args.zone, "_value")
+        reply = exchange(node, bytes([CUSTOM_GET_VALUE, channel, value]))
+        brightness = reply[3] if reply else "?"
+
         channel, value = zone_value(args.zone)
 
         if args.colour is not None:
@@ -155,7 +171,8 @@ def main() -> int:
         if reply is None:
             print("the zone was not read", file=sys.stderr)
             return 1
-        print(f"zone {args.zone}: hue {reply[3]}, saturation {reply[4]}")
+        print(f"zone {args.zone}: hue {reply[3]}, saturation {reply[4]}, "
+              f"brightness {brightness}")
 
     if args.all is not None:
         painted = []

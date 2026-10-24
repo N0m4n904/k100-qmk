@@ -500,43 +500,7 @@
               ]
             },
             {
-              "label": "Left bar",
-              "type": "color",
-              "content": [
-                "id_k100_zone_leftbar",
-                0,
-                7
-              ]
-            },
-            {
-              "label": "Right bar",
-              "type": "color",
-              "content": [
-                "id_k100_zone_rightbar",
-                0,
-                8
-              ]
-            },
-            {
-              "label": "Wheel ring",
-              "type": "color",
-              "content": [
-                "id_k100_zone_ctrlwheel",
-                0,
-                9
-              ]
-            },
-            {
-              "label": "Logo",
-              "type": "color",
-              "content": [
-                "id_k100_zone_logo",
-                0,
-                10
-              ]
-            },
-            {
-              "label": "Brightness",
+              "label": "Top bar brightness",
               "type": "dropdown",
               "options": [
                 [
@@ -561,9 +525,169 @@
                 ]
               ],
               "content": [
-                "id_k100_paint_value",
+                "id_k100_zone_topbar_value",
                 0,
-                5
+                7
+              ]
+            },
+            {
+              "label": "Left bar",
+              "type": "color",
+              "content": [
+                "id_k100_zone_leftbar",
+                0,
+                8
+              ]
+            },
+            {
+              "label": "Left bar brightness",
+              "type": "dropdown",
+              "options": [
+                [
+                  "Full",
+                  255
+                ],
+                [
+                  "Bright",
+                  192
+                ],
+                [
+                  "Half",
+                  128
+                ],
+                [
+                  "Dim",
+                  64
+                ],
+                [
+                  "Off",
+                  0
+                ]
+              ],
+              "content": [
+                "id_k100_zone_leftbar_value",
+                0,
+                9
+              ]
+            },
+            {
+              "label": "Right bar",
+              "type": "color",
+              "content": [
+                "id_k100_zone_rightbar",
+                0,
+                10
+              ]
+            },
+            {
+              "label": "Right bar brightness",
+              "type": "dropdown",
+              "options": [
+                [
+                  "Full",
+                  255
+                ],
+                [
+                  "Bright",
+                  192
+                ],
+                [
+                  "Half",
+                  128
+                ],
+                [
+                  "Dim",
+                  64
+                ],
+                [
+                  "Off",
+                  0
+                ]
+              ],
+              "content": [
+                "id_k100_zone_rightbar_value",
+                0,
+                11
+              ]
+            },
+            {
+              "label": "Wheel ring",
+              "type": "color",
+              "content": [
+                "id_k100_zone_ctrlwheel",
+                0,
+                12
+              ]
+            },
+            {
+              "label": "Wheel ring brightness",
+              "type": "dropdown",
+              "options": [
+                [
+                  "Full",
+                  255
+                ],
+                [
+                  "Bright",
+                  192
+                ],
+                [
+                  "Half",
+                  128
+                ],
+                [
+                  "Dim",
+                  64
+                ],
+                [
+                  "Off",
+                  0
+                ]
+              ],
+              "content": [
+                "id_k100_zone_ctrlwheel_value",
+                0,
+                13
+              ]
+            },
+            {
+              "label": "Logo",
+              "type": "color",
+              "content": [
+                "id_k100_zone_logo",
+                0,
+                14
+              ]
+            },
+            {
+              "label": "Logo brightness",
+              "type": "dropdown",
+              "options": [
+                [
+                  "Full",
+                  255
+                ],
+                [
+                  "Bright",
+                  192
+                ],
+                [
+                  "Half",
+                  128
+                ],
+                [
+                  "Dim",
+                  64
+                ],
+                [
+                  "Off",
+                  0
+                ]
+              ],
+              "content": [
+                "id_k100_zone_logo_value",
+                0,
+                15
               ]
             }
           ]

@@ -831,15 +831,13 @@ def lighting_menu(per_key_value: int, paint_value: int,
     key painted afterwards takes it, with `Off` at the bottom of the same control, because a
     key that is off is a key whose brightness is zero.
 
-    The brush's brightness appears in both groups, bound to the one value, because it applies
-    to both and a control that cannot be seen cannot be used: a zone set to `Off` from the
-    Zones group has to be switchable back on from the Zones group.
-
     The third group is the lights the painter cannot reach at all: the three bars, the ring
     around the wheel and the logo have no key to click on, so each gets a colour of its own
-    and takes it as a whole. Same storage, same brush brightness -- including its `Off`, which
-    is how a bar is turned off without turning anything else off. The numbers run from
-    K100_VIA_ZONE_FIRST in the order led_zones.h lists them, which the firmware relies on.
+    and takes it as a whole, with a brightness of its own beside it -- `Off` included, which is
+    how one bar is turned off without touching anything else. Both act as they are set, which
+    the brush does not: a zone is one thing with two properties, not a hundred keys waiting to
+    be painted. Two values per zone, from K100_VIA_ZONE_FIRST in the order led_zones.h lists
+    them, which the firmware relies on.
     """
     return {
         "label": "Lighting",
@@ -870,19 +868,23 @@ def lighting_menu(per_key_value: int, paint_value: int,
             ],
         }, {
             "label": "Zones",
+            # A colour and a brightness each, next to each other, both acting the moment they
+            # are used. Not the painter's brush: a bar is one thing with two properties, and
+            # "set the brightness, then set the colour again for it to show" is a sequence
+            # nobody should have to learn. Two values per zone, from zone_first, which is the
+            # order the firmware reads them in.
             "content": [
-                *({"label": label, "type": "color",
-                   "content": [f"{K100_VALUE}zone_{family}", K100_CHANNEL,
-                               zone_first + number]}
-                  for number, (label, family, _, _) in enumerate(zones)),
-                # The same brush, named and bound the same way, so it is in reach of the
-                # thing it applies to. One value, one cached name, two places it is shown --
-                # which is what keeps them from disagreeing. Without it a zone set to `Off`
-                # could not be turned back on from here at all: the colour control sends a
-                # hue and a saturation, and neither is a brightness.
-                {"label": "Brightness", "type": "dropdown",
-                 "options": [[label, value] for label, value in PAINT_VALUES],
-                 "content": [f"{K100_VALUE}paint_value", K100_CHANNEL, paint_value]},
+                item
+                for number, (label, family, _, _) in enumerate(zones)
+                for item in (
+                    {"label": label, "type": "color",
+                     "content": [f"{K100_VALUE}zone_{family}", K100_CHANNEL,
+                                 zone_first + number * 2]},
+                    {"label": f"{label} brightness", "type": "dropdown",
+                     "options": [[name, value] for name, value in PAINT_VALUES],
+                     "content": [f"{K100_VALUE}zone_{family}_value", K100_CHANNEL,
+                                 zone_first + number * 2 + 1]},
+                )
             ],
         }],
     }

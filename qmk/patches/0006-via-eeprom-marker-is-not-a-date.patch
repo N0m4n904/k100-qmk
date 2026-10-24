@@ -1,0 +1,73 @@
+--- a/quantum/via.c
++++ b/quantum/via.c
+@@ -65,13 +65,51 @@
+ #    include "led_matrix.h"
+ #endif
+ 
++/*
++ * What the three bytes in front of VIA's stored data mean.
++ *
++ * VIA's own answer is the build date, to the day, and it is the wrong question
++ * asked twice over. A build on another calendar day throws away the keymap and
++ * the macros of a keyboard whose storage did not change at all -- which is most
++ * updates, and is a user's remapping gone for no reason. And two builds on one
++ * day that *do* disagree about the shape of what is stored keep it, which is
++ * the case the check exists for.
++ *
++ * A keyboard that would rather say so itself defines VIA_EEPROM_VERSION, and
++ * then nothing but that number moving clears what the user has stored. See the
++ * K100's config.h, where it is the number that already means exactly this.
++ *
++ * Keyboards that define nothing keep the build date, so this changes nothing
++ * for anyone who has not asked for it.
++ */
++#ifdef VIA_EEPROM_VERSION
++_Static_assert((VIA_EEPROM_VERSION) != 0xFFFFFF,
++               "VIA_EEPROM_VERSION 0xFFFFFF is the marker for data that is *not* valid");
++#endif
++
++static void via_eeprom_marker(uint8_t *magic0, uint8_t *magic1, uint8_t *magic2) {
++#ifdef VIA_EEPROM_VERSION
++    const uint32_t version = (uint32_t)(VIA_EEPROM_VERSION);
++
++    *magic0 = (version >> 16) & 0xFF;
++    *magic1 = (version >> 8) & 0xFF;
++    *magic2 = version & 0xFF;
++#else
++    char *p = QMK_BUILDDATE; // e.g. "2019-11-05-11:29:54"
++
++    *magic0 = ((p[2] & 0x0F) << 4) | (p[3] & 0x0F);
++    *magic1 = ((p[5] & 0x0F) << 4) | (p[6] & 0x0F);
++    *magic2 = ((p[8] & 0x0F) << 4) | (p[9] & 0x0F);
++#endif
++}
++
+ // Can be called in an overriding via_init_kb() to test if keyboard level code usage of
+ // EEPROM is invalid and use/save defaults.
+ bool via_eeprom_is_valid(void) {
+-    char   *p      = QMK_BUILDDATE; // e.g. "2019-11-05-11:29:54"
+-    uint8_t magic0 = ((p[2] & 0x0F) << 4) | (p[3] & 0x0F);
+-    uint8_t magic1 = ((p[5] & 0x0F) << 4) | (p[6] & 0x0F);
+-    uint8_t magic2 = ((p[8] & 0x0F) << 4) | (p[9] & 0x0F);
++    uint8_t magic0;
++    uint8_t magic1;
++    uint8_t magic2;
++    via_eeprom_marker(&magic0, &magic1, &magic2);
+ 
+     uint8_t ee_magic0;
+     uint8_t ee_magic1;
+@@ -85,10 +123,10 @@
+ // Keyboard level code (eg. via_init_kb()) should not call this
+ void via_eeprom_set_valid(bool valid) {
+     if (valid) {
+-        char   *p      = QMK_BUILDDATE; // e.g. "2019-11-05-11:29:54"
+-        uint8_t magic0 = ((p[2] & 0x0F) << 4) | (p[3] & 0x0F);
+-        uint8_t magic1 = ((p[5] & 0x0F) << 4) | (p[6] & 0x0F);
+-        uint8_t magic2 = ((p[8] & 0x0F) << 4) | (p[9] & 0x0F);
++        uint8_t magic0;
++        uint8_t magic1;
++        uint8_t magic2;
++        via_eeprom_marker(&magic0, &magic1, &magic2);
+         nvm_via_update_magic(magic0, magic1, magic2);
+     } else {
+         nvm_via_update_magic(0xFF, 0xFF, 0xFF);

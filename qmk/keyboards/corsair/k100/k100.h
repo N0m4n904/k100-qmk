@@ -52,12 +52,20 @@ enum k100_via_value {
     /** How bright the next painted key is, which is also how one is turned off. */
     K100_VIA_PAINT_VALUE = 5,
     /**
-     * The first of the zone colours, one per light that is not a key.
+     * The first of the zone controls: a colour and a brightness for each light that is not
+     * a key.
      *
-     * A run rather than a value each: the zones are generated from the measured LED table
-     * into led_zones.h, and the definition numbers its colour controls from here in the
-     * same order, so neither side carries a list the other has to agree with. The numbers
-     * after this one up to K100_ZONE_COUNT are therefore taken.
+     * A run rather than a value each, two values per zone -- the colour at an even offset
+     * from here and the brightness at the odd one after it. The zones themselves are
+     * generated from the measured LED table into led_zones.h, and the definition numbers its
+     * controls from here in the same order, so neither side carries a list the other has to
+     * agree with. The numbers from here to K100_VIA_ZONE_FIRST + 2 * K100_ZONE_COUNT are
+     * therefore taken.
+     *
+     * Both act at once, on the whole zone, which is the difference between a zone and a
+     * painted key: a key is one of a hundred and takes the brush it was painted with, while
+     * a bar is one thing with one colour and one brightness, and a control for either is
+     * useless if setting it does not show.
      */
     K100_VIA_ZONE_FIRST = 6,
 };
@@ -127,6 +135,17 @@ void k100_paint_value_set(uint8_t *value_data);
  */
 void k100_zone_colour_get(uint8_t zone, uint8_t *value_data);
 void k100_zone_colour_set(uint8_t zone, uint8_t *value_data);
+
+/**
+ * @brief   How bright one whole zone is, applied as it is set.
+ *
+ * @details A zone's own, not the brush's: a bar is one thing, and a brightness that only
+ *          took effect the next time its colour was set would be a control that does
+ *          nothing when it is used. Zero is off, and the colour the zone is set to survives
+ *          being turned off and on again.
+ */
+void k100_zone_value_get(uint8_t zone, uint8_t *value_data);
+void k100_zone_value_set(uint8_t zone, uint8_t *value_data);
 
 /**
  * Lights the one LED the probe names, if it is on.

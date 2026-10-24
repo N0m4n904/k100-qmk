@@ -134,6 +134,8 @@ git -C "$qmk" apply --whitespace=nowarn \
     "$repo/qmk/patches/0004-raw-hid-without-an-out-endpoint.patch"
 git -C "$qmk" apply --whitespace=nowarn \
     "$repo/qmk/patches/0005-lpc-pin-names-in-the-schema.patch"
+git -C "$qmk" apply --whitespace=nowarn \
+    "$repo/qmk/patches/0006-via-eeprom-marker-is-not-a-date.patch"
 
 # ChibiOS proper, not Contrib: port_init() enables the DWT cycle counter
 # unconditionally, and this keyboard's debug block is not accessible to
