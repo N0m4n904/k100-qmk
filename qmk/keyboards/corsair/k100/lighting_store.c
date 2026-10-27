@@ -82,12 +82,15 @@ static k100_colour_t colours[K100_PER_KEY_LEDS];
  *
  * Stored beside the per-LED colours and written the same way, because it is the same kind of
  * thing: a colour somebody chose, which has to survive a power cycle to be worth choosing.
- * Red at full to begin with -- an unpainted keyboard is white, so a default that cannot be
- * seen against it would read as a feature that does not work.
+ * Red to begin with -- an unpainted keyboard is white, so a default that cannot be seen
+ * against it would read as a feature that does not work -- and at half, because a lock is a
+ * small fact and a key shouting it over the effect underneath reads as a fault rather than a
+ * notice. Half is the menu's own middle step rather than half of 255, so the brightness
+ * dropdown reads the default back as a step it has a name for.
  */
 static k100_colour_t locks[K100_LOCK_COUNT];
 
-#define K100_LOCK_COLOUR_DEFAULT ((k100_colour_t){.hue = 0, .sat = UINT8_MAX, .val = UINT8_MAX})
+#define K100_LOCK_COLOUR_DEFAULT ((k100_colour_t){.hue = 0, .sat = UINT8_MAX, .val = 128})
 
 /** Where the lock colours sit in the region: after every LED's own. */
 #define K100_LOCKS_OFFSET (K100_PER_KEY_LEDS * sizeof(k100_colour_t))
