@@ -21,7 +21,7 @@ enum k100_keycodes {
     /** Steps the lighting through the effects this firmware has. See lighting_keys.c. */
     K100_RGB_EFFECT = QK_KB_0,
 
-    /** Turns the key lighting off and back on, status icons included. */
+    /** Turns the key lighting off and back on. The status icons stay lit. */
     K100_LIGHTS_TOGGLE,
 };
 
@@ -116,6 +116,14 @@ enum k100_via_value {
  *          counterparts in via.h. See via_ui_sync.c.
  */
 void k100_via_sync_value(uint8_t channel, uint8_t value);
+
+/**
+ * @brief   Whether the key lighting has been turned off, by the profile-switch key or the VIA menu.
+ *
+ * @details Both select the effect that paints black, and that effect is the only record of it.
+ *          See rgb_matrix_kb.inc for why off is an effect.
+ */
+bool k100_key_lighting_is_off(void);
 
 /** How many LEDs carry a colour of their own: every LED the firmware has. */
 #define K100_PER_KEY_LEDS 190

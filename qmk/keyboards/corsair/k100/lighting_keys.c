@@ -68,7 +68,7 @@ static uint8_t before_off = 0;
  */
 static void step_effect(void) {
     rgb_matrix_step();
-    if (rgb_matrix_get_mode() == RGB_MATRIX_CUSTOM_K100_LIGHTS_OFF) {
+    if (k100_key_lighting_is_off()) {
         rgb_matrix_step();
     }
 }
@@ -81,7 +81,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     }
 
     if (keycode == K100_LIGHTS_TOGGLE && record->event.pressed) {
-        if (rgb_matrix_get_mode() == RGB_MATRIX_CUSTOM_K100_LIGHTS_OFF) {
+        if (k100_key_lighting_is_off()) {
             rgb_matrix_mode(before_off ? before_off : RGB_MATRIX_SOLID_COLOR);
         } else {
             before_off = rgb_matrix_get_mode();

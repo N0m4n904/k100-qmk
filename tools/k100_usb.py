@@ -14,6 +14,7 @@ and credited to this firmware. See docs/recovery.md.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -21,15 +22,42 @@ from pathlib import Path
 VENDOR = "1b1c"
 PRODUCT = "1b7c"
 
-# `bcdDevice`, as sysfs spells it: four hex digits, BCD, so 1.1.0 reads 0110.
+#: Where the firmware's version is declared, which is also where USB gets it.
+KEYBOARD_JSON = Path(__file__).resolve().parent.parent / \
+    "qmk/keyboards/corsair/k100/keyboard.json"
+
+
+def declared_version() -> str:
+    """The version the firmware in this tree declares to USB, as major.minor.patch.
+
+    Read rather than repeated. A container that says one thing while the device
+    says another is worse than either being wrong: the bootloader and the host
+    would disagree about what is installed, and the only way to find out which
+    is right is to take the keyboard apart.
+    """
+    return json.loads(KEYBOARD_JSON.read_text())["usb"]["device_version"]
+
+
+def bcd_device(version: str) -> str:
+    """That version as sysfs shows `bcdDevice`, which is how QMK encodes it.
+
+    Two digits for the leading number and one each for the other two. QMK's
+    `bcd_version` value type in lib/python/qmk/cli/generate/config_h.py.
+    """
+    major, minor, patch = version.split(".")
+    return f"{major:0>2}{minor}{patch}"
+
+
+# `bcdDevice`, as sysfs shows it: four hex digits, BCD, so 1.0.1 becomes 0101.
 # Ours is declared in tools/generate-qmk-layout.py and reaches the descriptor
-# through keyboard.json; the other two belong to Corsair and are observed.
+# through keyboard.json, which is where it is read from here too. The other two
+# belong to Corsair and are observed.
 #
 # The versions this project has already shipped are kept rather than replaced.
 # A keyboard that has not been updated is still this firmware, and a tool that
 # only knew the newest number would call it unrecognised and refuse to work with
 # it -- which is the opposite of what a keyboard waiting for an update needs.
-CURRENT = "0110"
+CURRENT = bcd_device(declared_version())
 EARLIER = ("0101", "0100", "0030", "0021", "0020", "0010", "0001")
 OURS = (CURRENT, *EARLIER)
 

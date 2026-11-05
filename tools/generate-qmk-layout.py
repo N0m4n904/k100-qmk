@@ -79,7 +79,7 @@ CUSTOM_KEYCODE_LABELS = {
     },
     "K100_LIGHTS_TOGGLE": {
         "name": "Lights",
-        "title": "Turns the key lighting off and on, status icons included",
+        "title": "Turns the key lighting off and on. The status icons stay lit.",
         "shortName": "Light",
     },
 }
@@ -291,12 +291,15 @@ QMK_MAX_X, QMK_MAX_Y = 224, 64
 #
 # Three readers want it and all three have to agree, so all three are fed from here. QMK builds
 # it into the USB descriptor as `DEVICE_VER`, which is the only thing that tells this firmware
-# apart from Corsair's -- `tools/k100_usb.py` maps the number to a name, so changing this means
-# changing that in the same breath. The keyboard's config.h hands the same macro to VIA as its
-# firmware version. And `tools/pack-firmware.py` reads it back out of the generated
-# keyboard.json for the container header, which is what Corsair's bootloader reads.
+# apart from Corsair's. The keyboard's config.h hands the same macro to VIA as its firmware
+# version. And `tools/k100_usb.py` reads it back out of the generated keyboard.json, both to
+# recognise that number on the bus and for `tools/pack-firmware.py` to put in the container
+# header, which is what Corsair's bootloader reads.
 #
-# QMK encodes it as BCD: 1.1.0 becomes 0x0110, which is what the host reads and VIA displays.
+# Changing this means adding the number it replaces to `EARLIER` in `tools/k100_usb.py`, because
+# nothing else records what has shipped and a keyboard still running it has to stay recognised.
+#
+# QMK encodes it as BCD: 1.0.1 becomes 0x0101, which is what the host reads and VIA displays.
 # Corsair's container has no field for the leading number at all -- see tools/k100_container.py --
 # so it carries the minor and the patch and says so, rather than printing a major it never held.
 FIRMWARE_VERSION = "1.1.0"

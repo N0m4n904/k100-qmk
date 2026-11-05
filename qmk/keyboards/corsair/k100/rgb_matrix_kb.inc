@@ -420,4 +420,8 @@ bool K100_LIGHTS_OFF(effect_params_t* params) {
     return rgb_matrix_check_finished_leds(led_max);
 }
 
+bool k100_key_lighting_is_off(void) {
+    return rgb_matrix_get_mode() == RGB_MATRIX_CUSTOM_K100_LIGHTS_OFF;
+}
+
 #endif // RGB_MATRIX_CUSTOM_EFFECT_IMPLS

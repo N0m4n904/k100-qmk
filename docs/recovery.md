@@ -1025,7 +1025,7 @@ which needs no command sent at all:
 | --- | --- |
 | `0.23` | Corsair's application, firmware 0.35.288 |
 | `0.0a` | Corsair's bootloader, 0.10.45 |
-| `1.10` | **this project's firmware** — `DEVICE_VER 0x0110`, version 1.1.0, from `keyboard.json` |
+| `1.10` | **this project's firmware**: `DEVICE_VER 0x0110`, version 1.1.0, from `keyboard.json` |
 | `1.01` | this project's firmware, version 1.0.1 |
 | `1.00` | this project's firmware, version 1.0.0 |
 | `0.30` | this project's firmware, version 0.3.0 |

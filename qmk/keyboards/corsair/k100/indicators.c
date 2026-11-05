@@ -127,8 +127,11 @@ bool rgb_matrix_indicators_kb(void) {
     indicator(K100_INDICATOR_MUTE, false);
 
     /* The keys that carry the locks, which is the same news as the icons above
-       in the place it is being looked for. */
-    show_locks(host);
+       in the place it is being looked for. Not while the key lighting is off:
+       dark keys were asked for, and the icons still report the locks. */
+    if (!k100_key_lighting_is_off()) {
+        show_locks(host);
+    }
 
     /* What the wheel is set to, while it is being turned. Over the effect for
        the same reason the locks are: it is a fact about the keyboard and what is

@@ -361,7 +361,7 @@
     },
     {
       "name": "Lights",
-      "title": "Turns the key lighting off and on, status icons included",
+      "title": "Turns the key lighting off and on. The status icons stay lit.",
       "shortName": "Light"
     }
   ],

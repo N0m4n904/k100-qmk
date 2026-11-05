@@ -522,7 +522,10 @@ are `logoleft`, `logo` and `logoright`, so a stem with a number would have found
 Caps, Num and Scroll Lock light **their own keys** while they are on, in a colour and at a
 brightness picked in VIA. That is the same news the icons above the number pad carry, in the
 place somebody is looking: an icon over the number pad is a long way from the key just
-pressed. A brightness of zero is how to say one of them should stay out of the way.
+pressed. A brightness of zero is how to say one of them should stay out of the way. Turning
+the key lighting off darkens them with every other key, from the profile-switch key and from
+the menu's `Off` alike, and the icons go on reporting the locks. This is built and has not been
+watched on the keyboard yet.
 
 Which LED sits under which lock key is generated into `lock_leds.h`, and so is each lock's
 *place* in the order. `indicators.c` builds its own list **at** those places rather than in
