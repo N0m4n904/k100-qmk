@@ -50,10 +50,15 @@ SRC += via_ui_sync.c
 # storage is: the region is declared in this keyboard's config.h.
 SRC += lighting_store.c
 
-# When the lighting goes dark by itself: the host has gone to sleep, or nobody
-# has touched the keyboard for a while. Keyboard level because the first one is
+# When the lighting goes dark by itself: the host has gone, or nobody has
+# touched the keyboard for a while. Keyboard level because the first one is
 # unreachable here by QMK's own route, and the file says why.
 SRC += lighting_sleep.c
+
+# Touching the keyboard waking a sleeping host. Keyboard level for the same
+# reason, and it is the other half of the file above: that one stops drawing
+# when the host goes, this one wakes it.
+SRC += remote_wakeup.c
 
 # Our own RGB effect, in rgb_matrix_kb.inc, which QMK includes into
 # rgb_matrix.c rather than compiling on its own -- so no SRC entry, just this.

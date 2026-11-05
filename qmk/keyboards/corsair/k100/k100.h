@@ -252,6 +252,15 @@ void k100_sleep_after_set(uint8_t *value_data);
 void k100_lighting_sleep_task(void);
 
 /**
+ * @brief   Wakes a sleeping host when somebody touches the keyboard.
+ *
+ * @details Also once per trip round the main loop, and for the same reason the lighting is
+ *          decided there: QMK sends the request only from the loop this keyboard compiles out.
+ *          See remote_wakeup.c.
+ */
+void k100_remote_wakeup_task(void);
+
+/**
  * @brief   Counts one finished lighting frame. See lighting_rate.c.
  *
  * @details Called from the indicator hook, which rgb_matrix runs exactly once per frame --

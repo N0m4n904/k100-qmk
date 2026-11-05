@@ -1,8 +1,8 @@
 --- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.h
 +++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.h
-@@ -345,12 +345,45 @@
+@@ -345,12 +345,56 @@
    ((usbp)->epc[ep]->out_state->rxcnt)
- 
+
  /**
 + * @brief   The bits of @p DEVCMDSTAT that a write of one clears.
 + *
@@ -24,16 +24,27 @@
 + *          there. Masking them off first makes a write leave them standing,
 + *          and makes naming one in @p set the way to acknowledge it.
 + *
++ *          The read and the write are one critical section. Both the interrupt
++ *          handler and thread context reach this register -- the handler for
++ *          the device address and the endpoint bits, thread context to connect
++ *          the bus and to signal a remote wakeup -- and a write-back that
++ *          straddled the handler would put back the bits it had just set.
++ *
 + * @param[in] clear     bits to clear
 + * @param[in] set       bits to set, and latched events to acknowledge
 + *
 + * @notapi
 + */
 +static inline void usb_lld_devcmdstat_write(uint32_t clear, uint32_t set) {
++  /* The X form of the lock, because this is called from both contexts. */
++  syssts_t sts = osalSysGetStatusAndLockX();
++
 +  const uint32_t kept =
 +    LPC_USB->DEVCMDSTAT & ~(USB_DEVCMDSTAT_LATCHED_MASK | clear);
 +
 +  LPC_USB->DEVCMDSTAT = kept | set;
++
++  osalSysRestoreStatusX(sts);
 +}
 +
 +/**
@@ -47,7 +58,7 @@
  
  /**
   * @brief   Disconnect the USB device.
-@@ -358,7 +391,7 @@
+@@ -358,7 +402,7 @@
   * @api
   */
  #define usb_lld_disconnect_bus(usbp)                                        \
@@ -56,7 +67,7 @@
  
  /**
   * @brief   Start of host wake-up procedure.
-@@ -366,7 +399,7 @@
+@@ -366,7 +410,7 @@
   * @notapi
   */
  #define usb_lld_wakeup_host(usbp)                                           \

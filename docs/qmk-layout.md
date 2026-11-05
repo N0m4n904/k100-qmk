@@ -772,7 +772,7 @@ is "painted, white".
 Two reasons, one mechanism, because they are the same statement -- nothing is using the
 lighting, so stop drawing it:
 
-- **the host is asleep.** Not a preference, and so not a setting.
+- **no host is there.** Not a preference, and so not a setting.
 - **nobody is here**, for as long as `Lights off after` says. A setting, and `Never` until
   somebody asks for it: a keyboard that goes dark on its own without being told to looks
   broken, and "it turned itself off" is a bug report rather than a feature working.
@@ -790,15 +790,95 @@ to sleep, and 190 LEDs stayed lit all night.
 And `RGB_MATRIX_TIMEOUT` is a compile-time constant, which cannot be a setting.
 
 So `lighting_sleep.c` decides it instead, once per trip round the main loop, where the
-watchdog keeps being fed either way. What it needs was all there and only the last step was
-missing: the LPC USB driver raises `USB_EVENT_SUSPEND` from the controller's `DSUS` bit,
-QMK's `usb_event_queue_task()` turns that into the device state this reads, and
-`RGB_MATRIX_SLEEP` -- which this keyboard now defines -- is what makes
-`rgb_matrix_set_suspend_state()` do anything at all. Without it the call compiles to nothing.
+watchdog keeps being fed either way. `RGB_MATRIX_SLEEP` -- which this keyboard defines -- is
+what makes `rgb_matrix_set_suspend_state()` do anything at all; without it the call compiles
+to nothing.
 
 The idle side reads `last_input_activity_elapsed()`, which counts **keys and both rotaries**.
 That matters on a keyboard whose wheel sets the brightness: turning it up and watching the
 lighting go out a minute later would be correct and useless.
+
+### Whether the host is gone, read off the bus
+
+The first version of this called `usb_device_state_get_configure_state()`, which reports
+`USB_DEVICE_STATE_SUSPEND` once the controller has latched a suspend, the interrupt for it has
+been taken, the ChibiOS driver has raised an event and `usb_event_queue_task()` has drained it
+into a state. Four links, and **a host that goes away does not always set them off.**
+
+The case that showed it is a host switched off while its port stays powered, which is what a
+self-powered hub does: the keyboard keeps running, the state never becomes `SUSPEND`, and the
+lighting stays lit. The idle timeout does fire there, which is what locates the fault --
+everything downstream of the question works on the hardware, and only the question was wrong.
+Which of the four links fails to deliver was never measured, and now does not have to be.
+
+`lighting_sleep.c` reads the bus instead. A host that is there sends a frame every
+millisecond, and the controller counts them in `INFO.FRAME_NR` by itself, without an interrupt
+to enable or anything to acknowledge. That matters here, because QMK registers no SOF callback
+at all, so the counter is the only sight this firmware has of the traffic. A frame number that
+has stopped moving is the one fact common to every way a host can leave: asleep, switched off,
+unplugged, or a hub that disabled the port. The controller's own `DSUS` bit is derived from
+the same silence after three milliseconds; this reads the silence directly.
+
+**That register has already been watched doing it.** The table in
+[`usb-bringup.md`](usb-bringup.md) records `INFO` frame number as *counting* under Corsair's
+firmware and `0` under this one while the controller never saw the bus, taken with a debug
+probe on this part.
+
+`usbGetFrameNumberX()` is plain ChibiOS HAL and the LPC driver implements it, so the keyboard
+calls the HAL and touches no register. One mapping was owed to it: the LPC546xx compat header
+defined `USB_INFO_FRAME_NR_POS` and left the mask to NXP's macro of the same name, which
+belongs to the *other*, full-speed controller on this part. Both are `0x7ff`, so the accessor
+read the right field while naming the wrong peripheral. It is stated for this controller now,
+and `chibios/test/register-check.c` exercises the driver's own macro instead of a paraphrase
+of it.
+
+**The threshold is a quarter of a second**, and what sets it is the silences that are *not* a
+host leaving. A bus reset is driven for at least ten milliseconds and no frame crosses it, so
+a few milliseconds would put the lighting out every time a host re-enumerated the keyboard;
+USB's own three milliseconds of an idle bus is the shortest anything could be. A slow trip
+round the loop cannot be mistaken for silence, which is the thing to worry about on a board
+whose matrix alone costs four milliseconds a scan: the deadline is consulted only when two
+samples read the *same* frame number, and a trip that took longer finds the counter further
+on. What bounds it from above is the counter's wrap -- eleven bits come round every 2048 ms,
+and two samples exactly that far apart would read alike -- and that is out of reach, because
+the trip that takes the sample is the trip that feeds the inherited watchdog, and about a
+second and a half without one resets the part.
+
+**The lighting stays on for five seconds at power-up** while nothing has answered, and only
+then goes dark. Without a debug probe, 190 lit LEDs are this board's only sign that the
+firmware is running at all, which is why `bootloader.c` carries a whole diagnostic channel
+made of how long the keyboard stays off the bus. A keyboard that came up dark and stayed dark
+would look like a dead one. A working image is back on the bus in under a second, so a host
+that is there is seen long before the five seconds are up and the lighting never goes out.
+
+### Touching the keyboard wakes a sleeping host
+
+The other half of the same absence. QMK's configuration descriptor declares
+`USB_CONFIG_ATTR_REMOTEWAKEUP`, so a host that wants the feature enables it with
+`SET_FEATURE` and ChibiOS records that in `USBDriver::status`. What was missing is the
+keyboard ever sending the request, and QMK sends it from exactly one place: the same
+compiled-out loop as above.
+
+`remote_wakeup.c` sends it from the main loop instead, when `last_input_activity_time()` moves
+and the host has permitted it. The timestamp instead of the time since: what matters is that
+it moved, where "touched within the last so many milliseconds" would send the request again on
+every trip for as long as that lasted. QMK's version also scans the matrix itself and repairs
+its idea of what is held down afterwards, because nothing else scans while it spins; here the
+main loop is running, so the key that wakes the host is scanned, debounced and typed like on
+any other keyboard. Both rotaries count as touching it, the same clock the idle timeout reads.
+
+Whether the host is asleep is not decided there. `usbWakeupHost()` signals resume from a
+driver that is suspended and does nothing otherwise, which is the right layer to settle it in:
+a host that is plainly gone and never reaches that state is a port that misses the suspend, to
+be found and fixed where the suspend is read. **This has not been watched working**, and it is
+the one thing here that still depends on that chain, where the lighting no longer does. If a
+key does not wake a sleeping host, the next step is to find out whether the controller reports
+the suspend at all -- which nothing in the firmware can currently say.
+
+The write it ends in goes through `usb_lld_devcmdstat_write()`, which clears `DSUS`. That is a
+read-modify-write of a register the interrupt handler also writes, and this is the first
+caller to reach it from thread context while the handler is live, so the helper now holds the
+read and the write in one critical section. See `chibios/patches/0010-devcmdstat-latched-bits.patch`.
 
 ### What the lighting costs, as a number
 

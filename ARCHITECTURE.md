@@ -79,8 +79,10 @@ layout, so all 190 were measured one at a time with a probe built into the firmw
 
 **The keyboard.** Six effects of its own, a colour and a brightness for every LED, zones for
 the lights that are not keys, the locks shown on their own keys, two effects that react to
-typing, a gauge on the ring around the wheel, and the lighting resting when the host sleeps.
-What it remembers lives in one EEPROM region owned by one file, `lighting_store.c`.
+typing, a gauge on the ring around the wheel, the lighting resting while the host is gone, and
+touching the keyboard waking a sleeping one. Whether the host is gone is read off the bus,
+because a suspend may never be reported. What the keyboard remembers lives in one EEPROM
+region owned by one file, `lighting_store.c`.
 
 **VIA.** Protocol 13 over the control endpoint, because the interrupt OUT endpoint this
 keyboard should use never acknowledges in a way the host accepts. The definition is generated

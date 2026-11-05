@@ -98,8 +98,15 @@
 
 /**
  * @name    INFO bits
+ * @details The mask is undefined first for a different reason than the setters
+ *          above: NXP spells it exactly as the driver expects, but for the
+ *          *other*, full-speed controller. Both place the frame number in the
+ *          same eleven bits, so the accessor read the right field while naming
+ *          the wrong peripheral. Stated for this one here.
  * @{
  */
+#undef USB_INFO_FRAME_NR_MASK
+#define USB_INFO_FRAME_NR_MASK      USBHSD_INFO_FRAME_NR_MASK
 #define USB_INFO_FRAME_NR_POS       USBHSD_INFO_FRAME_NR_SHIFT
 /** @} */
 
