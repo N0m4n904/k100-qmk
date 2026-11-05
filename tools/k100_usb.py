@@ -21,7 +21,7 @@ from pathlib import Path
 VENDOR = "1b1c"
 PRODUCT = "1b7c"
 
-# `bcdDevice`, as sysfs spells it: four hex digits, BCD, so 1.0.1 reads 0101.
+# `bcdDevice`, as sysfs spells it: four hex digits, BCD, so 1.1.0 reads 0110.
 # Ours is declared in tools/generate-qmk-layout.py and reaches the descriptor
 # through keyboard.json; the other two belong to Corsair and are observed.
 #
@@ -29,8 +29,8 @@ PRODUCT = "1b7c"
 # A keyboard that has not been updated is still this firmware, and a tool that
 # only knew the newest number would call it unrecognised and refuse to work with
 # it -- which is the opposite of what a keyboard waiting for an update needs.
-CURRENT = "0101"
-EARLIER = ("0100", "0030", "0021", "0020", "0010", "0001")
+CURRENT = "0110"
+EARLIER = ("0101", "0100", "0030", "0021", "0020", "0010", "0001")
 OURS = (CURRENT, *EARLIER)
 
 BOOTLOADER = "000a"
