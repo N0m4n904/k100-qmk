@@ -8,6 +8,7 @@ first, with each crash after the event it came after.
 
     python3 tools/k100-fault-log.py                 # the whole log
     python3 tools/k100-fault-log.py --clear         # empty it
+    python3 tools/k100-fault-log.py --hang locked   # needs K100_DIAGNOSTIC_HANG in the build
 
 A time is seconds since that entry's boot, and it comes round after 49.7 days of uptime. A
 crash's is the last time the main loop ran rather than the moment of the crash. To put a PC in
@@ -42,6 +43,9 @@ HEADER = Path(__file__).resolve().parent.parent / "qmk/keyboards/corsair/k100/k1
 
 #: Enough for a clear to finish, a slot per trip round a loop of a few milliseconds.
 CLEAR_TIMEOUT_S = 10.0
+
+#: What `--hang` can ask for, by the number the firmware takes.
+HANGS = {"unlocked": 1, "locked": 2, "fault": 3}
 
 
 class EventKind(enum.Enum):
@@ -168,12 +172,22 @@ def clear(node: Path) -> bool:
     return False
 
 
+def hang(node: Path, how: str) -> bool:
+    """Asks the main loop to stop. A build without the option refuses, and says so here."""
+    reply = exchange(node, bytes([CUSTOM_SET_VALUE, K100_CHANNEL,
+                                  via_value(HEADER, "K100_VIA_DIAGNOSTIC_HANG"), HANGS[how]]))
+    return reply is not None and reply[0] != UNHANDLED
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--vid", default=VENDOR, help="USB vendor id, hex")
     parser.add_argument("--pid", default=PRODUCT, help="USB product id, hex")
-    parser.add_argument("--clear", action="store_true", help="empty the log")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--clear", action="store_true", help="empty the log")
+    action.add_argument("--hang", choices=HANGS,
+                        help="stop the main loop, in a build with K100_DIAGNOSTIC_HANG")
     args = parser.parse_args()
 
     entry = device(args.vid, args.pid)
@@ -188,6 +202,14 @@ def main() -> int:
         print("no interface answered VIA", file=sys.stderr)
         return 1
     node, _protocol = found
+
+    if args.hang:
+        if not hang(node, args.hang):
+            print("this build refused: it was not built with K100_DIAGNOSTIC_HANG",
+                  file=sys.stderr)
+            return 1
+        print("asked. The keyboard should now stop, and then come back as the bootloader")
+        return 0
 
     try:
         if args.clear:

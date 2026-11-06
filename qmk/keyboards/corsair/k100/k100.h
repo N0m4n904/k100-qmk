@@ -115,6 +115,8 @@ enum k100_via_value {
     K100_VIA_LOG_CRASH = 32,
     /** Empties the log. Write only, and also only for the tool. */
     K100_VIA_LOG_CLEAR = 33,
+    /** Stops the main loop, in a build with K100_DIAGNOSTIC_HANG. Write only. */
+    K100_VIA_DIAGNOSTIC_HANG = 34,
 };
 
 /**
@@ -335,6 +337,11 @@ void k100_log_task(void);
 
 /** @brief Asks for the log to be emptied, a slot per trip round the main loop. */
 void k100_log_clear(void);
+
+#ifdef K100_DIAGNOSTIC_HANG
+/** @brief Stops the main loop on its next trip round: one means unlocked, two locked, three a fault. */
+void k100_diagnostic_request_hang(uint8_t how);
+#endif
 
 /** @brief The newest entries as one line of text each, for VIA's labels. */
 void k100_log_last_crash_get(uint8_t *value_data);

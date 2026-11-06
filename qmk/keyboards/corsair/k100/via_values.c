@@ -274,6 +274,11 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 case K100_VIA_LOG_CLEAR:
                     k100_log_clear();
                     return;
+#ifdef K100_DIAGNOSTIC_HANG
+                case K100_VIA_DIAGNOSTIC_HANG:
+                    k100_diagnostic_request_hang(value_data[0]);
+                    return;
+#endif
             }
             break;
 

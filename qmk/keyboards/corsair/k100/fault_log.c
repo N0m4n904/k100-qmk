@@ -356,12 +356,72 @@ void k100_log_clear(void) {
     clear_cursor = 0;
 }
 
+#ifdef K100_DIAGNOSTIC_HANG
+/*
+ * Proving the chain on the keyboard, with nobody unplugging anything.
+ *
+ * Off by default, because a keyboard should not stop when a host asks it to. Built with
+ *
+ *     qmk/test/build-k100.sh <dir> EXTRAFLAGS=-DK100_DIAGNOSTIC_HANG
+ *
+ * `tools/k100-fault-log.py --hang` then stops the main loop. The watchdog's warning has to
+ * find the core inside one of these three functions, whichever is asked for, and the
+ * bootloader has to keep the keyboard afterwards. A normal image written over it leaves the
+ * EEPROM alone, and the log then shows a PC that addr2line puts inside the function asked for.
+ * Separate functions and never inlined, so that it can only be that one.
+ *
+ * On the next trip round rather than in the command, so that the command is answered first.
+ */
+enum { HANG_KERNEL_UNLOCKED = 1, HANG_KERNEL_LOCKED = 2, FAULT_ON_REQUEST = 3 };
+
+static uint8_t requested_hang;
+
+void k100_diagnostic_request_hang(uint8_t how) {
+    requested_hang = how;
+}
+
+__attribute__((noinline)) static void hang_with_kernel_unlocked(void) {
+    for (;;) {
+    }
+}
+
+__attribute__((noinline)) static void hang_with_kernel_locked(void) {
+    chSysLock();
+    for (;;) {
+    }
+}
+
+__attribute__((noinline)) static void fault_on_purpose(void) {
+    __builtin_trap();
+}
+
+static void hang_if_requested(void) {
+    switch (requested_hang) {
+        case HANG_KERNEL_UNLOCKED:
+            hang_with_kernel_unlocked();
+            break;
+        case HANG_KERNEL_LOCKED:
+            hang_with_kernel_locked();
+            break;
+        case FAULT_ON_REQUEST:
+            fault_on_purpose();
+            break;
+        default:
+            break;
+    }
+}
+#endif
+
 void k100_log_task(void) {
     last_pass_ms = timer_read32();
 
     if (clear_cursor < CLEAR_ENTRIES) {
         clear_next_entry();
     }
+
+#ifdef K100_DIAGNOSTIC_HANG
+    hang_if_requested();
+#endif
 }
 
 /** Where the entry @p age places behind the next one is. */
