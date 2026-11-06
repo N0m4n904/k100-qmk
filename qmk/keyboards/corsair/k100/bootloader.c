@@ -825,8 +825,10 @@ void keyboard_pre_init_kb(void) {
 void matrix_setup(void) {
     diagnostic_mark(DIAGNOSTIC_STAGE_MATRIX_S);
 }
+#endif
 
 void keyboard_post_init_kb(void) {
+#ifdef K100_USB_DIAGNOSTIC
 #ifdef K100_DIAGNOSTIC_MASK_USB_IRQ
     /*
      * Masks the USB interrupt, as a test of one specific explanation for the
@@ -867,6 +869,7 @@ void keyboard_post_init_kb(void) {
      */
     __disable_irq();
 #endif
+#endif
 
     /* Startup is over: QMK has initialised its settings, writing the whole keymap into the
        EEPROM if it had to, and the main loop is about to start feeding. Hand the watchdog
@@ -877,7 +880,6 @@ void keyboard_post_init_kb(void) {
 
     keyboard_post_init_user();
 }
-#endif
 
 void housekeeping_task_kb(void) {
     static uint32_t first_task_at = 0;

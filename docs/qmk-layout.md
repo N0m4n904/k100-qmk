@@ -950,11 +950,10 @@ an invalid feed. So `WDTOF` is set as it would have been and the bootloader keep
 A crash's time is the last trip round the main loop, which is the better answer anyway. A loop
 stuck with interrupts disabled through `PRIMASK` is reset with nothing recorded.
 
-**How long a stall takes to show.** As long as the watchdog's timeout, and that is about
-**134 s** today, not the 3.2 s `bootloader.c` describes. `board_init()` widens the timeout for
-startup, and the line that puts it back is in `keyboard_post_init_kb()`, inside
-`#ifdef K100_USB_DIAGNOSTIC`, so an ordinary image never does. `lpcWwdtSetTimeout` is not even
-in the linked image. A keyboard unplugged before then records nothing.
+**How long a stall takes to show.** About 3.2 s, the timeout inherited from the bootloader.
+`board_init()` widens it for startup and `keyboard_post_init_kb()` puts it back. A long EEPROM
+write counts as progress: the driver feeds the watchdog after each word it programs. A keyboard
+unplugged within those seconds records nothing.
 
 **Wear.** There is no head word: each entry carries a sequence number and the newest is found
 by reading them, so every slot is written once per trip round its ring. After a burst of 32, an

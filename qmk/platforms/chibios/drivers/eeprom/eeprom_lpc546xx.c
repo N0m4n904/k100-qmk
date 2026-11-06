@@ -24,6 +24,7 @@
 #include "eeprom_driver.h"
 #include "eeprom_lpc546xx.h"
 #include "lpc546xx_eeprom.h"
+#include "lpc546xx_wwdt.h"
 
 _Static_assert(LPC546XX_EEPROM_RESERVED_WORDS * sizeof(uint32_t) +
                    LPC546XX_ONBOARD_EEPROM_SIZE <= LPC_EEPROM_SIZE,
@@ -104,6 +105,11 @@ void eeprom_write_block(const void *buf, void *addr, size_t len) {
 
         if (updated != current) {
             (void)lpcEepromWrite(word, updated);
+
+            /* A keymap written a byte at a time costs a program per byte and can outlast the
+               watchdog inherited from a bootloader, with the loop that feeds it waiting on this.
+               Each program is bounded progress, so a write this long is not a hang. */
+            lpcWwdtFeed();
         }
 
         offset += take;
