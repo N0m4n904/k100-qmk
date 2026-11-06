@@ -17,6 +17,7 @@ See docs/usb-bringup.md.
 from __future__ import annotations
 
 import os
+import re
 import select
 import sys
 import time
@@ -52,6 +53,24 @@ UNHANDLED = 0xFF
 #: starts with it is never a reply -- and a reader that took it for one would be
 #: one reply behind for the rest of the connection. See via_ui_sync.c.
 UI_SYNC_REQUEST = 0x16
+
+
+def via_value(header: Path, name: str) -> int:
+    """The number the keyboard answers a custom value on, read from its own enum.
+
+    The same reasoning as the keycodes below: the firmware decides the number and the
+    definition can only repeat it, so it is taken from the header rather than written down
+    twice and hoped about.
+    """
+    declaration = re.search(r"enum\s+k100_via_value\s*\{(.*?)\}", header.read_text(), re.S)
+    if declaration is None:
+        raise SystemExit(f"{header} declares no enum k100_via_value")
+
+    declared = re.search(rf"^\s*{name}\s*=\s*(\d+)", declaration.group(1), re.M)
+    if declared is None:
+        raise SystemExit(f"{header}'s enum k100_via_value does not declare {name} with a "
+                         f"number of its own")
+    return int(declared.group(1))
 
 
 def exchange(node: Path, request: bytes) -> bytes | None:

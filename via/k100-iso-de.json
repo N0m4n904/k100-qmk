@@ -1730,6 +1730,24 @@
                 0,
                 28
               ]
+            },
+            {
+              "label": "Last crash",
+              "type": "label",
+              "content": [
+                "id_k100_last_crash",
+                0,
+                29
+              ]
+            },
+            {
+              "label": "Last USB event",
+              "type": "label",
+              "content": [
+                "id_k100_last_usb_event",
+                0,
+                30
+              ]
             }
           ]
         }

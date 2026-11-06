@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from k100_firmware import (  # noqa: E402
     BRAGI_NAMES, QMK_KEYCODES, SENSES, STROBES, STROBE_PIN_BASE, Firmware, Led,
 )
+from k100_via import via_value  # noqa: E402
 
 # QMK keycodes for the keys that have no HID usage code of their own.
 #
@@ -1248,24 +1249,6 @@ def lighting_menu(per_key_value: int, paint_value: int,
     }
 
 
-def via_value(header: Path, name: str) -> int:
-    """The number the keyboard answers a custom value on, read from its own enum.
-
-    The same reasoning as the keycodes below: the firmware decides the number and the
-    definition can only repeat it, so it is taken from the header rather than written down
-    twice and hoped about.
-    """
-    declaration = re.search(r"enum\s+k100_via_value\s*\{(.*?)\}", header.read_text(), re.S)
-    if declaration is None:
-        raise SystemExit(f"{header} declares no enum k100_via_value")
-
-    declared = re.search(rf"^\s*{name}\s*=\s*(\d+)", declaration.group(1), re.M)
-    if declared is None:
-        raise SystemExit(f"{header}'s enum k100_via_value does not declare {name} with a "
-                         f"number of its own")
-    return int(declared.group(1))
-
-
 def reading_order(slot: Slot) -> tuple:
     """Across the keyboard, keys before the lights around them, empty slots last.
 
@@ -1288,7 +1271,7 @@ def reading_order(slot: Slot) -> tuple:
 
 
 def diagnostics_group(probe_value: int, index_value: int, rate_value: int, nkro_value: int,
-                      slots: list[Slot]) -> dict:
+                      crash_value: int, event_value: int, slots: list[Slot]) -> dict:
     """The LED probe: light one LED by index, and see what lights.
 
     This is the instrument LED_SLOTS was measured with, and it is what any claim about the
@@ -1320,6 +1303,10 @@ def diagnostics_group(probe_value: int, index_value: int, rate_value: int, nkro_
     holding seven keys and counting what arrives -- the boot report has six places, and that
     is the whole of the difference -- but "hold seven keys" is a poor way to answer "is it
     on", and the keyboard knows the answer.
+
+    And the newest line of each half of the fault log, which is where somebody looks after the
+    keyboard has stopped once. A label shows one line and cannot page, so the whole log is
+    tools/k100-fault-log.py. See fault_log.c.
     """
     return {
         "label": "Diagnostics",
@@ -1335,12 +1322,17 @@ def diagnostics_group(probe_value: int, index_value: int, rate_value: int, nkro_
              "content": [f"{K100_VALUE}lighting_rate", K100_CHANNEL, rate_value]},
             {"label": "NKRO", "type": "label",
              "content": [f"{K100_VALUE}nkro", K100_CHANNEL, nkro_value]},
+            {"label": "Last crash", "type": "label",
+             "content": [f"{K100_VALUE}last_crash", K100_CHANNEL, crash_value]},
+            {"label": "Last USB event", "type": "label",
+             "content": [f"{K100_VALUE}last_usb_event", K100_CHANNEL, event_value]},
         ],
     }
 
 
 def firmware_menu(version_value: int, probe_value: int, index_value: int, rate_value: int,
-                  nkro_value: int, slots: list[Slot]) -> dict:
+                  nkro_value: int, crash_value: int, event_value: int,
+                  slots: list[Slot]) -> dict:
     """A menu that shows which firmware is on the keyboard, asked of the keyboard.
 
     VIA displays no firmware version anywhere. It reads one, and uses it only to hide menu
@@ -1359,7 +1351,8 @@ def firmware_menu(version_value: int, probe_value: int, index_value: int, rate_v
                      "content": [f"{K100_VALUE}version", K100_CHANNEL, version_value]},
                 ],
             },
-            diagnostics_group(probe_value, index_value, rate_value, nkro_value, slots),
+            diagnostics_group(probe_value, index_value, rate_value, nkro_value, crash_value,
+                              event_value, slots),
         ],
     }
 
@@ -1466,6 +1459,8 @@ def build_via_json(placed: list[Key], keycodes: list[dict], values: dict[str, in
                                 values["K100_VIA_LED_INDEX"],
                                 values["K100_VIA_LIGHTING_RATE"],
                                 values["K100_VIA_NKRO"],
+                                values["K100_VIA_LAST_CRASH"],
+                                values["K100_VIA_LAST_USB_EVENT"],
                                 slots)],
     }
 
@@ -1537,7 +1532,8 @@ def main() -> int:
                "K100_VIA_LOCK_FIRST", "K100_VIA_LIGHTING_RATE",
                "K100_VIA_REACTION_SOURCE", "K100_VIA_REACTION_COLOUR",
                "K100_VIA_BUTTONS_REACT", "K100_VIA_LIGHTS_REACT",
-               "K100_VIA_SLEEP_AFTER", "K100_VIA_NKRO")}
+               "K100_VIA_SLEEP_AFTER", "K100_VIA_NKRO",
+               "K100_VIA_LAST_CRASH", "K100_VIA_LAST_USB_EVENT")}
 
     # Everything that scans but did not land in the matrix must be an encoder, or the join
     # has silently dropped a key.
