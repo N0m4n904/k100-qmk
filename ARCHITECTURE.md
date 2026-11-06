@@ -39,7 +39,7 @@ That keeps every piece of this repository an upstreamable change against a named
 rather than a private fork that has to be maintained.
 
 ```
-chibios/os/hal/ports/LPC/LPC546xx/      the family port: clocks, PAL, SPI, USB, EEPROM, WWDT
+chibios/os/hal/ports/LPC/LPC546xx/      the family port: clocks, PAL, SPI, USB, EEPROM, WWDT, crash capture
 chibios/patches/                        fifteen changes to ChibiOS and ChibiOS-Contrib
 qmk/platforms/chibios/                  board definition and the EEPROM driver
 qmk/keyboards/corsair/k100/             the keyboard: matrix, LEDs, effects, VIA, bootloader
@@ -82,7 +82,8 @@ the lights that are not keys, the locks shown on their own keys, two effects tha
 typing, a gauge on the ring around the wheel, the lighting resting while the host is gone, and
 touching the keyboard waking a sleeping one. Whether the host is gone is read off the bus,
 because a suspend may never be reported. What the keyboard remembers lives in one EEPROM
-region owned by one file, `lighting_store.c`.
+region owned by one file, `lighting_store.c`. What it records about its own failures is in
+`fault_log.c`, outside that region.
 
 **VIA.** Protocol 13 over the control endpoint, because the interrupt OUT endpoint this
 keyboard should use never acknowledges in a way the host accepts. The definition is generated
@@ -112,6 +113,7 @@ keyboard stores and where. The rest are presentation on top.
 | `k100-backup.py` | takes the keymap, macros, colours and settings off the keyboard and puts them back |
 | `pack-firmware.py` | wraps a build in Corsair's container, and proves the writer against their images |
 | `generate-qmk-layout.py` | the layout, keymap, VIA definition and generated headers |
+| `k100-fault-log.py` | what the keyboard recorded before it stopped, and emptying that |
 | `watch-input.py` | whether keystrokes reach the host, and which device they arrive on |
 
 ## What is not finished

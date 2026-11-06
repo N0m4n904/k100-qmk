@@ -918,6 +918,79 @@ and it is the dearest thing this firmware draws. Both numbers fall together, whi
 says the arithmetic is the cost rather than the frame pacing: `RGB_MATRIX_LED_FLUSH_LIMIT`
 would have held the frame rate still while the loop slowed.
 
+### What happened before it stopped
+
+**Built and checked in the disassembly. None of this has run on the keyboard yet.**
+
+A keyboard that stops ends with a watchdog reset into Corsair's bootloader and a power cycle
+that clears the RAM, so whatever it knew about the failure has to be in the EEPROM by then.
+`fault_log.c` keeps two rings right after QMK's region, which changes nothing about the shape
+of what is stored and so costs nobody their keymap:
+
+| Ring | Slots | Words each | Holds |
+| --- | --- | --- | --- |
+| events | 240 | 2 | what it was, when, how many were refused before it |
+| crashes | 8 | 8 | what it was, when, PC, LR, xPSR, CFSR, the fault address, `BASEPRI`, which event it came after |
+
+That is 544 words: 544 to 1087 at the driver's sizes. Two rings, so that a host bouncing the
+bus cannot push out the one crash the log exists for.
+
+**Events** are boot, reset, configured, suspend, wakeup, the host going and coming back as
+`lighting_sleep.c` reads the frames, and this firmware handing the keyboard to the bootloader
+on purpose. A reset the host repeats while the keyboard is already unconfigured is not seen,
+because QMK's hook reports a state and the state has not changed.
+
+**A crash** is the watchdog's warning or one of the four fault vectors, all of which the port
+takes in `lpc546xx_crash.c`. The warning comes at most 1023 watchdog ticks before the timeout,
+about 8 ms, and runs at priority zero, above the kernel's mask, so that a loop stuck with the
+kernel locked is caught too. That is why nothing it reaches may call the kernel, including
+QMK's clock, and `tools/check-firmware-image.py` walks the calls in the image to hold it to
+that. It feeds once, since each word takes milliseconds, writes the record, and resets through
+an invalid feed. So `WDTOF` is set as it would have been and the bootloader keeps the keyboard.
+A crash's time is the last trip round the main loop, which is the better answer anyway. A loop
+stuck with interrupts disabled through `PRIMASK` is reset with nothing recorded.
+
+**How long a stall takes to show.** As long as the watchdog's timeout, and that is about
+**134 s** today, not the 3.2 s `bootloader.c` describes. `board_init()` widens the timeout for
+startup, and the line that puts it back is in `keyboard_post_init_kb()`, inside
+`#ifdef K100_USB_DIAGNOSTIC`, so an ordinary image never does. `lpcWwdtSetTimeout` is not even
+in the linked image. A keyboard unplugged before then records nothing.
+
+**Wear.** There is no head word: each entry carries a sequence number and the newest is found
+by reading them, so every slot is written once per trip round its ring. After a burst of 32, an
+event is written once per two minutes at most and the rest are counted into the next entry. NXP
+guarantee 100000 cycles per word, which puts the event ring at 91 years of a host doing nothing
+but bouncing the bus. An erased slot, a garbage one and a write cut short all read as empty,
+and the first failed write ends writing until the next boot.
+
+**Reading it.** `Last crash` and `Last USB event` under Firmware, Diagnostics are the newest
+line of each, since a label cannot page. All of it, and emptying it:
+
+```sh
+python3 tools/k100-fault-log.py
+python3 tools/k100-fault-log.py --clear
+```
+
+**Proving it, without anybody unplugging anything.** Build with `K100_DIAGNOSTIC_HANG`:
+
+```sh
+qmk/test/build-k100.sh <dir> EXTRAFLAGS=-DK100_DIAGNOSTIC_HANG
+```
+
+and ask for one of three:
+
+```sh
+python3 tools/k100-fault-log.py --hang unlocked
+python3 tools/k100-fault-log.py --hang locked
+python3 tools/k100-fault-log.py --hang fault
+```
+
+The bootloader should then have the keyboard, after the timeout above for the first two. Write
+a normal image over it, which leaves the EEPROM alone, and read the log. It has to show the
+crash, with a PC that `arm-none-eabi-addr2line -fe <elf of the hang build>` puts in
+`hang_with_kernel_unlocked`, `hang_with_kernel_locked` or `fault_on_purpose`, and `BASEPRI`
+reading as locked only for the second.
+
 ## Validation
 
 The generated files are checked structurally, not eyeballed:
