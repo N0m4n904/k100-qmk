@@ -10,6 +10,7 @@
 #   nix develop .#qmk
 #   qmk/test/build-k100.sh [work-dir] [-- extra make args]
 #   LDSCRIPT=LPC546xx_sram qmk/test/build-k100.sh [work-dir]
+#   qmk/test/build-k100-variants.sh <work-dir>    # every configuration, each image kept
 #
 # Downloads are cached in the work directory, so a second run is fast.
 set -euo pipefail
