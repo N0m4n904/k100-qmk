@@ -31,12 +31,13 @@
 /**
  * @brief   Why the core stopped, as the number of the exception it took.
  */
-typedef enum {
-  LPC_CRASH_HARD_FAULT = 3,
-  LPC_CRASH_MEM_MANAGE = 4,
-  LPC_CRASH_BUS_FAULT = 5,
-  LPC_CRASH_USAGE_FAULT = 6,
-  LPC_CRASH_WATCHDOG_WARNING = 16
+typedef enum lpc_crash_cause {
+  LPC_CRASH_HARD = 3,
+  LPC_CRASH_MEM = 4,
+  LPC_CRASH_BUS = 5,
+  LPC_CRASH_USAGE = 6,
+  /** The watchdog warned that the main loop has stopped feeding it. */
+  LPC_CRASH_STALL = 16
 } lpc_crash_cause_t;
 
 /**
@@ -44,7 +45,7 @@ typedef enum {
  *
  * @details @p pc, @p lr and @p psr are zero when the stack pointer of the
  *          interrupted code does not lead to RAM, which a stack overflow can do.
- *          @p fault_address is zero unless @p cfsr says it holds one.
+ *          @p fault_address is zero unless a valid-address bit in @p cfsr is set.
  */
 typedef struct {
   lpc_crash_cause_t cause;

@@ -104,8 +104,8 @@ void lpcWwdtFeed(void) {
     return;
   }
 
-  /* Touching any other watchdog register between the two writes is a bad feed,
-     which resets the part, and the warning interrupt reads MOD. NXP's own
+  /* An access to any other watchdog register between the two writes is a bad
+     feed, which resets the part, and the warning interrupt reads MOD. NXP's own
      WWDT_Refresh() masks for the same reason. */
   const uint32_t primask = __get_PRIMASK();
   __disable_irq();
@@ -256,10 +256,10 @@ bool lpcWwdtStretch(void) {
  *          allows.
  *
  * @details @p WARNINT is ten bits, so 1023 ticks of the watchdog clock is all the
- *          warning there is. The flag is cleared first, because nothing says a
- *          bootloader that set its own @p WARNINT did not leave it standing.
+ *          warning there is. The flag is cleared first, because a bootloader may
+ *          have set its own @p WARNINT and left the flag standing.
  *
- * @param[in] priority  the interrupt's level
+ * @param[in] priority  the level of the interrupt
  *
  * @notapi
  */
@@ -285,9 +285,10 @@ void lpcWwdtEnableWarning(uint32_t priority) {
  *
  * @details The vector is shared with brownout, so the flag has to be set. It is
  *          not sufficient: a stale flag read as a warning would reset a healthy
- *          keyboard on every boot, so @p TV has to agree. Twice @p WARNINT rather
- *          than @p WARNINT itself, because @p TV reaches the bus through a
- *          synchroniser with the slow watchdog clock and may read a few ticks old.
+ *          keyboard on every boot, so @p TV also has to be within that bound. The
+ *          comparison is with twice @p WARNINT, because the read of @p TV goes
+ *          through a synchroniser on the slow watchdog clock and may be a few ticks
+ *          old.
  *
  * @return              @p true when this interrupt is the watchdog's warning.
  *
@@ -302,8 +303,9 @@ bool lpcWwdtWarningIsDue(void) {
 /**
  * @brief   Clears the warning flag.
  *
- * @details @p WDINT clears on a one and @p WDTOF on a zero, so the read is what
- *          keeps this from clearing the flag a bootloader reads after a reset.
+ * @details @p WDINT clears on a one and @p WDTOF on a zero, so writing back the
+ *          value just read leaves @p WDTOF as it was, and a bootloader reads it after
+ *          a reset.
  *
  * @notapi
  */

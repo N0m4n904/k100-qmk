@@ -19,21 +19,22 @@
  * @file    LPC546xx/lpc546xx_crash.c
  * @brief   Where the core was when it faulted or the watchdog was about to fire.
  *
- * @details An application behind a bootloader's watchdog dies without a word: a
- *          loop that stops feeding it is reset, a fault spins in the unhandled
- *          exception stub until the same happens, and whatever RAM knew about it
- *          is gone by the next power cycle. This takes the four fault vectors and
- *          the watchdog's warning, says what was interrupted through
- *          @p lpcCrashReport(), and then resets the part through the watchdog, so
- *          that a bootloader reading @p WDTOF sees what it would have seen anyway.
+ * @details An application running under a watchdog that a bootloader set dies
+ *          without a word: a loop that stops feeding it is reset, a fault spins in
+ *          the unhandled exception stub until the same happens, and whatever RAM
+ *          recorded about it is gone by the next power cycle. This has handlers
+ *          for the four fault vectors and the watchdog's warning, passes what was
+ *          interrupted to @p lpcCrashReport(), and then resets the part through
+ *          the watchdog, so that a bootloader reading @p WDTOF sees what it would
+ *          have seen anyway.
  *
  *          **Nothing reached from here may call the kernel.** The warning runs
  *          above the kernel's interrupt mask, because the loop it has to catch may
  *          be stuck with the kernel locked. tools/check-firmware-image.py walks
- *          the calls and refuses an image where one does.
+ *          the calls and fails an image where one does.
  *
- *          A loop stuck with @p PRIMASK set hides from the warning and is reset
- *          with nothing said. No maskable interrupt can do better.
+ *          A loop stuck with @p PRIMASK set never reaches the warning, and it is
+ *          reset with nothing recorded. No maskable interrupt can do better.
  *
  * @addtogroup LPC546xx_CRASH
  * @{
@@ -60,8 +61,8 @@
 #define FRAME_WORDS                         8U
 /** @} */
 
-_Static_assert(LPC_CRASH_WATCHDOG_WARNING == 16 + LPC_WWDT_IRQ_NUMBER,
-               "the watchdog's vector is not the one its cause is numbered for");
+_Static_assert(LPC_CRASH_STALL == 16 + LPC_WWDT_IRQ_NUMBER,
+               "LPC_CRASH_STALL does not match the vector number of the watchdog interrupt");
 
 /*===========================================================================*/
 /* Driver local functions.                                                   */
@@ -77,24 +78,48 @@ static bool frame_is_in_ram(const uint32_t *frame) {
 }
 
 /**
- * @brief   Reports the crash and resets. Returns only for an interrupt that was
- *          not one.
+ * @brief   The cause an exception number stands for.
+ *
+ * @return              @p false for a number that is no cause, which no vector
+ *                      pointing here produces.
+ */
+static bool cause_from_exception(uint32_t exception, lpc_crash_cause_t *cause) {
+
+  switch (exception) {
+    case LPC_CRASH_HARD:
+    case LPC_CRASH_MEM:
+    case LPC_CRASH_BUS:
+    case LPC_CRASH_USAGE:
+    case LPC_CRASH_STALL:
+      *cause = (lpc_crash_cause_t)exception;
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * @brief   Reports the crash and resets. Returns only for a watchdog warning that
+ *          is not yet due.
  *
  * @details Fed once, because a warning comes milliseconds before the timeout and
  *          each word the report programs takes milliseconds too. The reset does
- *          not wait for the timeout this buys, since that timeout can be a long
- *          one and nothing here has a reason to linger.
+ *          not wait for the timeout this buys, which can be long.
  *
- *          @p NVIC_SystemReset() is for a watchdog that is not set to reset, which
- *          would leave @p lpcWwdtForceReset() returning.
+ *          @p NVIC_SystemReset() is for a watchdog that is not set to reset, because
+ *          otherwise @p lpcWwdtForceReset() returns.
  *
  * @param[in] frame     the frame the exception stacked
  */
 __attribute__((used))
 void lpc_crash_capture(const uint32_t *frame) {
-  const lpc_crash_cause_t cause = (lpc_crash_cause_t)(__get_IPSR() & IPSR_ISR_Msk);
+  lpc_crash_cause_t cause;
 
-  if (cause == LPC_CRASH_WATCHDOG_WARNING && !lpcWwdtWarningIsDue()) {
+  if (!cause_from_exception(__get_IPSR() & IPSR_ISR_Msk, &cause)) {
+    return;
+  }
+
+  if (cause == LPC_CRASH_STALL && !lpcWwdtWarningIsDue()) {
     lpcWwdtClearWarning();
     return;
   }
@@ -133,11 +158,11 @@ void lpc_crash_capture(const uint32_t *frame) {
 /*===========================================================================*/
 
 /**
- * @brief   Every vector this file takes.
+ * @brief   Entry point for every vector this file defines.
  *
- * @details Naked and a tail call, so that @p lr still holds @p EXC_RETURN for the
- *          one path that returns. Bit two of it says which stack the exception
- *          stacked its frame on.
+ * @details Naked and a tail call, so that @p lr still contains @p EXC_RETURN for
+ *          the one path that returns. Bit two of it selects the stack the exception
+ *          pushed its frame onto.
  */
 __attribute__((naked))
 void lpcCrashEntry(void) {
@@ -170,7 +195,7 @@ void lpcCrashCaptureStart(void) {
 }
 
 /**
- * @brief   Told what was interrupted, by an application that wants to keep it.
+ * @brief   Called with what was interrupted, by an application that needs the report.
  *
  * @details Runs in the exception, above the kernel's interrupt mask for a warning
  *          and above everything for a fault, so it may not call the kernel, and it
