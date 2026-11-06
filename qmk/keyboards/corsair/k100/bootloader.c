@@ -691,7 +691,7 @@ void __late_init(void) {
  * The watchdog timeout this firmware inherited, while startup borrows a longer one.
  *
  * Measured on the keyboard: Corsair's bootloader leaves a running watchdog with TC 400000,
- * which is about 3.2 s, and a normal start reaches the main loop inside it comfortably. The
+ * which takes a stuck loop about 8 s to reach, and a normal start reaches the main loop well inside it. The
  * first start after a flash does not. QMK finds its settings invalid then and writes the whole
  * keymap into the part's EEPROM before the main loop runs, and the watchdog takes the keyboard
  * in the middle of it -- which restarts the same write, so the keyboard re-enumerates again

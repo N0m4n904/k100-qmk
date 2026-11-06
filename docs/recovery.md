@@ -759,7 +759,8 @@ comes from an interrupt on a timer, so firmware that wedges with interrupts stil
 reset.
 
 The figure this document gives for the timeout, about a second and a half, is older than the
-measurement. `TC` as Corsair's bootloader leaves it reads 400000, which is about 3.2 s.
+measurement. `TC` as Corsair's bootloader leaves it reads 400000, which is 3.2 s at the nominal watchdog clock.
+A stuck main loop was measured leaving the bus after about 8 s.
 
 ### The fault log on the way to the bootloader
 

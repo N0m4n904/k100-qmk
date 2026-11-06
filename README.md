@@ -193,6 +193,35 @@ needs to be.
 [`docs/recovery.md`](docs/recovery.md) has the whole account, and [`swd/`](swd/README.md) the
 route for a keyboard that reaches neither -- that one needs a programmer and an open case.
 
+## Reporting a bug
+
+**The firmware keeps a log that survives a watchdog reset and a power cycle, so attach it to the
+report.** It records USB events such as suspend, wakeup and reset, and where the code was if the
+main loop stopped or the processor faulted. It records no keystrokes.
+
+If the keyboard stops responding:
+
+1. Wait about ten seconds. A stuck main loop takes about 8 s to be recorded, and a keyboard
+   unplugged sooner records nothing.
+2. Unplug it and plug it back in. If it comes back as Corsair's bootloader, a power cycle returns
+   it to this firmware.
+3. Print the log:
+
+   ```sh
+   python3 tools/k100-fault-log.py
+   ```
+
+4. [Open an issue](https://github.com/N0m4n904/k100-qmk/issues) with that output, and say:
+   - which version is installed, or which commit if you built it yourself, because a code address
+     in the log only means something against the same image
+   - what the keyboard and the computer were doing when it happened
+   - the operating system, and any hub or KVM switch between the keyboard and the computer
+
+`python3 tools/k100-fault-log.py --clear` empties the log afterwards, so that the next report holds
+only the next incident. In VIA, `Last crash` and `Last USB event` under Firmware, Diagnostics show
+the newest entry of each, which is enough to see whether anything was recorded. The design is in
+[`docs/qmk-layout.md`](docs/qmk-layout.md#what-happened-before-it-stopped).
+
 ## Building
 
 The layout, the keymap and the VIA definition are **generated**, and the two inputs they are
