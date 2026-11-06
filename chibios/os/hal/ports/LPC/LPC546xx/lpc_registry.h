@@ -63,6 +63,10 @@
 #define LPC_USB_NEEDCLK_IRQ_VECTOR  Vector100   /* USB1_NEEDCLK_IRQn = 48    */
 #define LPC_USB_IRQ_NUMBER          USB1_IRQn
 
+/* The windowed watchdog's warning, on a vector it shares with brownout. */
+#define LPC_WWDT_IRQ_VECTOR         Vector40    /* WDT_BOD_IRQn = 0          */
+#define LPC_WWDT_IRQ_NUMBER         WDT_BOD_IRQn
+
 /* INTROUTING selects, on LPC11Uxx, whether USB interrupts reach the main
    handler or the frame-toggle one. This part has no such register and it is
    absent from NXP's USB_Type, so a driver referring to it does not compile. */

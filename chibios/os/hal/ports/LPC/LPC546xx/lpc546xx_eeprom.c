@@ -149,6 +149,28 @@ uint32_t lpcEepromRead(uint32_t word) {
 }
 
 /**
+ * @brief   Waits for the program cycle already running, if there is one.
+ *
+ * @details For code that interrupted a write and must not store into the array
+ *          under it. @p END_OF_PROG stays set after a cycle ends, so this returns
+ *          at once unless one is running or no write has happened since reset,
+ *          when it spins out its bound.
+ *
+ * @return              @p true once the hardware reports the program complete;
+ *                      @p false if the completion flag never arrived
+ */
+bool lpcEepromAwaitProgram(void) {
+
+  for (uint32_t spins = EEPROM_PROG_SPINS; spins > 0U; spins--) {
+    if ((EEPROM->INTSTAT & EEPROM_INTSTAT_END_OF_PROG_MASK) != 0U) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * @brief   Programs one word and waits for it to complete.
  *
  * @details Polls rather than taking an interrupt: the callers that matter run
@@ -183,13 +205,7 @@ bool lpcEepromWrite(uint32_t word, uint32_t value) {
 
   EEPROM_ARRAY[word] = value;
 
-  for (uint32_t spins = EEPROM_PROG_SPINS; spins > 0U; spins--) {
-    if ((EEPROM->INTSTAT & EEPROM_INTSTAT_END_OF_PROG_MASK) != 0U) {
-      return true;
-    }
-  }
-
-  return false;
+  return lpcEepromAwaitProgram();
 }
 
 /** @} */

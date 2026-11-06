@@ -104,8 +104,14 @@ void lpcWwdtFeed(void) {
     return;
   }
 
+  /* Touching any other watchdog register between the two writes is a bad feed,
+     which resets the part, and the warning interrupt reads MOD. NXP's own
+     WWDT_Refresh() masks for the same reason. */
+  const uint32_t primask = __get_PRIMASK();
+  __disable_irq();
   WWDT->FEED = WWDT_FEED_FIRST;
   WWDT->FEED = WWDT_FEED_SECOND;
+  __set_PRIMASK(primask);
 }
 
 /**
@@ -243,6 +249,62 @@ bool lpcWwdtStretch(void) {
   lpcWwdtFeed();
 
   return true;
+}
+
+/**
+ * @brief   Arms the warning interrupt, as long before the timeout as the part
+ *          allows.
+ *
+ * @details @p WARNINT is ten bits, so 1023 ticks of the watchdog clock is all the
+ *          warning there is. The flag is cleared first, because nothing says a
+ *          bootloader that set its own @p WARNINT did not leave it standing.
+ *
+ * @param[in] priority  the interrupt's level
+ *
+ * @notapi
+ */
+void lpcWwdtEnableWarning(uint32_t priority) {
+
+  if (!lpcWwdtIsRunning()) {
+    return;
+  }
+
+  lpcWwdtFeed();
+  WWDT->WARNINT = WWDT_WARNINT_WARNINT_MASK;
+  lpcWwdtClearWarning();
+  nvicEnableVector(LPC_WWDT_IRQ_NUMBER, priority);
+}
+
+/**
+ * @brief   Is the timeout really close?
+ *
+ * @details The vector is shared with brownout, so the flag has to be set. It is
+ *          not sufficient: a stale flag read as a warning would reset a healthy
+ *          keyboard on every boot, so @p TV has to agree. Twice @p WARNINT rather
+ *          than @p WARNINT itself, because @p TV reaches the bus through a
+ *          synchroniser with the slow watchdog clock and may read a few ticks old.
+ *
+ * @return              @p true when this interrupt is the watchdog's warning.
+ *
+ * @notapi
+ */
+bool lpcWwdtWarningIsDue(void) {
+
+  return (WWDT->MOD & WWDT_MOD_WDINT_MASK) != 0U &&
+         WWDT->TV <= 2U * WWDT->WARNINT;
+}
+
+/**
+ * @brief   Clears the warning flag.
+ *
+ * @details @p WDINT clears on a one and @p WDTOF on a zero, so the read is what
+ *          keeps this from clearing the flag a bootloader reads after a reset.
+ *
+ * @notapi
+ */
+void lpcWwdtClearWarning(void) {
+
+  WWDT->MOD = WWDT->MOD | WWDT_MOD_WDINT_MASK;
 }
 
 /** @} */

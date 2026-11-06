@@ -31,8 +31,23 @@ FIRST_IRQ_INDEX = 16
 # wrong is not hypothetical: FLEXCOMM0 to FLEXCOMM2 were each one slot low in an
 # earlier version of this port, which no build or test noticed.
 REQUIRED_HANDLERS = {
+    0: "the watchdog's warning, which says where a stuck loop was",
     47: "USB1 (USBHSD, the controller the K100 is wired to)",
 }
+
+# The system exceptions, by vector table index, that must not go to the stub
+# either: a fault that spins there leaves no record of itself.
+REQUIRED_EXCEPTIONS = {
+    3: "HardFault",
+    4: "MemManage",
+    5: "BusFault",
+    6: "UsageFault",
+}
+
+# Where the crash capture starts, and what it must not reach: it runs above the
+# kernel's interrupt mask.
+CRASH_ENTRY = "lpc_crash_capture"
+KERNEL_NAME = re.compile(r"^(ch[A-Z]|_?_?(port|sch|vt|dbg|stats|trace)_|osal|timer_)")
 
 
 def run(*args: str) -> str:
@@ -101,15 +116,17 @@ def check_required_handlers(elf: str) -> bool:
     """
     words = section_words(elf, ".vectors")
 
+    required = {**REQUIRED_EXCEPTIONS,
+                **{FIRST_IRQ_INDEX + irq: name for irq, name in REQUIRED_HANDLERS.items()}}
+
     failed, reported = [], []
-    for irq, name in sorted(REQUIRED_HANDLERS.items()):
-        index = FIRST_IRQ_INDEX + irq
+    for index, name in sorted(required.items()):
         if index >= len(words):
             failed.append(f"{name}: slot {index} is past the end of the table")
             continue
 
         target = words[index]
-        reported.append(f"IRQ {irq} -> 0x{target:08x}")
+        reported.append(f"slot {index} -> 0x{target:08x}")
         if handler_is_stub(elf, target):
             failed.append(f"{name}: slot {index} is the unhandled-exception stub")
 
@@ -173,6 +190,54 @@ def check_realtime_counter(elf: str, allow_dwt: bool = False) -> bool:
     return not problems
 
 
+def direct_branches(elf: str) -> dict[str, set[str]]:
+    """Which functions each function branches to, read off the disassembly.
+
+    A branch inside a function prints as `<name+0x1a>` and so is not matched. An
+    indirect call has no target to read, and an inlined one is no call, so
+    neither can be seen from here.
+    """
+    branches: dict[str, set[str]] = {}
+    current = None
+    for line in run("arm-none-eabi-objdump", "-d", elf).splitlines():
+        if start := re.match(r"[0-9a-f]+ <([^>+]+)>:$", line):
+            current = start.group(1)
+            branches[current] = set()
+        elif current and (target := re.search(r"\s[0-9a-f]+ <([^>+]+)>$", line)):
+            branches[current].add(target.group(1))
+    return branches
+
+
+def check_crash_capture_avoids_kernel(elf: str) -> bool:
+    """Nothing the crash capture reaches calls the kernel.
+
+    It runs above the kernel's interrupt mask, to catch a loop stuck with the kernel
+    locked, so a kernel call there can corrupt the very state it interrupted. QMK's
+    timer_read32() is the easy one to reach for, and it takes the kernel's lock.
+
+    Finding the function and finding branches anywhere is the control: without them
+    a change in objdump's output would read as nothing being called.
+    """
+    branches = direct_branches(elf)
+
+    if CRASH_ENTRY not in branches or not any(branches.values()):
+        print(f"crash capture            FAIL   found no {CRASH_ENTRY} or no branches, so "
+              "this check proves nothing")
+        return False
+
+    reached, pending = set(), [CRASH_ENTRY]
+    while pending:
+        name = pending.pop()
+        if name not in reached:
+            reached.add(name)
+            pending.extend(branches.get(name, ()))
+
+    kernel = sorted(name for name in reached if KERNEL_NAME.match(name))
+    verdict = "ok" if not kernel else "FAIL calls " + ", ".join(kernel)
+    print(f"crash capture            {verdict}   {len(reached)} functions reached")
+    return not kernel
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -194,6 +259,7 @@ def main(argv: list[str]) -> int:
         check_boot_checksum(args.elf),
         check_required_handlers(args.elf),
         check_realtime_counter(args.elf, allow_dwt=args.allow_dwt),
+        check_crash_capture_avoids_kernel(args.elf),
     ]
     return 0 if all(results) else 1
 

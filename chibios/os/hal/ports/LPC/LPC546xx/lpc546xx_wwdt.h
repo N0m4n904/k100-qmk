@@ -38,6 +38,9 @@ extern "C" {
   bool lpcWwdtSetTimeout(uint32_t timeout);
   bool lpcWwdtStretch(void);
   bool lpcWwdtForceReset(void);
+  void lpcWwdtEnableWarning(uint32_t priority);
+  bool lpcWwdtWarningIsDue(void);
+  void lpcWwdtClearWarning(void);
 #ifdef __cplusplus
 }
 #endif

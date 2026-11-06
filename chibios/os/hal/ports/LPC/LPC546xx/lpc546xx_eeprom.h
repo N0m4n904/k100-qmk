@@ -54,6 +54,7 @@ extern "C" {
 #endif
   void lpcEepromStart(void);
   uint32_t lpcEepromRead(uint32_t word);
+  bool lpcEepromAwaitProgram(void);
   bool lpcEepromWrite(uint32_t word, uint32_t value);
 #ifdef __cplusplus
 }
