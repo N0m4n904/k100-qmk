@@ -160,6 +160,12 @@ void k100_lighting_sleep_task(void) {
     const bool gone   = host_gone();
     const bool wanted = gone || left_alone();
 
+    static bool recorded_gone = false;
+    if (gone != recorded_gone) {
+        k100_log_event(gone ? K100_EVENT_HOST_GONE : K100_EVENT_HOST_BACK);
+        recorded_gone = gone;
+    }
+
     /*
      * Only on a change. Turning it on renders a black frame and flushes it,
      * which is work, and the lighting task stops flushing afterwards -- so

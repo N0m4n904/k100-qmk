@@ -106,9 +106,9 @@ void k100_frame_rendered(void) {
     frames++;
 }
 
-/** Decimal, by hand: a formatter for two numbers is not worth linking printf for. */
-static uint8_t *put_number(uint8_t *at, uint16_t value) {
-    uint8_t digits[5];
+/** Decimal, by hand: a formatter for a few numbers is not worth linking printf for. */
+uint8_t *k100_put_number(uint8_t *at, uint32_t value) {
+    uint8_t digits[10];
     uint8_t count = 0;
 
     do {
@@ -123,7 +123,7 @@ static uint8_t *put_number(uint8_t *at, uint16_t value) {
     return at;
 }
 
-static uint8_t *put_text(uint8_t *at, const char *text) {
+uint8_t *k100_put_text(uint8_t *at, const char *text) {
     while (*text != '\0') {
         *at++ = (uint8_t)*text++;
     }
@@ -134,12 +134,12 @@ static uint8_t *put_text(uint8_t *at, const char *text) {
 void k100_lighting_rate_get(uint8_t *value_data) {
     uint8_t *at = value_data;
 
-    at = put_number(at, frame_rate);
-    at = put_text(at, " fps, ");
-    at = put_number(at, scan_rate);
-    at = put_text(at, " Hz, ");
-    at = put_number(at, g_last_hit_tracker.count);
-    at = put_text(at, " hits");
+    at = k100_put_number(at, frame_rate);
+    at = k100_put_text(at, " fps, ");
+    at = k100_put_number(at, scan_rate);
+    at = k100_put_text(at, " Hz, ");
+    at = k100_put_number(at, g_last_hit_tracker.count);
+    at = k100_put_text(at, " hits");
 
     *at = '\0';
 }

@@ -60,6 +60,11 @@ SRC += lighting_sleep.c
 # when the host goes, this one wakes it.
 SRC += remote_wakeup.c
 
+# What happened before the keyboard stopped, in EEPROM outside QMK's region. The
+# port says where the core was and this keeps it. Keyboard level because the
+# events are read from this keyboard's own tasks and the region is its choice.
+SRC += fault_log.c
+
 # Our own RGB effect, in rgb_matrix_kb.inc, which QMK includes into
 # rgb_matrix.c rather than compiling on its own -- so no SRC entry, just this.
 # The file says why an effect that paints black has to exist at all.

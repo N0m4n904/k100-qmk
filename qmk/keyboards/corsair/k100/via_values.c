@@ -221,6 +221,22 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 case K100_VIA_NKRO:
                     describe_nkro(value_data);
                     return;
+                case K100_VIA_LAST_CRASH:
+                    k100_log_last_crash_get(value_data);
+                    return;
+                case K100_VIA_LAST_USB_EVENT:
+                    k100_log_last_event_get(value_data);
+                    return;
+                case K100_VIA_LOG_EVENT:
+                    if (k100_log_event_get(value_data)) {
+                        return;
+                    }
+                    break;
+                case K100_VIA_LOG_CRASH:
+                    if (k100_log_crash_get(value_data)) {
+                        return;
+                    }
+                    break;
             }
             break;
 
@@ -254,6 +270,9 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                     return;
                 case K100_VIA_SLEEP_AFTER:
                     k100_sleep_after_set(value_data);
+                    return;
+                case K100_VIA_LOG_CLEAR:
+                    k100_log_clear();
                     return;
             }
             break;

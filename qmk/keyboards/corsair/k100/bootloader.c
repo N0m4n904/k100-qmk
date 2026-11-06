@@ -257,10 +257,8 @@
  * Seconds per fault class, reported if the core takes a fault.
  *
  * Worth catching separately from everything else, because a fault does not look
- * like a fault from outside. All four fault vectors in this image point at
- * ChibiOS's unhandled-exception stub, which is an infinite loop, so the core
- * spins there until the watchdog resets it -- the same few seconds of absence
- * that a hang, a stall or a refused image produce. It also explains a reading
+ * like a fault from outside: the same few seconds of absence that a hang, a stall
+ * or a refused image produce. It also explains a reading
  * that otherwise has no explanation: that every instruction between the last
  * stage known to run and the first one known not to is bounded.
  *
@@ -304,6 +302,8 @@ bool k100_enter_bootloader(void) {
      * leaves the keyboard in whatever working state it had, which is better
      * than a reboot loop, and leaves the other routes something to act on.
      */
+    k100_log_event(K100_EVENT_BOOTLOADER_JUMP);
+
     return lpcWwdtForceReset();
 }
 
@@ -560,8 +560,9 @@ void k100_diagnostic_mark_first_scan(void) {
  *
  * Only the first boot reports, for the same reason the stage markers do: the
  * bootloader retries, and a signal that repeats is a signal that cannot be read.
+ * The vectors are the port's, and the fault log calls this.
  */
-static void diagnostic_fault(uint32_t class) {
+void k100_diagnostic_fault(uint32_t class) {
     if (DIAGNOSTIC_SURVIVOR.boots == 1U) {
         diagnostic_mark_always(class * DIAGNOSTIC_FAULT_STEP_S);
     }
@@ -570,22 +571,6 @@ static void diagnostic_fault(uint32_t class) {
        bootloader comes back reflashable, which is the state to be left in. */
     for (;;) {
     }
-}
-
-void HardFault_Handler(void) {
-    diagnostic_fault(1U);
-}
-
-void MemManage_Handler(void) {
-    diagnostic_fault(2U);
-}
-
-void BusFault_Handler(void) {
-    diagnostic_fault(3U);
-}
-
-void UsageFault_Handler(void) {
-    diagnostic_fault(4U);
 }
 #endif
 
@@ -785,6 +770,8 @@ void keyboard_pre_init_kb(void) {
         (void)k100_enter_bootloader();
     }
 
+    k100_log_start();
+
 #ifdef K100_USB_DIAGNOSTIC
     diagnostic_mark(DIAGNOSTIC_STAGE_PREINIT_S);
 #endif
@@ -915,6 +902,7 @@ void housekeeping_task_kb(void) {
      */
     k100_lighting_sleep_task();
     k100_remote_wakeup_task();
+    k100_log_task();
 
 #ifdef K100_USB_DIAGNOSTIC
     /* Once, not every iteration: this one reports that the loop was reached, and

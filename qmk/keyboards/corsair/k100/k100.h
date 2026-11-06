@@ -101,6 +101,20 @@ enum k100_via_value {
      * went without holding seven keys down to find out.
      */
     K100_VIA_NKRO = 28,
+    /** The last crash in the log, as text. See fault_log.c. */
+    K100_VIA_LAST_CRASH = 29,
+    /** The last USB event in the log, as text. */
+    K100_VIA_LAST_USB_EVENT = 30,
+    /**
+     * One entry of the log's events and one of its crashes, for tools/k100-fault-log.py.
+     *
+     * Not in the definition: a `label` shows one line and cannot page. The first byte of the
+     * value says which entry, zero being the newest, and the entry follows it in the reply.
+     */
+    K100_VIA_LOG_EVENT = 31,
+    K100_VIA_LOG_CRASH = 32,
+    /** Empties the log. Write only, and also only for the tool. */
+    K100_VIA_LOG_CLEAR = 33,
 };
 
 /**
@@ -281,6 +295,60 @@ void k100_frame_rendered(void);
 /** @brief The frame and scan rates, as the line of text VIA displays. */
 void k100_lighting_rate_get(uint8_t *value_data);
 
+/** @brief Text for a VIA label: each writes at @p at and returns where it stopped. */
+uint8_t *k100_put_number(uint8_t *at, uint32_t value);
+uint8_t *k100_put_text(uint8_t *at, const char *text);
+
+/**
+ * @brief   What the fault log records as an event. See fault_log.c.
+ *
+ * @details These numbers are stored, and tools/k100-fault-log.py reads them, so they do not
+ *          move and zero is not one of them.
+ */
+enum k100_log_event_kind {
+    K100_EVENT_BOOT            = 1,
+    /** The host reset the bus, or took the configuration away. */
+    K100_EVENT_USB_RESET       = 2,
+    K100_EVENT_USB_CONFIGURED  = 3,
+    K100_EVENT_USB_SUSPEND     = 4,
+    K100_EVENT_USB_WAKEUP      = 5,
+    /** The frames stopped, as lighting_sleep.c reads them, which a suspend may never report. */
+    K100_EVENT_HOST_GONE       = 6,
+    K100_EVENT_HOST_BACK       = 7,
+    /** This firmware handed the keyboard to the bootloader on purpose. */
+    K100_EVENT_BOOTLOADER_JUMP = 8,
+};
+
+/**
+ * @brief   Finds where the log left off and starts watching for a crash.
+ *
+ * @details Needs the system clock to be the real one, for the EEPROM's divider, and the
+ *          kernel to be running. Until it has run, events and crashes are not recorded.
+ */
+void k100_log_start(void);
+
+/** @brief Records an event, if the write budget allows. From the main thread only. */
+void k100_log_event(enum k100_log_event_kind kind);
+
+/** @brief The log's share of a trip round the main loop. */
+void k100_log_task(void);
+
+/** @brief Asks for the log to be emptied, a slot per trip round the main loop. */
+void k100_log_clear(void);
+
+/** @brief The newest entries as one line of text each, for VIA's labels. */
+void k100_log_last_crash_get(uint8_t *value_data);
+void k100_log_last_event_get(uint8_t *value_data);
+
+/**
+ * @brief   One entry for the tool, by how far it is from the newest.
+ *
+ * @return  @p false when the log holds no such position, which is how the tool knows it has
+ *          walked the whole of it. A position whose entry is empty is not that.
+ */
+bool k100_log_event_get(uint8_t *value_data);
+bool k100_log_crash_get(uint8_t *value_data);
+
 /**
  * @brief   The iCUE wheel has been turned, so the ring around it shows the level.
  *
@@ -338,4 +406,7 @@ bool k100_enter_bootloader(void);
  * only, and compiled out with the rest of the delay channel.
  */
 void k100_diagnostic_mark_first_scan(void);
+
+/** Reports a fault by the length of the marker; see bootloader.c. Does not return. */
+void k100_diagnostic_fault(uint32_t class);
 #endif
