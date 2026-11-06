@@ -134,8 +134,8 @@ class Crash:
 def read_entries(node: Path, value: int, parse) -> list:
     """A ring from its newest entry to its oldest, leaving out empty positions.
 
-    The reply says when a position is past the end of the ring. An empty position is not the
-    end: a write cut short leaves one.
+    The reply marks a position past the end of the ring. An empty position is not the end: a
+    write cut short leaves one.
     """
     entries = []
     for position in range(POSITIONS):
@@ -181,7 +181,7 @@ def print_log(events: list[Event], crashes: list[Crash]) -> None:
 
 
 def clear(node: Path) -> None:
-    """Empties the log and waits for the keyboard to say it has, a slot per main loop pass."""
+    """Empties the log and waits for the keyboard to report it finished, a slot per pass."""
     value = via_value(K100_HEADER, "K100_VIA_LOG_CLEAR")
 
     ask(node, bytes([CUSTOM_SET_VALUE, K100_CHANNEL, value]))

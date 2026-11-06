@@ -955,7 +955,7 @@ loop stuck with interrupts disabled through `PRIMASK` is reset with nothing reco
 `board_init()` widens it for startup and `keyboard_post_init_kb()` puts it back. A keyboard
 unplugged within those seconds records nothing.
 
-**What counts as progress.** Three things keep the main loop from coming round without being
+**What counts as progress.** Three things stop the main loop from coming round without it being
 stuck, and each feeds the watchdog because each step of it is bounded:
 
 - A word programmed by QMK's EEPROM driver, in the one `program_word()` the erase and the block

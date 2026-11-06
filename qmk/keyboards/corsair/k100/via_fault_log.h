@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 /**
- * @brief   What the byte after the position says, when it is no entry code.
+ * @brief   What the byte after the position means, when it is no entry code.
  *
  * @details tools/k100-fault-log.py reads this from here, and it never reaches the EEPROM.
  */

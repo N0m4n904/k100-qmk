@@ -578,6 +578,6 @@ int main(int argc, char **argv) {
     test_failed_write_stops_writing();
     test_labels_fit();
 
-    puts("ok: the fault log keeps its order through wraps, reboots, power cuts, storms and clears");
+    puts("ok: order and contents hold through wraps, reboots, power cuts, storms and clears");
     return 0;
 }
