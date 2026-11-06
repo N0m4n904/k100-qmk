@@ -60,10 +60,23 @@ SRC += lighting_sleep.c
 # when the host goes, this one wakes it.
 SRC += remote_wakeup.c
 
-# What happened before the keyboard stopped, in EEPROM outside QMK's region. The
-# port says where the core was and this keeps it. Keyboard level because the
-# events are read from this keyboard's own tasks and the region is its choice.
+# What happened before the keyboard stopped, in EEPROM outside the region QMK
+# uses. The port records where the core was, and these files store it. It is
+# keyboard level because the events come from this keyboard's own tasks, and the
+# keyboard chooses the region.
 SRC += fault_log.c
+SRC += fault_log_ring.c
+SRC += via_fault_log.c
+
+# Text and numbers for what the keyboard answers on VIA's own channel.
+SRC += via_text.c
+
+# Stopping the main loop on request, to prove the fault log on the keyboard. Off
+# unless asked for; see fault_diagnostic_hang.c.
+ifeq ($(strip $(K100_DIAGNOSTIC_HANG)), yes)
+    OPT_DEFS += -DK100_DIAGNOSTIC_HANG
+    SRC += fault_diagnostic_hang.c
+endif
 
 # Our own RGB effect, in rgb_matrix_kb.inc, which QMK includes into
 # rgb_matrix.c rather than compiling on its own -- so no SRC entry, just this.

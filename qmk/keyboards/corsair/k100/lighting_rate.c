@@ -41,6 +41,7 @@
 #include "quantum.h"
 
 #include "k100.h"
+#include "via_text.h"
 
 /*
  * How long each rate is averaged over.
@@ -104,31 +105,6 @@ void matrix_scan_kb(void) {
 
 void k100_frame_rendered(void) {
     frames++;
-}
-
-/** Decimal, by hand: a formatter for a few numbers is not worth linking printf for. */
-uint8_t *k100_put_number(uint8_t *at, uint32_t value) {
-    uint8_t digits[10];
-    uint8_t count = 0;
-
-    do {
-        digits[count++] = '0' + value % 10;
-        value /= 10;
-    } while (value > 0);
-
-    while (count > 0) {
-        *at++ = digits[--count];
-    }
-
-    return at;
-}
-
-uint8_t *k100_put_text(uint8_t *at, const char *text) {
-    while (*text != '\0') {
-        *at++ = (uint8_t)*text++;
-    }
-
-    return at;
 }
 
 void k100_lighting_rate_get(uint8_t *value_data) {

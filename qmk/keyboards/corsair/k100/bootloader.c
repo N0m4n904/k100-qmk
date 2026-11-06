@@ -43,6 +43,7 @@
 
 #include "lpc546xx_rit.h"
 #include "lpc546xx_wwdt.h"
+#include "fault_log.h"
 #include "k100.h"
 
 #ifdef VIA_ENABLE
@@ -256,9 +257,9 @@
 /*
  * Seconds per fault class, reported if the core takes a fault.
  *
- * Worth catching separately from everything else, because a fault does not look
- * like a fault from outside: the same few seconds of absence that a hang, a stall
- * or a refused image produce. It also explains a reading
+ * Catch these separately from everything else, because a fault does not look like
+ * a fault from outside: the same few seconds of absence that a hang, a stall or an
+ * image that fails its check produce. The fault class also explains a reading
  * that otherwise has no explanation: that every instruction between the last
  * stage known to run and the first one known not to is bounded.
  *
@@ -302,8 +303,6 @@ bool k100_enter_bootloader(void) {
      * leaves the keyboard in whatever working state it had, which is better
      * than a reboot loop, and leaves the other routes something to act on.
      */
-    k100_log_event(K100_EVENT_BOOTLOADER_JUMP);
-
     return lpcWwdtForceReset();
 }
 
@@ -315,6 +314,8 @@ bool k100_enter_bootloader(void) {
  * what a reset should do.
  */
 void bootloader_jump(void) {
+    k100_log_event(K100_EVENT_BOOTLOADER_JUMP);
+
     (void)k100_enter_bootloader();
 }
 
@@ -349,6 +350,8 @@ bool via_command_kb(uint8_t *data, uint8_t length) {
     if (data[0] != id_bootloader_jump) {
         return false;
     }
+
+    k100_log_event(K100_EVENT_BOOTLOADER_JUMP);
 
     return k100_enter_bootloader();
 }
@@ -556,15 +559,34 @@ void k100_diagnostic_mark_first_scan(void) {
 
 #ifdef K100_USB_DIAGNOSTIC
 /**
- * Reports a fault by its length, then lets the watchdog end the boot.
+ * Reports a fault by its length, then lets the watchdog end the boot. Returns for a stall, which
+ * is no fault and is reset by the port.
  *
  * Only the first boot reports, for the same reason the stage markers do: the
  * bootloader retries, and a signal that repeats is a signal that cannot be read.
- * The vectors are the port's, and the fault log calls this.
  */
-void k100_diagnostic_fault(uint32_t class) {
+void k100_diagnostic_fault(lpc_crash_cause_t cause) {
+    uint32_t steps;
+
+    switch (cause) {
+        case LPC_CRASH_HARD:
+            steps = 1U;
+            break;
+        case LPC_CRASH_MEM:
+            steps = 2U;
+            break;
+        case LPC_CRASH_BUS:
+            steps = 3U;
+            break;
+        case LPC_CRASH_USAGE:
+            steps = 4U;
+            break;
+        default:
+            return;
+    }
+
     if (DIAGNOSTIC_SURVIVOR.boots == 1U) {
-        diagnostic_mark_always(class * DIAGNOSTIC_FAULT_STEP_S);
+        diagnostic_mark_always(steps * DIAGNOSTIC_FAULT_STEP_S);
     }
 
     /* Deliberately not recovering. The watchdog resets the part and the
@@ -913,6 +935,10 @@ void housekeeping_task_kb(void) {
     k100_lighting_sleep_task();
     k100_remote_wakeup_task();
     k100_log_task();
+
+#ifdef K100_DIAGNOSTIC_HANG
+    k100_diagnostic_hang_task();
+#endif
 
 #ifdef K100_USB_DIAGNOSTIC
     /* Once, not every iteration: this one reports that the loop was reached, and

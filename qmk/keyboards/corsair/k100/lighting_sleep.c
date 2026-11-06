@@ -85,6 +85,7 @@
 #define K100_HOST_GRACE_MS 5000U
 
 static bool resting;
+static bool host_is_gone;
 
 /**
  * @brief   Whether the host has stopped using the keyboard, read off the bus.
@@ -152,19 +153,17 @@ static bool left_alone(void) {
            last_input_activity_elapsed() > (uint32_t)minutes * K100_MINUTE_MS;
 }
 
+bool k100_host_is_gone(void) {
+    return host_is_gone;
+}
+
 void k100_lighting_sleep_task(void) {
 #ifdef RGB_MATRIX_ENABLE
     /* Sampled on its own line and every trip, because host_gone() is what reads
        the counter: behind a `||` it would stop being read as soon as the other
        reason was true, and the clock it keeps would be the one that suffered. */
-    const bool gone   = host_gone();
-    const bool wanted = gone || left_alone();
-
-    static bool recorded_gone = false;
-    if (gone != recorded_gone) {
-        k100_log_event(gone ? K100_EVENT_HOST_GONE : K100_EVENT_HOST_BACK);
-        recorded_gone = gone;
-    }
+    host_is_gone      = host_gone();
+    const bool wanted = host_is_gone || left_alone();
 
     /*
      * Only on a change. Turning it on renders a black frame and flushes it,

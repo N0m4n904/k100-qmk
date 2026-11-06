@@ -28,9 +28,11 @@
 #include "quantum.h"
 #include "via.h"
 
+#include "fault_log.h"
 #include "k100.h"
 #include "led_zones.h"
 #include "lock_leds.h"
+#include "via_fault_log.h"
 
 /** Set from VIA, kept nowhere: a diagnostic that outlived a power cycle would
     be a keyboard with one white LED and no explanation for it. */
@@ -222,21 +224,20 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                     describe_nkro(value_data);
                     return;
                 case K100_VIA_LAST_CRASH:
-                    k100_log_last_crash_get(value_data);
+                    k100_via_last_crash_get(value_data);
                     return;
                 case K100_VIA_LAST_USB_EVENT:
-                    k100_log_last_event_get(value_data);
+                    k100_via_last_event_get(value_data);
                     return;
                 case K100_VIA_LOG_EVENT:
-                    if (k100_log_event_get(value_data)) {
-                        return;
-                    }
-                    break;
+                    k100_via_log_event_get(value_data);
+                    return;
                 case K100_VIA_LOG_CRASH:
-                    if (k100_log_crash_get(value_data)) {
-                        return;
-                    }
-                    break;
+                    k100_via_log_crash_get(value_data);
+                    return;
+                case K100_VIA_LOG_CLEAR:
+                    value_data[0] = k100_log_clear_is_running() ? 1 : 0;
+                    return;
             }
             break;
 
