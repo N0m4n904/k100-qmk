@@ -22,32 +22,33 @@ import argparse
 import re
 import subprocess
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # Cortex-M vector table index of an IRQ: sixteen system entries come first.
 FIRST_IRQ_INDEX = 16
 
-# Peripherals whose handler must be wired up, by NXP IRQn. Getting one of these
-# wrong is not hypothetical: FLEXCOMM0 to FLEXCOMM2 were each one slot low in an
-# earlier version of this port, which no build or test noticed.
+# What must have a real handler, by vector table index. An IRQ is at FIRST_IRQ_INDEX
+# plus NXP's IRQn. Getting one of these wrong is not hypothetical: FLEXCOMM0 to
+# FLEXCOMM2 were each one slot low in an earlier version of this port, which no build
+# or test noticed. A fault that spins in the stub leaves no record of itself.
 REQUIRED_HANDLERS = {
-    0: "the watchdog's warning, which says where a stuck loop was",
-    47: "USB1 (USBHSD, the controller the K100 is wired to)",
-}
-
-# The system exceptions, by vector table index, that must not go to the stub
-# either: a fault that spins there leaves no record of itself.
-REQUIRED_EXCEPTIONS = {
     3: "HardFault",
     4: "MemManage",
     5: "BusFault",
     6: "UsageFault",
+    FIRST_IRQ_INDEX + 0: "the watchdog warning, which shows where a stuck loop was",
+    FIRST_IRQ_INDEX + 47: "USB1 (USBHSD, the controller the K100 is wired to)",
 }
 
-# Where the crash capture starts, and what it must not reach: it runs above the
-# kernel's interrupt mask.
+# Where the crash capture starts. It runs above the kernel's interrupt mask, so the
+# only functions it may reach are its own, the port's, the compiler's arithmetic and
+# the marker of K100_USB_DIAGNOSTIC, which is a loop feeding the watchdog.
 CRASH_ENTRY = "lpc_crash_capture"
-KERNEL_NAME = re.compile(r"^(ch[A-Z]|_?_?(port|sch|vt|dbg|stats|trace)_|osal|timer_)")
+CRASH_MAY_REACH = re.compile(r"^(lpc|log_|crash_|__aeabi_|k100_diagnostic_fault|diagnostic_mark)")
+
+# The ring code reaches the EEPROM driver through a pointer, and nothing else may.
+CRASH_MAY_CALL_INDIRECTLY = re.compile(r"^log_ring_")
 
 
 def run(*args: str) -> str:
@@ -106,7 +107,7 @@ def handler_is_stub(elf: str, target: int) -> bool:
 
 
 def check_required_handlers(elf: str) -> bool:
-    """Each peripheral this port needs has a real handler in its vector slot.
+    """Each exception and peripheral this port needs has a real handler in its slot.
 
     ChibiOS names a vector by its byte offset into the table, so a one-slot
     error is a plausible typo that compiles, links and produces an image whose
@@ -116,11 +117,8 @@ def check_required_handlers(elf: str) -> bool:
     """
     words = section_words(elf, ".vectors")
 
-    required = {**REQUIRED_EXCEPTIONS,
-                **{FIRST_IRQ_INDEX + irq: name for irq, name in REQUIRED_HANDLERS.items()}}
-
     failed, reported = [], []
-    for index, name in sorted(required.items()):
+    for index, name in sorted(REQUIRED_HANDLERS.items()):
         if index >= len(words):
             failed.append(f"{name}: slot {index} is past the end of the table")
             continue
@@ -190,37 +188,51 @@ def check_realtime_counter(elf: str, allow_dwt: bool = False) -> bool:
     return not problems
 
 
-def direct_branches(elf: str) -> dict[str, set[str]]:
-    """Which functions each function branches to, read off the disassembly.
+@dataclass
+class FunctionBody:
+    """What one function does that the crash capture has to be checked for."""
 
-    A branch inside a function prints as `<name+0x1a>` and so is not matched. An
-    indirect call has no target to read, and an inlined one is no call, so
-    neither can be seen from here.
+    branches: set[str] = field(default_factory=set)
+    calls_indirectly: bool = False
+    locks_kernel: bool = False
+
+
+def function_bodies(elf: str) -> dict[str, FunctionBody]:
+    """Read off the disassembly.
+
+    A branch inside a function prints as `<name+0x1a>` and so is not matched. An inlined
+    kernel call has no target to read, and writing BASEPRI is what its lock comes down to.
     """
-    branches: dict[str, set[str]] = {}
+    bodies: dict[str, FunctionBody] = {}
     current = None
     for line in run("arm-none-eabi-objdump", "-d", elf).splitlines():
         if start := re.match(r"[0-9a-f]+ <([^>+]+)>:$", line):
-            current = start.group(1)
-            branches[current] = set()
-        elif current and (target := re.search(r"\s[0-9a-f]+ <([^>+]+)>$", line)):
-            branches[current].add(target.group(1))
-    return branches
+            current = FunctionBody()
+            bodies[start.group(1)] = current
+        elif current is None:
+            continue
+        elif target := re.search(r"\s[0-9a-f]+ <([^>+]+)>$", line):
+            current.branches.add(target.group(1))
+        elif re.search(r"\sblx\s+r\d", line):
+            current.calls_indirectly = True
+        elif re.search(r"\smsr\s+BASEPRI", line):
+            current.locks_kernel = True
+    return bodies
 
 
 def check_crash_capture_avoids_kernel(elf: str) -> bool:
-    """Nothing the crash capture reaches calls the kernel.
+    """The crash capture reaches only what it is allowed to.
 
     It runs above the kernel's interrupt mask, to catch a loop stuck with the kernel
     locked, so a kernel call there can corrupt the very state it interrupted. QMK's
-    timer_read32() is the easy one to reach for, and it takes the kernel's lock.
+    timer_read32() is the easy one to reach for, and it acquires the kernel's lock.
 
     Finding the function and finding branches anywhere is the control: without them
     a change in objdump's output would read as nothing being called.
     """
-    branches = direct_branches(elf)
+    bodies = function_bodies(elf)
 
-    if CRASH_ENTRY not in branches or not any(branches.values()):
+    if CRASH_ENTRY not in bodies or not any(body.branches for body in bodies.values()):
         print(f"crash capture            FAIL   found no {CRASH_ENTRY} or no branches, so "
               "this check proves nothing")
         return False
@@ -230,12 +242,18 @@ def check_crash_capture_avoids_kernel(elf: str) -> bool:
         name = pending.pop()
         if name not in reached:
             reached.add(name)
-            pending.extend(branches.get(name, ()))
+            pending.extend(bodies[name].branches if name in bodies else ())
 
-    kernel = sorted(name for name in reached if KERNEL_NAME.match(name))
-    verdict = "ok" if not kernel else "FAIL calls " + ", ".join(kernel)
+    problems = [f"reaches {name}" for name in sorted(reached) if not CRASH_MAY_REACH.match(name)]
+    for name in sorted(reached & bodies.keys()):
+        if bodies[name].locks_kernel:
+            problems.append(f"{name} locks the kernel")
+        if bodies[name].calls_indirectly and not CRASH_MAY_CALL_INDIRECTLY.match(name):
+            problems.append(f"{name} calls through a pointer")
+
+    verdict = "ok" if not problems else "FAIL " + "; ".join(problems)
     print(f"crash capture            {verdict}   {len(reached)} functions reached")
-    return not kernel
+    return not problems
 
 
 def main(argv: list[str]) -> int:

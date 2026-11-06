@@ -21,16 +21,13 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-from k100_firmware import (  # noqa: E402
+from k100_firmware import (
     BRAGI_NAMES, QMK_KEYCODES, SENSES, STROBES, STROBE_PIN_BASE, Firmware, Led,
 )
-from k100_via import via_value  # noqa: E402
+from k100_via import via_value
 
 # QMK keycodes for the keys that have no HID usage code of their own.
 #
@@ -1304,9 +1301,9 @@ def diagnostics_group(probe_value: int, index_value: int, rate_value: int, nkro_
     is the whole of the difference -- but "hold seven keys" is a poor way to answer "is it
     on", and the keyboard knows the answer.
 
-    And the newest line of each half of the fault log, which is where somebody looks after the
-    keyboard has stopped once. A label shows one line and cannot page, so the whole log is
-    tools/k100-fault-log.py. See fault_log.c.
+    It shows the newest line of each half of the fault log, which somebody looks at after the
+    keyboard has stopped. A label shows one line and cannot page, so the whole log is read with
+    tools/k100-fault-log.py. See via_fault_log.c.
     """
     return {
         "label": "Diagnostics",

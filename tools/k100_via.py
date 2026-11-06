@@ -55,22 +55,27 @@ UNHANDLED = 0xFF
 UI_SYNC_REQUEST = 0x16
 
 
-def via_value(header: Path, name: str) -> int:
-    """The number the keyboard answers a custom value on, read from its own enum.
+def header_enum(header: Path, name: str) -> dict[str, int]:
+    """The members of a C enum, by name, for those given a number of their own.
 
-    The same reasoning as the keycodes below: the firmware decides the number and the
-    definition can only repeat it, so it is taken from the header rather than written down
-    twice and hoped about.
+    The firmware decides these numbers and a tool can only repeat them, so they are read from
+    the header instead of being written down twice and hoped about.
     """
-    declaration = re.search(r"enum\s+k100_via_value\s*\{(.*?)\}", header.read_text(), re.S)
+    declaration = re.search(rf"enum\s+{name}\s*\{{(.*?)\}}", header.read_text(), re.S)
     if declaration is None:
-        raise SystemExit(f"{header} declares no enum k100_via_value")
+        raise SystemExit(f"{header} declares no enum {name}")
 
-    declared = re.search(rf"^\s*{name}\s*=\s*(\d+)", declaration.group(1), re.M)
-    if declared is None:
+    return {member: int(number) for member, number
+            in re.findall(r"^\s*(\w+)\s*=\s*(\d+)", declaration.group(1), re.M)}
+
+
+def via_value(header: Path, name: str) -> int:
+    """The number the firmware gives a custom value, read from its enum k100_via_value."""
+    values = header_enum(header, "k100_via_value")
+    if name not in values:
         raise SystemExit(f"{header}'s enum k100_via_value does not declare {name} with a "
                          f"number of its own")
-    return int(declared.group(1))
+    return values[name]
 
 
 def exchange(node: Path, request: bytes) -> bytes | None:
