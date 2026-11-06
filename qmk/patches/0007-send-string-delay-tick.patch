@@ -1,0 +1,47 @@
+diff --git a/quantum/send_string/send_string.c b/quantum/send_string/send_string.c
+--- a/quantum/send_string/send_string.c
++++ b/quantum/send_string/send_string.c
+@@ -150,8 +150,34 @@
+     send_string_with_delay(string, TAP_CODE_DELAY);
+ }
+ 
++/**
++ * Called while a string is being sent, on a keyboard's main loop that is not
++ * going round for the length of it.
++ *
++ * Weak and empty, so a keyboard that does not define it pays nothing. It exists
++ * because the delay in a string comes from a dynamic macro, which is user data of
++ * any length, and a keyboard whose watchdog is fed from the main loop would be
++ * reset by a macro with a long pause in it.
++ */
++__attribute__((weak)) void send_string_delay_tick_kb(void) {}
++
++/** Short enough for any watchdog a keyboard would run, and for a slow one to be fed in time. */
++#define SEND_STRING_DELAY_SLICE_MS 100
++
++static void wait_ms_with_ticks(int ms) {
++    while (ms > 0) {
++        const int slice = ms < SEND_STRING_DELAY_SLICE_MS ? ms : SEND_STRING_DELAY_SLICE_MS;
++
++        wait_ms(slice);
++        send_string_delay_tick_kb();
++        ms -= slice;
++    }
++}
++
+ void send_string_with_delay_impl(char (*getter)(void *), void *arg, uint8_t interval) {
+     while (1) {
++        send_string_delay_tick_kb();
++
+         char ascii_code = getter(arg);
+         if (!ascii_code) break;
+         if (ascii_code == SS_QMK_PREFIX) {
+@@ -180,7 +206,7 @@
+                     ascii_code = getter(arg);
+                 }
+ 
+-                wait_ms(ms);
++                wait_ms_with_ticks(ms);
+             }
+ 
+             wait_ms(interval);

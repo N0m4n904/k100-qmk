@@ -272,6 +272,11 @@ void lpcWwdtEnableWarning(uint32_t priority) {
   lpcWwdtFeed();
   WWDT->WARNINT = WWDT_WARNINT_WARNINT_MASK;
   lpcWwdtClearWarning();
+
+  /* Brownout shares the vector, and nothing here clears its status. A flag holding the line up
+     would re-enter the handler at this priority until the main loop starved. */
+  SYSCON->BODCTRL &= ~SYSCON_BODCTRL_BODINTENA_MASK;
+
   nvicEnableVector(LPC_WWDT_IRQ_NUMBER, priority);
 }
 

@@ -608,6 +608,14 @@ void led_init_ports(void) {
 }
 #endif
 
+/*
+ * A macro with a long pause in it does not bring the main loop round. Each slice is bounded, so
+ * a pause of any length counts as progress. Requires qmk/patches/0007-send-string-delay-tick.patch.
+ */
+void send_string_delay_tick_kb(void) {
+    lpcWwdtFeed();
+}
+
 void early_hardware_init_pre(void) {
     lpcWwdtFeed();
 

@@ -98,11 +98,12 @@ void lpc546xx_register_check(void) {
     WWDT->FEED = 0x55U;
   }
 
-  /* Its warning. WDINT clears on a one and WDTOF on a zero, which is why the
+  /* The warning flag, WDINT, clears on a one and WDTOF on a zero, which is why the
      driver writes back what it read. */
   WWDT->WARNINT = WWDT_WARNINT_WARNINT_MASK;
   WWDT->MOD = WWDT->MOD | WWDT_MOD_WDINT_MASK;
   (void)(WWDT->TV <= 2U * WWDT->WARNINT);
+  SYSCON->BODCTRL &= ~SYSCON_BODCTRL_BODINTENA_MASK;
   _Static_assert(WDT_BOD_IRQn == 0, "the watchdog's vector has moved");
 
   /* VD5 is the supply for both USB PHYs, and powering it is what NXP's binary

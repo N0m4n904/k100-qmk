@@ -53,6 +53,22 @@ static inline size_t within_word(uintptr_t offset, size_t remaining) {
     return fits < remaining ? fits : remaining;
 }
 
+/**
+ * @brief   Programs one word, and counts that as progress to the watchdog.
+ *
+ * @details Erasing the region or writing a keymap a byte at a time costs a program per word and
+ *          can outlast the watchdog inherited from a bootloader, with the loop that feeds it
+ *          waiting here. Each program is bounded, so a long run of them is not a hang.
+ *
+ *          The feed is here and not in lpcEepromWrite(), because the crash report in the port
+ *          calls that from the handler that already fed once.
+ */
+static void program_word(uint32_t word, uint32_t value) {
+
+    (void)lpcEepromWrite(word, value);
+    lpcWwdtFeed();
+}
+
 void eeprom_driver_init(void) {
 
     /* Clocks the cell and brings it out of the power-down it sits in, which
@@ -70,7 +86,7 @@ void eeprom_driver_erase(void) {
            the difference between formatting costing one cell write per word
            that was used and one per word that exists. */
         if (lpcEepromRead(word) != 0U) {
-            (void)lpcEepromWrite(word, 0U);
+            program_word(word, 0U);
         }
     }
 }
@@ -104,12 +120,7 @@ void eeprom_write_block(const void *buf, void *addr, size_t len) {
         memcpy((uint8_t *)&updated + (offset % sizeof(uint32_t)), in, take);
 
         if (updated != current) {
-            (void)lpcEepromWrite(word, updated);
-
-            /* A keymap written a byte at a time costs a program per byte and can outlast the
-               watchdog inherited from a bootloader, with the loop that feeds it waiting on this.
-               Each program is bounded progress, so a write this long is not a hang. */
-            lpcWwdtFeed();
+            program_word(word, updated);
         }
 
         offset += take;
