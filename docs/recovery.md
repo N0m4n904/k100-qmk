@@ -746,15 +746,32 @@ driver contains several unbounded waits. So:
 | Where | Why |
 | --- | --- |
 | `early_hardware_init_pre()` | before `crt0` has even initialised RAM |
-| `board_init()` | after `halInit()` configures the clocks |
+| `board_init()` | after `halInit()` configures the clocks; also widens the timeout for startup |
 | `keyboard_pre_init_kb()` | before QMK starts USB |
-| a ChibiOS virtual timer, every 100 ms | covers USB bring-up and anything else that does not return to the main loop |
+| `keyboard_post_init_kb()` | through `lpcWwdtSetTimeout()`, which puts the inherited timeout back |
 | `housekeeping_task_kb()` | every iteration thereafter |
+| `program_word()` in QMK's EEPROM driver | after each word, because an erase or a keymap reset can outlast the timeout |
+| `send_string_delay_tick_kb()` | for each character and each 100 ms of a macro delay |
+| the crash handler in `lpc546xx_crash.c` | once, to have time to write the record before it resets the part |
 
-The virtual timer has a cost worth stating: a watchdog fed from an interrupt no
-longer rescues firmware that wedges with interrupts still running. That was a
-pleasant side effect rather than a design, and the two deliberate routes back —
-Escape at power-on and the USB watchdog — are unaffected.
+A periodic feed on a ChibiOS virtual timer was tried here and removed; see fault 5 below. No feed
+comes from an interrupt on a timer, so firmware that wedges with interrupts still running is still
+reset.
+
+The figure this document gives for the timeout, about a second and a half, is older than the
+measurement. `TC` as Corsair's bootloader leaves it reads 400000, which is about 3.2 s.
+
+### The fault log on the way to the bootloader
+
+`bootloader_jump()` and VIA's jump command each log an event before they call
+`k100_enter_bootloader()`. That function itself logs nothing, and neither does the held-key route
+or the USB timeout, because those are the last resort and the last line of defence must not be
+the mechanism that has never been proven. A jump with neither a logged event nor a crash in front
+of it therefore came from one of those two.
+
+A failed or stuck write does not stop the jump that follows it. `lpcEepromWrite()` is bounded and
+a failure is ignored, and a write that faults or never returns ends in the same watchdog reset the
+jump was going to cause.
 
 ### Boot, stage by stage, and the seven faults between them
 
@@ -915,7 +932,7 @@ describes a stage boot never gets to.
 It is a **hang**, not slowness and not a fault. Both of those were tested rather
 than argued:
 
-- **Not a fault.** All four fault vectors in a stock image point at ChibiOS's
+- **Not a fault.** All four fault vectors in a stock image of that time pointed at ChibiOS's
   unhandled-exception stub, which is an infinite loop, so a fault would look
   exactly like a hang from the bus. A build that caught hard, memory-management,
   bus and usage faults and reported the class by marker length reported none:
