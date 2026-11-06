@@ -920,8 +920,10 @@ would have held the frame rate still while the loop slowed.
 
 ### What happened before it stopped
 
-**Built and checked in the disassembly and on the host. None of this has run on the keyboard
-yet.**
+**Proven on the keyboard with the hang build.** All three requests below put the keyboard in the
+bootloader, and after a normal image was written over it the log held each crash with a PC that
+resolves to the requested function, and the kernel read as locked only for the second. It has not
+yet recorded a fault nobody provoked.
 
 A keyboard that stops ends with a watchdog reset into Corsair's bootloader and a power cycle
 that clears the RAM, so the record of the failure has to be in the EEPROM by then. `fault_log.c`
@@ -951,7 +953,9 @@ and resets through an invalid feed. So `WDTOF` is set as it would have been, and
 still goes to the bootloader. A crash records the time of the last pass through the main loop. A
 loop stuck with interrupts disabled through `PRIMASK` is reset with nothing recorded.
 
-**How long a stall takes to show.** About 3.2 s, the timeout inherited from the bootloader.
+**How long a stall takes to show.** About 8 s, measured from the request to the keyboard leaving
+the bus. That is the timeout inherited from the bootloader: `TC` reads 400000, and the 3.2 s that
+figure gives at a nominal watchdog clock is not what the part does.
 `board_init()` widens it for startup and `keyboard_post_init_kb()` puts it back. A keyboard
 unplugged within those seconds records nothing.
 
