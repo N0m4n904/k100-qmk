@@ -1,0 +1,151 @@
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+@@ -53,20 +53,13 @@
+ /*===========================================================================*/
+ 
+ /**
+- * @brief   EP0 state.
+- * @note    It is an union because IN and OUT endpoints are never used at the
+- *          same time for EP0.
+- */
+-static union {
+-  /**
+-   * @brief   IN EP0 state.
+-   */
+-  USBInEndpointState in;
+-  /**
+-   * @brief   OUT EP0 state.
+-   */
+-  USBOutEndpointState out;
+-} ep0_state;
++ * @brief   EP0 state, one per direction.
++ * @note    Not a union: the status packet of an IN transfer is received into
++ *          an entry armed during the IN stage, so it can complete in the same
++ *          interrupt as the last IN packet, while the IN state is still live.
++ */
++static USBInEndpointState ep0_in_state;
++static USBOutEndpointState ep0_out_state;
+ 
+ /**
+  * @brief   EP0 initialization structure.
+@@ -78,8 +71,8 @@
+   _usb_ep0out,
+   0x40,
+   0x40,
+-  &ep0_state.in,
+-  &ep0_state.out,
++  &ep0_in_state,
++  &ep0_out_state,
+   0,
+   NULL,
+ };
+@@ -312,6 +305,43 @@
+   return n;
+ }
+ 
++/**
++ * @brief   Serves an IN packet completed on an endpoint with a transmit
++ *          started.
++ */
++static void usb_serve_in(USBDriver *usbp, usbep_t ep) {
++  USBInEndpointState *isp = usbp->epc[ep]->in_state;
++  size_t n = isp->txlastpktlen;
++  isp->txcnt += n;
++  if (isp->txcnt < isp->txsize) {
++    isp->txbuf += n;
++    osalSysLockFromISR();
++    usb_packet_transmit(usbp, ep, isp->txsize - isp->txcnt);
++    osalSysUnlockFromISR();
++  } else {
++    _usb_isr_invoke_in_cb(usbp, ep);
++  }
++}
++
++/**
++ * @brief   Serves an OUT packet completed on an endpoint with a receive
++ *          started.
++ */
++static void usb_serve_out(USBDriver *usbp, usbep_t ep) {
++  USBOutEndpointState *osp = usbp->epc[ep]->out_state;
++  size_t actual_rx = 0;
++  if (osp->rxsize > 0) {
++    osalSysLockFromISR();
++    actual_rx = usb_packet_receive(usbp, ep);
++    osalSysUnlockFromISR();
++  }
++  if (osp->rxsize == 0) {
++    _usb_isr_invoke_out_cb(usbp, ep);
++  } else if (actual_rx < usbp->epc[ep]->out_maxsize && ep != 0) {
++    _usb_isr_invoke_out_cb(usbp, ep);
++  }
++}
++
+ 
+ /*===========================================================================*/
+ /* Driver interrupt handlers and threads.                                    */
+@@ -356,42 +386,21 @@
+     }
+   } // USB_INT_DEV_INT
+ 
+-  for (int ep = 0; ep < 5; ++ep)
+-  {
+-    // EP0 OUT (Setup)
+-    if (isr & (USB_INT_EPn_INT << (2 * ep))) {
+-      if (devstat & USB_DEVCMDSTAT_SETUP) {
+-        _usb_isr_invoke_setup_cb(usbp, ep);
+-      } else {
+-        // OUT endpoint, receive
+-        USBOutEndpointState *osp = usbp->epc[ep]->out_state;
+-        size_t actual_rx = 0;
+-        if (osp->rxsize > 0) {
+-          osalSysLockFromISR();
+-          actual_rx = usb_packet_receive(usbp, ep);
+-          osalSysUnlockFromISR();
+-        }
+-        if (osp->rxsize == 0) { // TODO: Check if this is correct
+-          _usb_isr_invoke_out_cb(usbp, ep);
+-        } else if (actual_rx < usbp->epc[ep]->out_maxsize && ep != 0) {
+-          _usb_isr_invoke_out_cb(usbp, ep);
+-        }
+-      }
++  /* A bit is served only while a transfer is started on its endpoint: bits
++     latched before _usb_reset() or usbDisableEndpointsI() earlier in this run
++     belong to transfers that no longer exist. IN comes first because on the
++     bus the last IN packet precedes the status packet, and serving it is what
++     starts the receive of that status packet. */
++  for (usbep_t ep = 0; ep < 5; ++ep) {
++    if ((isr & USB_INT_EP(2 * ep + 1)) && usbGetTransmitStatusI(usbp, ep)) {
++      usb_serve_in(usbp, ep);
+     }
+ 
+-    // EP0 IN
+-    if (isr & (USB_INT_EPn_INT << (2 * ep + 1))) {
+-      USBInEndpointState *isp = usbp->epc[ep]->in_state;
+-      size_t n = isp->txlastpktlen;
+-      isp->txcnt += n;
+-      if (isp->txcnt < isp->txsize) {
+-        isp->txbuf += n;
+-        osalSysLockFromISR();
+-        usb_packet_transmit(usbp, ep, isp->txsize - isp->txcnt);
+-        osalSysUnlockFromISR();
+-      } else {
+-        // IN callback
+-        _usb_isr_invoke_in_cb(usbp, ep);
++    if (isr & USB_INT_EP(2 * ep)) {
++      if ((ep == 0) && (devstat & USB_DEVCMDSTAT_SETUP)) {
++        _usb_isr_invoke_setup_cb(usbp, ep);
++      } else if (usbGetReceiveStatusI(usbp, ep)) {
++        usb_serve_out(usbp, ep);
+       }
+     }
+   }
+@@ -734,9 +743,6 @@
+   USB_EPLIST->entry[ep * 4] |= EPLIST_ENTRY_ACTIVE |
+     EPLIST_ENTRY_NBYTES(epcp->out_maxsize) |
+     EPLIST_ADDR(usbp->epn_buffer[ep * 2]);
+-
+-  if (ep == 0)
+-    usb_lld_devcmdstat_write(0U, USB_DEVCMDSTAT_INTONNAK_CO);
+ }
+ 
+ /**

@@ -9,7 +9,15 @@
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
     {
-      devShells = forAllSystems (pkgs: {
+      devShells = forAllSystems (pkgs: pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
+        # For chibios/test/test-usb-interrupt.sh. The USB driver keeps addresses in
+        # uint32_t, as the part does, so its host test is built for 32-bit x86.
+        usb-test = pkgs.mkShell {
+          name = "k100-qmk-usb-test";
+
+          packages = [ pkgs.pkgsi686Linux.gcc ];
+        };
+      } // {
         default = pkgs.mkShell {
           name = "k100-qmk";
 
