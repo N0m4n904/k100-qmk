@@ -121,35 +121,7 @@ done
 contrib="$qmk/lib/chibios-contrib"
 
 echo "applying patches"
-git -C "$contrib" init -q .
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0001-usb-family-seam.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0003-bound-usb-controller-waits.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0004-usb-reset-before-irq.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0005-eplist-size-from-controller.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0006-eplist-buffer-base.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0009-eplist-nbytes-position.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0008-systick-freerunning-guard.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0010-devcmdstat-latched-bits.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0011-systick-priority-is-a-level.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0012-endpoint-memory-granules.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0013-completed-out-transfer-is-not-an-error.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0014-disable-endpoints-with-entry-bits.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0015-clearing-a-halt-resets-the-toggle.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0016-endpoint-zero-states-and-serve-order.patch"
+"$repo/chibios/patches/apply-series.sh" "$contrib" contrib
 git -C "$qmk" init -q .
 git -C "$qmk" apply --whitespace=nowarn \
     "$repo/qmk/patches/0001-mcu-selection-lpc546xx.patch"
@@ -166,15 +138,8 @@ git -C "$qmk" apply --whitespace=nowarn \
 git -C "$qmk" apply --whitespace=nowarn \
     "$repo/qmk/patches/0007-send-string-delay-tick.patch"
 
-# ChibiOS proper, not Contrib: port_init() enables the DWT cycle counter
-# unconditionally, and this keyboard's debug block is not accessible to
-# software, so that write faults inside chSysInit(). See the keyboard's
-# chconf.h, which is what turns it off.
-git -C "$qmk/lib/chibios" init -q .
-git -C "$qmk/lib/chibios" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0002-optional-dwt-enable.patch"
-git -C "$qmk/lib/chibios" apply --whitespace=nowarn \
-    "$repo/chibios/patches/0007-external-realtime-counter.patch"
+# ChibiOS proper, not Contrib. chibios/patches/README.md says why each patch exists.
+"$repo/chibios/patches/apply-series.sh" "$qmk/lib/chibios" chibios
 
 echo "placing the LPC546xx port into ChibiOS-Contrib"
 cp -r "$repo/chibios/os/hal/ports/LPC/LPC546xx" "$contrib/os/hal/ports/LPC/"

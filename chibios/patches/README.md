@@ -2,20 +2,12 @@
 
 Everything under `chibios/os/` is new code in a new family directory, so it changes nothing that
 exists. These patches are the exception: most change the shared LPC driver pool, which today has
-exactly one consumer, LPC11Uxx, and two change ChibiOS proper.
+exactly one consumer, LPC11Uxx, and the rest change ChibiOS proper.
 
-Apply each to the root of the checkout named in the last column, with `git apply`. Both build
-scripts do this, so the usual way to apply them is to run one.
-
-| Patch | Touches | Tree |
-| --- | --- | --- |
-| `0001-usb-family-seam.patch` | `os/hal/ports/LPC/LLD/USB/hal_usb_lld.c`, `.../hal_usb_lld.h`, `os/hal/ports/LPC/LPC11Uxx/` | Contrib |
-| `0002-optional-dwt-enable.patch` | `os/common/ports/ARMv7-M/chcore.c` | ChibiOS |
-| `0003-bound-usb-controller-waits.patch` | `os/hal/ports/LPC/LLD/USB/hal_usb_lld.c` | Contrib |
-| `0004-usb-reset-before-irq.patch` | `os/hal/ports/LPC/LLD/USB/hal_usb_lld.c` | Contrib |
-| `0005-eplist-size-from-controller.patch` | `os/hal/ports/LPC/LLD/USB/hal_usb_lld.c` | Contrib |
-| `0006-eplist-buffer-base.patch` | `os/hal/ports/LPC/LLD/USB/hal_usb_lld.c` | Contrib |
-| `0007-external-realtime-counter.patch` | `os/common/ports/ARMv7-M/chcore.h` | ChibiOS |
+`series` lists the patches in the order they are applied, each with the tree it applies to:
+`contrib` for ChibiOS-Contrib, `chibios` for ChibiOS proper. `apply-series.sh <checkout> <tree>`
+applies the patches of one tree to a checkout of it. A new patch is added to `series` and nowhere
+else. A patch in this directory that `series` does not list fails the build.
 
 `0002` and `0007` are a pair, and the second exists because of the first. Turning the DWT off on a
 part whose debug block is inaccessible takes the realtime counter with it, and on this platform
@@ -23,8 +15,8 @@ QMK's `wait_us()` is `chSysPolledDelayX()` — which, against a counter that nev
 not run short but never returns. `0007` lets the platform supply the counter from a peripheral
 instead; `chibios/os/hal/ports/LPC/LPC546xx/lpc546xx_rit.c` is what supplies it here.
 
-All of these are compiled by `chibios/test/build-demo.sh` and `qmk/test/build-k100.sh`, which
-fetch the trees they apply to. The register checks under `chibios/test/` deliberately do not need
+`chibios/test/build-demo.sh` and `qmk/test/build-k100.sh` apply all of them through
+`apply-series.sh` and compile them, and both fetch the trees they apply to. The register checks under `chibios/test/` deliberately do not need
 a ChibiOS checkout and so cannot reach them — see `chibios/README.md`.
 
 ## Why the USB driver needs changing at all

@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The patches in this directory, in the order they are applied, each with the tree it applies to.
+contrib 0001-usb-family-seam.patch
+contrib 0003-bound-usb-controller-waits.patch
+contrib 0004-usb-reset-before-irq.patch
+contrib 0005-eplist-size-from-controller.patch
+contrib 0006-eplist-buffer-base.patch
+contrib 0009-eplist-nbytes-position.patch
+contrib 0008-systick-freerunning-guard.patch
+contrib 0010-devcmdstat-latched-bits.patch
+contrib 0011-systick-priority-is-a-level.patch
+contrib 0012-endpoint-memory-granules.patch
+contrib 0013-completed-out-transfer-is-not-an-error.patch
+contrib 0014-disable-endpoints-with-entry-bits.patch
+contrib 0015-clearing-a-halt-resets-the-toggle.patch
+contrib 0016-endpoint-zero-states-and-serve-order.patch
+chibios 0002-optional-dwt-enable.patch
+chibios 0007-external-realtime-counter.patch

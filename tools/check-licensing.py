@@ -38,7 +38,6 @@ POLICY: list[tuple[str, set[str]]] = [
     ("chibios/os/common/startup/", {"GPL-3.0-or-later", "MIT"}),
     # This project's own verification harness, which stays.
     ("chibios/test/", {"GPL-3.0-or-later"}),
-    ("chibios/patches/", set()),
     # Destined for QMK, which is GPL-2-or-later.
     ("qmk/", {"GPL-2.0-or-later"}),
     # Linked against ckb-next, which is GPL-2 with no "or later" grant.

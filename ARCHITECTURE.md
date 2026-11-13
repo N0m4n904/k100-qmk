@@ -23,10 +23,9 @@ this needs, and the whole design hangs off them:
   slot in behind those.
 
 Editing QMK core or the ChibiOS HAL to accommodate this keyboard is the signal that something
-is in the wrong layer. It has happened **eight** times, and each one is a patch with its
-reasoning: seven against QMK and fifteen against ChibiOS-Contrib, in `qmk/patches/` and
-`chibios/patches/`. Three of the ChibiOS ones are defects in the shared LPC USB driver that
-were found here; none of them mentions the K100.
+is in the wrong layer. Each time it happened is a patch with its reasoning, in `qmk/patches/`
+and `chibios/patches/`, where `series` lists them. Most of the ChibiOS ones are defects in the
+shared LPC USB driver that were found here; none of them mentions the K100.
 
 ## How a build is assembled
 
@@ -40,10 +39,10 @@ rather than a private fork that has to be maintained.
 
 ```
 chibios/os/hal/ports/LPC/LPC546xx/      the family port: clocks, PAL, SPI, USB, EEPROM, WWDT, crash capture
-chibios/patches/                        fifteen changes to ChibiOS and ChibiOS-Contrib
+chibios/patches/                        changes to ChibiOS and ChibiOS-Contrib, listed in series
 qmk/platforms/chibios/                  board definition and the EEPROM driver
 qmk/keyboards/corsair/k100/             the keyboard: matrix, LEDs, effects, VIA, bootloader
-qmk/patches/                            seven changes to QMK
+qmk/patches/                            changes to QMK
 qmk/test/build-k100.sh                  fetches, patches, assembles, builds, checks the image
 tools/                                  the host side; see below
 via/k100-iso-de.json                    the VIA definition, generated

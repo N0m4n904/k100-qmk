@@ -28,7 +28,8 @@ chibios/os/common/startup/ARMCMx/
 chibios/demos/LPC/LPC54605_GENERIC/
                            a program whose only purpose is to be built
 chibios/patches/
-    0001-usb-family-seam.patch   the change the shared USB driver needs
+    series                 the patches to shared ChibiOS code, in order, with their tree
+    apply-series.sh        applies the patches of one tree to a checkout
 chibios/test/
     register-check.c       every SYSCON, IOCON, GPIO and USB field the port uses
     pal-check.c            the exact IOCON word each pad mode produces

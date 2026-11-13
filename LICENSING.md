@@ -30,7 +30,7 @@ the check enforces exactly that asymmetry.
 | `chibios/os/hal/**`, `chibios/demos/**` | Apache-2.0 | Destined for ChibiOS-Contrib, whose LPC HAL tree is Apache-2.0 |
 | `chibios/os/hal/ports/LPC/LPC546xx/lpc546xx_pll.c` | BSD-3-Clause | Its divider encoders are NXP's, from the MCUXpresso SDK |
 | `chibios/os/common/startup/**` | GPL-3.0-or-later and MIT, per file | Same destination, different neighbours — see below |
-| `chibios/patches/**` | — | Diffs against ChibiOS-Contrib; each hunk carries the licence of the file it changes |
+| `chibios/patches/*.patch` | — | Diffs against ChibiOS and ChibiOS-Contrib; each hunk carries the licence of the file it changes |
 | `qmk/**` | GPL-2.0-or-later | Destined for QMK, which is GPL-2.0-or-later |
 | `tools/extract-ckb-keymap/` | GPL-2.0-or-later | Links against ckb-next, which is GPL-2 with no "or later" grant |
 | `chibios/test/**` | GPL-3.0-or-later | this project's verification harness |

@@ -22,7 +22,7 @@ set -euo pipefail
 # Both snapshots come from the same branch pair, and ChibiOS-Contrib's default
 # branch is named for the ChibiOS release it tracks.
 chibios_ref=stable_21.11.x
-contrib_ref=chibios-21.11.x
+contrib_ref='chibios-21.11.x'
 # Which board to build for. The default is a bare LPC54605, the part in the
 # keyboard; LPCXPRESSO54628 is the devboard recommended as the first target,
 # and building both is what keeps the port from quietly depending on one.
@@ -96,39 +96,15 @@ rm -rf "$chibios" "$contrib"
 unpack "$work/cache/chibios.tar.gz" "$chibios"
 unpack "$work/cache/contrib.tar.gz" "$contrib"
 
-echo "applying the shared USB driver patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/patches/0001-usb-family-seam.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/patches/0003-bound-usb-controller-waits.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/patches/0004-usb-reset-before-irq.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/patches/0005-eplist-size-from-controller.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/patches/0006-eplist-buffer-base.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/patches/0009-eplist-nbytes-position.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/patches/0008-systick-freerunning-guard.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/patches/0010-devcmdstat-latched-bits.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/patches/0011-systick-priority-is-a-level.patch"
-git -C "$contrib" apply --whitespace=nowarn \
-    "$repo/patches/0012-endpoint-memory-granules.patch"
+echo "applying the ChibiOS-Contrib patches"
+"$repo/patches/apply-series.sh" "$contrib" contrib
 
-# And the two to ChibiOS proper, which are a pair: one makes enabling the DWT
-# optional, the other supplies a realtime counter for the parts that have to turn
-# it off. The demo's chconf.h does both, so this build is where they are actually
-# compiled -- the register checks cannot reach them, and a patch nothing compiles
-# rots against a newer ChibiOS without saying so.
+# The demo's chconf.h turns the DWT off and supplies the realtime counter itself, so
+# this build is where the ChibiOS-proper patches are compiled -- the register checks
+# cannot reach them, and a patch nothing compiles rots against a newer ChibiOS
+# without saying so.
 echo "applying the ChibiOS-proper patches"
-git -C "$chibios" init -q . 2>/dev/null || true
-git -C "$chibios" apply --whitespace=nowarn \
-    "$repo/patches/0002-optional-dwt-enable.patch"
-git -C "$chibios" apply --whitespace=nowarn \
-    "$repo/patches/0007-external-realtime-counter.patch"
+"$repo/patches/apply-series.sh" "$chibios" chibios
 
 # Beside LPC11Uxx.h, which is where ChibiOS-Contrib already keeps an NXP device
 # header. This is the path a build that cannot fetch anything has to take -- so
