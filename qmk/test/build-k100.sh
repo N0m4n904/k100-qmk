@@ -12,10 +12,17 @@
 #   LDSCRIPT=LPC546xx_sram qmk/test/build-k100.sh [work-dir]
 #   qmk/test/build-k100-variants.sh <work-dir>    # every configuration, each image kept
 #
-# Downloads are cached in the work directory, so a second run is fast.
+# Downloads are cached in the work directory, so a second run is fast, and each
+# is checked against qmk/test/downloads.sha256, so a given commit of this
+# repository builds the same image.
 set -euo pipefail
 
-qmk_ref=master
+# The patches in qmk/patches are written against this QMK commit. Moving it
+# means rebasing them onto the new tree and listing the new downloads in
+# downloads.sha256.
+qmk_ref=f5db962110615fd263c3ebf9f0402e7c2b08fbe4
+# The last mcux-sdk commit that changed devices/LPC54605.
+nxp_ref=2e1294859a258352db3517083bad1a277ad5544f
 part=LPC54605
 keyboard=corsair/k100
 keymap=${KEYMAP:-default}
@@ -37,23 +44,39 @@ cache="$work/cache"
 
 echo "work directory: $work"
 
-fetch() {
+sums="$here/downloads.sha256"
+
+download() {
     local url="$1" out="$2"
     [ -s "$out" ] && return 0
     mkdir -p "$(dirname "$out")"
     curl -fsSL -o "$out" "$url"
 }
 
+# Checked on every run, a cached copy included, by the name it is cached under.
+fetch() {
+    local url="$1" name="$2"
+    download "$url" "$cache/$name"
+    local expected
+    expected="$(awk -v name="$name" '$2 == name { print $1 }' "$sums")"
+    if [ -z "$expected" ]; then
+        echo "error: $name is not listed in $sums" >&2
+        return 1
+    fi
+    (cd "$cache" && echo "$expected  $name" | sha256sum --check --quiet)
+}
+
 # QMK pins its submodules to exact commits, and the branch heads are not those
 # commits -- using a head gets a ChibiOS whose layout QMK's build does not
 # expect, which surfaces as a missing chlib.h in completely unrelated code.
-# Always resolve the pinned sha.
+# Always resolve the pinned sha, as recorded at $qmk_ref.
 pinned_sha() {
     local path="$1"
-    fetch "https://api.github.com/repos/qmk/qmk_firmware/contents/lib/$path" \
-          "$cache/sha-$path.json"
+    local record="$cache/sha-$path-$qmk_ref.json"
+    download "https://api.github.com/repos/qmk/qmk_firmware/contents/lib/$path?ref=$qmk_ref" \
+             "$record"
     python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['sha'])" \
-        "$cache/sha-$path.json"
+        "$record"
 }
 
 unpack() {
@@ -66,9 +89,9 @@ unpack() {
 qmk="$work/qmk_firmware"
 
 echo "fetching QMK ($qmk_ref)"
-fetch "https://github.com/qmk/qmk_firmware/archive/refs/heads/$qmk_ref.tar.gz" \
-      "$cache/qmk.tar.gz"
-unpack "$cache/qmk.tar.gz" "$qmk"
+fetch "https://github.com/qmk/qmk_firmware/archive/$qmk_ref.tar.gz" \
+      "qmk-$qmk_ref.tar.gz"
+unpack "$cache/qmk-$qmk_ref.tar.gz" "$qmk"
 
 # Only the submodules an ARM ChibiOS build reaches. lufa is in the list because
 # QMK's ChibiOS USB stack borrows LUFA's HID class headers, which is not
@@ -83,15 +106,16 @@ for sub in chibios chibios-contrib printf lufa; do
     sha="$(pinned_sha "$sub")"
     echo "fetching lib/$sub at ${sha:0:12}"
     fetch "https://github.com/qmk/${repos[$sub]}/archive/$sha.tar.gz" \
-          "$cache/$sub-$sha.tar.gz"
+          "$sub-$sha.tar.gz"
     unpack "$cache/$sub-$sha.tar.gz" "$qmk/lib/$sub"
 done
 
-echo "fetching the NXP $part device headers"
-nxp=https://raw.githubusercontent.com/nxp-mcuxpresso/mcux-sdk/main/devices/$part
+echo "fetching the NXP $part device headers (${nxp_ref:0:12})"
+nxp=https://raw.githubusercontent.com/nxp-mcuxpresso/mcux-sdk/$nxp_ref/devices/$part
+nxp_headers="nxp-$nxp_ref/$part"
 for f in fsl_device_registers.h $part.h ${part}_features.h \
          system_$part.h system_$part.c; do
-    fetch "$nxp/$f" "$cache/nxp/$part/$f"
+    fetch "$nxp/$f" "$nxp_headers/$f"
 done
 
 contrib="$qmk/lib/chibios-contrib"
@@ -163,7 +187,7 @@ cp "$repo/chibios/os/common/startup/ARMCMx/compilers/GCC/mk/"*.mk \
 # LPC11Uxx.h that ChibiOS-Contrib already keeps there. They are BSD-3-Clause by
 # their own SPDX identifier.
 mkdir -p "$contrib/os/common/ext/CMSIS/LPC/$part"
-cp "$cache/nxp/$part/"* "$contrib/os/common/ext/CMSIS/LPC/$part/"
+cp "$cache/$nxp_headers/"* "$contrib/os/common/ext/CMSIS/LPC/$part/"
 
 echo "placing the QMK platform support and the keyboard"
 cp -r "$repo/qmk/platforms/chibios/vendors/LPC" "$qmk/platforms/chibios/vendors/"

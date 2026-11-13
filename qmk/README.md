@@ -33,8 +33,8 @@ What is needed:
 | `constants.py` `CHIBIOS_PROCESSORS` | how QMK decides a target is ChibiOS and not AVR | **patch** |
 | `chibios_config.h` `CPU_CLOCK` | every family defines one; QMK's timer code needs it | **patch** |
 
-The four patched hunks are all in one patch, which applies cleanly to upstream `master`, verified
-against freshly fetched copies. **Three of the four were found by building, and all three fail in
+The four patched hunks are all in one patch, which applies cleanly to the QMK commit named by
+`qmk_ref` in `qmk/test/build-k100.sh`. **Three of the four were found by building, and all three fail in
 a way that points somewhere else** — a missing schema entry presents as a keyboard with no
 layouts, a missing `CHIBIOS_PROCESSORS` entry ends up in the *AVR* bootloader makefile, and a
 missing `CPU_CLOCK` is an undeclared identifier in an unrelated header.
