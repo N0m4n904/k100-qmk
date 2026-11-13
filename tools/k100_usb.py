@@ -58,7 +58,7 @@ def bcd_device(version: str) -> str:
 # only knew the newest number would call it unrecognised and refuse to work with
 # it -- which is the opposite of what a keyboard waiting for an update needs.
 CURRENT = bcd_device(declared_version())
-EARLIER = ("0101", "0100", "0030", "0021", "0020", "0010", "0001")
+EARLIER = ("0110", "0101", "0100", "0030", "0021", "0020", "0010", "0001")
 OURS = (CURRENT, *EARLIER)
 
 BOOTLOADER = "000a"

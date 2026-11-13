@@ -65,7 +65,7 @@ and the two rules that keep a mistake survivable.
 | --- | --- |
 | Working firmware | **Yes.** It runs from flash, enumerates, binds three HID interfaces, types and lights. Typing was measured at 5204 key events across four minutes of continuous use. It used to hang within a second of being used; the cause was a system-timer priority that is not a priority on a part with three priority bits, which put the tick above the kernel's own interrupt mask. [`docs/scheduler-stall.md`](docs/scheduler-stall.md) |
 | ChibiOS LPC546xx port | **Runs on the keyboard.** Boots through `crt0`, `halInit()` and `chSysInit()` into QMK's main loop, from SRAM and from flash alike. |
-| USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0110` for version 1.1.0, and the kernel binds all three HID interfaces. |
+| USB | **Working.** Enumerates at 480 Mbit/s as `1b1c:1b7c`, `bcdDevice 0111` for version 1.1.1, and the kernel binds all three HID interfaces. |
 | QMK layout, keymap and VIA definition | **Generated**, not written, from ckb-next's geometry and the stock firmware's own tables; a fresh run reproduces all three files byte for byte. The definition names the keycodes this board adds and carries a lighting menu holding the effects this firmware is *built* with -- VIA's own menu sends a position in a list of all 45, which is a different number. `tools/via-definition-check` runs it through the same reader the application does before a browser ever sees it. [`docs/qmk-layout.md`](docs/qmk-layout.md) |
 | Key matrix pins | **Proven on hardware**, read against `bcdDevice` so it is this firmware and not the bootloader's own keyboard: 67 presses across 16 keys while the device reported `0.01`. The settle time is 500 us -- these are optical switches, and the 20 us first guessed is far too short for an emitter and phototransistor to answer. [`docs/pin-mapping.md`](docs/pin-mapping.md) |
 | Resting by itself | **Dark while the host is gone, and after being left alone if asked.** QMK has a hook for the first and a timeout for the second, and neither is reachable here: the hook is called only from the loop that waits on a suspended host, which this keyboard compiles out because it never reaches the watchdog feed, and the timeout is a compile-time constant and so cannot be a setting. `lighting_sleep.c` decides both from the main loop instead. Whether the host is gone is read off the bus, because a suspend may never be reported -- a host switched off while its port stays powered, which is what a self-powered hub does, leaves the keyboard running and the state never reaches suspend. So the keyboard watches the frame number the controller fills from the traffic the host sends, and a quarter of a second without a frame means the host is asleep, switched off or no longer connected: one answer for all of them. At power-up the lighting stays on for five seconds before it concludes anything, because lit LEDs are this board's only sign that the firmware is running. The idle one is `Never` until asked for, because a keyboard that goes dark on its own without being told to looks broken. **How this is known:** the idle side was watched on the hardware with the host switched off. The bus side runs on the keyboard: with the host present, VIA's Diagnostics reports the lighting drawing 28 frames a second, and a resting lighting draws none. So the frame number is being read and is moving. The lighting going dark with the host switched off has not been watched yet. |
@@ -164,7 +164,7 @@ shut. This does not replace Corsair's bootloader; it uses Corsair's own update p
 the same one their software uses.
 
 ```sh
-python3 tools/k100-update.py k100-qmk-1.1.0.bin
+python3 tools/k100-update.py k100-qmk-1.1.1.bin
 ```
 
 It checks the image before it touches the keyboard, asks whatever is running to hand itself to
@@ -179,8 +179,8 @@ needs watching: `tools/via-bootloader.py` for the jump, then `k100-bragi flash <
 --device 0x1b7c --commit`, which without `--commit` is a dry run that checks the image against
 the keyboard and sends nothing.
 
-The keyboard reboots itself and comes back as `bcdDevice 0110`, which is this firmware's
-version 1.1.0. The keymap, the lighting and everything else VIA stores live in the keyboard's
+The keyboard reboots itself and comes back as `bcdDevice 0111`, which is this firmware's
+version 1.1.1. The keymap, the lighting and everything else VIA stores live in the keyboard's
 EEPROM and survive the write -- except when a release says otherwise, which it does when the
 shape of what is stored has changed.
 
