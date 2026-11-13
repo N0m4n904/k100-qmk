@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Feature request
+description: Something the keyboard or its tools should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What do you want to do?
+      description: Describe the task. Leave the solution out.
+    validations:
+      required: true
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: What should happen?
+      description: On the keyboard, in VIA or in one of the tools.
+    validations:
+      required: true
+  - type: textarea
+    id: corsair-firmware
+    attributes:
+      label: How does Corsair's firmware do it?
+      description: If it does, and what you liked or missed.
+  - type: input
+    id: firmware-version
+    attributes:
+      label: Firmware version
+      description: Shown in VIA under Firmware, Installed, or the commit if you built it yourself.

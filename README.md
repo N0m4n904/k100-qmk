@@ -211,11 +211,8 @@ If the keyboard stops responding:
    python3 tools/k100-fault-log.py
    ```
 
-4. [Open an issue](https://github.com/N0m4n904/k100-qmk/issues) with that output, and say:
-   - which version is installed, or which commit if you built it yourself, because a code address
-     in the log only means something against the same image
-   - what the keyboard and the computer were doing when it happened
-   - the operating system, and any hub or KVM switch between the keyboard and the computer
+4. Open a [bug report](https://github.com/N0m4n904/k100-qmk/issues/new?template=bug-report.yml)
+   and paste that output into its Fault log field.
 
 `python3 tools/k100-fault-log.py --clear` empties the log afterwards, so that the next report holds
 only the next incident. In VIA, `Last crash` and `Last USB event` under Firmware, Diagnostics show

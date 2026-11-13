@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Bug report
+description: The keyboard does something wrong, stops or restarts.
+labels: [bug]
+body:
+  - type: input
+    id: firmware-version
+    attributes:
+      label: Firmware version
+      description: Shown in VIA under Firmware, Installed, or the commit if you built it yourself.
+    validations:
+      required: true
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating system
+      placeholder: Windows 11 Pro 24H2
+    validations:
+      required: true
+  - type: input
+    id: connection
+    attributes:
+      label: Between keyboard and computer
+      description: A hub, KVM switch or dock, or nothing.
+      placeholder: Switched USB hub shared by two PCs
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What the keyboard did, and what the keyboard and the computer were doing just before.
+    validations:
+      required: true
+  - type: textarea
+    id: fault-log
+    attributes:
+      label: Fault log
+      description: >
+        If the keyboard stopped or restarted. On Linux, the output printed by
+        `python3 tools/k100-fault-log.py`, read as
+        [Reporting a bug](https://github.com/N0m4n904/k100-qmk#reporting-a-bug) describes. On other
+        systems, `Last crash` and `Last USB event` from VIA under Firmware, Diagnostics. The log
+        records USB events and crashes, never keystrokes.
+      render: text
