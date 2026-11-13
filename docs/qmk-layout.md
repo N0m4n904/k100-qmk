@@ -922,8 +922,9 @@ would have held the frame rate still while the loop slowed.
 
 **Proven on the keyboard with the hang build.** All three requests below put the keyboard in the
 bootloader, and after a normal image was written over it the log held each crash with a PC that
-resolves to the requested function, and the kernel read as locked only for the second. It has not
-yet recorded a fault nobody provoked.
+resolves to the requested function, and the kernel read as locked only for the second. It has
+since recorded a real crash: a write into flash from the USB interrupt, reported in issue #1 and
+fixed in 1.1.1 by `chibios/patches/0016-endpoint-zero-states-and-serve-order.patch`.
 
 A keyboard that stops ends with a watchdog reset into Corsair's bootloader and a power cycle
 that clears the RAM, so the record of the failure has to be in the EEPROM by then. `fault_log.c`
