@@ -523,11 +523,22 @@ disconnect put it back on `0.01`. So the recovery path fired on every cold boot,
 keyboard the user was handed was Corsair's bootloader -- which types, which is why it looks
 like a working keyboard and took a kernel log to tell apart.
 
-**The clock now starts at a bus reset, not at boot.** `USB_DRIVER.state` reaching `USB_READY`
-is ChibiOS entering `_usb_reset()`, which only a host does. That separates the two cases the
-device cannot otherwise tell apart: a host that has reset us is present and talking, so
-failing to become configured after that is this firmware's fault and worth acting on, while a
-bus with nothing on it is not a fault at all.
+**The clock starts at the first frame a host sends.** A host that has sent frames was present
+and talking, so failing to become configured after that is this firmware's fault and worth
+acting on, also once the host gives up and the frames stop. A bus with nothing on it is not a
+fault at all. `host_presence.c` reads the frame counter, `usb_recovery.c` decides, and only a
+configuration ends the countdown. `qmk/test/test-usb-recovery.sh` runs the decision on the host.
+
+The first version of this rule started the clock at `USB_READY`, on the belief that only
+`_usb_reset()`, and so only a host, enters that state. `usbStart()` sets it too, so the clock
+still started at boot. A suspend also ended the countdown, and QMK reports one whether or not a
+host ever configured the keyboard: an idle bus reports it 79 ms after power-up. So most boots
+switched the route off at once. On 2026-11-20 a boot saw neither a suspend nor a host, and the
+fault log recorded nothing after `host gone`: the keyboard was found in the bootloader.
+
+**Not covered: a firmware that never attaches to the bus.** It sends nothing a host could answer,
+so no frames ever arrive, and from inside it looks exactly like a keyboard with no host. Escape
+held at power-on is the way back for that one.
 
 It is also the weaker claim that survives being wrong. Handing the keyboard to the bootloader
 with no host present achieves nothing anyway -- the bootloader exists to be reflashed by a
@@ -544,9 +555,13 @@ configured it. The firmware reached its timeout and handed the keyboard to the b
 which is where it was found -- enumerating as `bcdDevice 0.0a` with no custom firmware in
 sight. Nothing was lost and the working image went back over SWD.
 
-That is the half of this change that could not be reasoned about. Requiring a bus reset before
-the clock starts risked narrowing the route until it never fired at all; it still fires, for
-the case it exists for.
+That is the half of this change that could not be reasoned about. Narrowing when the clock
+runs risks narrowing the route until it never fires at all. A host that cannot configure the
+keyboard sends frames while it tries, so the rule from the first frame covers that case, but
+it has not been watched on the keyboard under this rule. Two things are still to be seen on the
+keyboard: a board powered behind a hub switched to a computer that is off staying in this
+firmware for more than thirty seconds, and the bulk-endpoint build above coming back as
+`bcdDevice 0.0a` once the host has given up.
 
 ### The near miss, and the rule that came out of it
 

@@ -50,6 +50,13 @@ SRC += via_ui_sync.c
 # storage is: the region is declared in this keyboard's config.h.
 SRC += lighting_store.c
 
+# Whether a host is sending frames, read off the USB frame counter.
+SRC += host_presence.c
+
+# When a firmware that never became usable on USB hands the keyboard to the
+# bootloader; bootloader.c carries out the handover.
+SRC += usb_recovery.c
+
 # When the lighting goes dark by itself: the host has gone, or nobody has
 # touched the keyboard for a while. Keyboard level because the first one is
 # unreachable here by QMK's own route, and the file says why.

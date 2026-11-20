@@ -814,10 +814,10 @@ lighting stays lit. The idle timeout does fire there, which is what locates the 
 everything downstream of the question works on the hardware, and only the question was wrong.
 Which of the four links fails to deliver was never measured, and now does not have to be.
 
-`lighting_sleep.c` reads the bus instead. A host that is there sends a frame every
-millisecond, and the controller counts them in `INFO.FRAME_NR` by itself, without an interrupt
-to enable or anything to acknowledge. That matters here, because QMK registers no SOF callback
-at all, so the counter is the only sight this firmware has of the traffic. A frame number that
+`host_presence.c` reads the bus instead. A host that is there sends a frame every millisecond,
+and the controller counts them in `INFO.FRAME_NR` by itself, without an interrupt to enable or
+anything to acknowledge. That matters here, because QMK registers no SOF callback at all, so
+the counter is the only sight this firmware has of the traffic. A frame number that
 has stopped moving is the one fact common to every way a host can leave: asleep, switched off,
 unplugged, or a hub that disabled the port. The controller's own `DSUS` bit is derived from
 the same silence after three milliseconds; this reads the silence directly.
@@ -940,7 +940,7 @@ That is 544 words: 544 to 1087 at the sizes set in the driver. Two rings, so tha
 reconnects over and over cannot push out the one crash the log exists for.
 
 **Events** are boot, USB reset, configured, suspend and wakeup, the host going and coming back
-as `lighting_sleep.c` reads the frames, and this firmware jumping to the bootloader on request. A
+as `host_presence.c` reads the frames, and this firmware jumping to the bootloader on request. A
 reset the host repeats while the keyboard is already unconfigured is not recorded, because QMK's
 hook reports a state and the state has not changed.
 

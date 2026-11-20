@@ -26,8 +26,8 @@ both zero, so nothing has faulted.
 
 It then resets itself after about ten seconds, by design and not by failure.
 A breakpoint on `__NVIC_SystemReset` is reached with the link register inside
-`k100_enter_bootloader`, which is the `K100_USB_WATCHDOG_MS` timeout in
-`housekeeping_task` handing the keyboard back to the bootloader because USB
+`k100_enter_bootloader`, which is the `K100_USB_WATCHDOG_MS` timeout (now in
+`usb_recovery.c`) handing the keyboard back to the bootloader because USB
 never became usable. Reaching that call also proves the EEPROM write and its
 read-back succeeded, since the function returns early if either fails — the
 route back to the bootloader works on hardware, which it had never been shown

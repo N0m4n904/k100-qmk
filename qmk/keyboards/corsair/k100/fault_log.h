@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "lpc546xx_crash.h"
+#include "host_presence.h"
 
 /*
  * What happened before the keyboard stopped. docs/qmk-layout.md has the design.
@@ -24,7 +25,7 @@ enum k100_log_event_kind {
     K100_EVENT_USB_CONFIGURED  = 3,
     K100_EVENT_USB_SUSPEND     = 4,
     K100_EVENT_USB_WAKEUP      = 5,
-    /** The frames stopped, as lighting_sleep.c reads them, which a suspend may never report. */
+    /** The frames stopped, as host_presence.c reads them, which a suspend may never report. */
     K100_EVENT_HOST_GONE       = 6,
     K100_EVENT_HOST_BACK       = 7,
     /** This firmware handed the keyboard to the bootloader on request. */
@@ -70,8 +71,8 @@ void k100_log_start(void);
 /** @brief Records an event, if the write budget allows. From the main thread only. */
 void k100_log_event(enum k100_log_event_kind kind);
 
-/** @brief The log's work in one pass of the main loop. */
-void k100_log_task(void);
+/** @brief The log's work in one pass of the main loop, with the host presence of that pass. */
+void k100_log_task(enum k100_host_presence presence);
 
 /** @brief Asks for the log to be emptied, one slot per pass through the main loop. */
 void k100_log_clear(void);

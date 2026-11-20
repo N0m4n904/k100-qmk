@@ -37,13 +37,11 @@
 
 #include "quantum.h"
 #include "usb_device_state.h"
-/* For USB_DRIVER, which names the ChibiOS driver instance rather than assuming
-   USBD1, so a board that is wired to the other controller still builds. */
-#include "usb_main.h"
 
 #include "lpc546xx_rit.h"
 #include "lpc546xx_wwdt.h"
 #include "fault_log.h"
+#include "usb_recovery.h"
 #include "k100.h"
 
 #ifdef VIA_ENABLE
@@ -71,26 +69,6 @@
  * wait, so a handful is microseconds and rules out a single bad read.
  */
 #define RECOVERY_SAMPLES 4U
-
-/*
- * How long to wait for USB before concluding this firmware is unusable.
- *
- * Generous on purpose, and more generous than it was. A host that is slow to
- * enumerate, or a hub that resets the port, must not be mistaken for broken
- * firmware: a false trigger leaves the user holding Corsair's bootloader, which
- * is recoverable but is also the exact failure this path exists to prevent.
- *
- * Ten seconds was chosen against how long enumeration takes, which was the
- * wrong thing to measure -- see housekeeping_task_kb(), where the clock now
- * starts only once a host has reset the bus. What is left to allow for is a
- * host that resets the keyboard and then takes its time, a firmware that is
- * genuinely broken being broken from the first instant either way. Thirty
- * seconds costs nothing on the recovery path and is far outside anything an
- * enumeration does.
- */
-#ifndef K100_USB_WATCHDOG_MS
-#    define K100_USB_WATCHDOG_MS 30000
-#endif
 
 /*
  * Reporting a few bits of register state by how long the keyboard stays away.
@@ -912,29 +890,27 @@ void keyboard_post_init_kb(void) {
 }
 
 void housekeeping_task_kb(void) {
-    static uint32_t first_task_at = 0;
-    static bool     usb_was_ready = false;
-    static bool     starve_watchdog = false;
+    static k100_usb_recovery_t usb_recovery;
+    static bool                starve_watchdog = false;
 
     /*
-     * Every iteration, and before anything that might return early -- unless
-     * the firmware has given up on becoming usable, in which case the surest
-     * thing it can do is stop feeding and let the watchdog have it.
+     * Every iteration, unless the firmware has given up on becoming usable, in
+     * which case the surest thing it can do is stop feeding and let the
+     * watchdog have it.
      */
     if (!starve_watchdog) {
         lpcWwdtFeed();
     }
 
     /*
-     * Also every iteration and also before the early returns: the host and the
-     * clock both keep moving while this function is busy deciding it is not
-     * needed. Both are here rather than in a QMK hook because the hooks for
-     * them are inside the very loop this keyboard cannot run. See
-     * lighting_sleep.c and remote_wakeup.c.
+     * Also every iteration. These are here rather than in a QMK hook because
+     * the hooks for them are inside the very loop this keyboard cannot run. See
+     * host_presence.c, lighting_sleep.c and remote_wakeup.c.
      */
-    k100_lighting_sleep_task();
+    const enum k100_host_presence presence = k100_host_presence_sample();
+    k100_lighting_sleep_task(presence);
     k100_remote_wakeup_task();
-    k100_log_task();
+    k100_log_task(presence);
 
 #ifdef K100_DIAGNOSTIC_HANG
     k100_diagnostic_hang_task();
@@ -950,58 +926,9 @@ void housekeeping_task_kb(void) {
     }
 #endif
 
-    if (usb_was_ready) {
-        housekeeping_task_user();
-        return;
-    }
+    const bool configured = usb_device_state_get_configure_state() == USB_DEVICE_STATE_CONFIGURED;
 
-    /*
-     * QMK's own view of the USB state rather than the ChibiOS driver's, so this
-     * says nothing about which USB stack is underneath. Suspend counts as
-     * success: the state machine only reaches it by way of configured, so a
-     * host that enumerated us and then slept has already proved the point.
-     */
-    const usb_configure_state_t usb = usb_device_state_get_configure_state();
-    if (usb == USB_DEVICE_STATE_CONFIGURED || usb == USB_DEVICE_STATE_SUSPEND) {
-        usb_was_ready = true;
-        housekeeping_task_user();
-        return;
-    }
-
-    /*
-     * The countdown starts when a host turns up, not when this firmware does.
-     *
-     * Measured on a cold boot: the motherboard powers the keyboard long before
-     * the operating system reaches its USB stack, and the timeout expired in
-     * between. The host's first sight of the keyboard was then the bootloader --
-     * `bcdDevice 0.0a` at the first enumeration in the kernel log, where this
-     * firmware reads `0.01` -- and it stayed there. So the recovery path fired
-     * on every cold boot, and what the user got was Corsair's bootloader.
-     *
-     * A bus reset is what separates the two cases the device cannot otherwise
-     * tell apart, because both look like "no USB yet" from here. A host that has
-     * reset us is present and talking, so failing to become configured after
-     * that is this firmware's fault and worth acting on. A bus with nothing on
-     * it is not a fault at all -- and handing the keyboard to the bootloader
-     * there achieves nothing anyway, since the bootloader's whole purpose is to
-     * be reflashed by a host that has not arrived.
-     *
-     * ChibiOS's state rather than QMK's, because QMK's does not distinguish it:
-     * its configure state goes from INIT straight to CONFIGURED, while
-     * USB_READY is entered from _usb_reset(), which is the host's doing.
-     */
-    if (USB_DRIVER.state < USB_READY) {
-        first_task_at = 0;
-        housekeeping_task_user();
-        return;
-    }
-
-    if (first_task_at == 0) {
-        // timer_read32() can legitimately return zero; one tick's delay in
-        // starting the clock is irrelevant over the timeout, and this keeps the
-        // state to one variable rather than two.
-        first_task_at = timer_read32() | 1U;
-    } else if (timer_elapsed32(first_task_at) > K100_USB_WATCHDOG_MS) {
+    if (k100_usb_recovery_is_due(&usb_recovery, presence, configured, timer_read32())) {
         /*
          * The firmware runs but never became usable. Hand the keyboard back to
          * the bootloader rather than leaving it enumerating as nothing, which

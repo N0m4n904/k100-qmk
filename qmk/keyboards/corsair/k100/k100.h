@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "host_presence.h"
+
 /**
  * @brief Keycodes this keyboard adds, for keys with no HID meaning of their own.
  *
@@ -274,10 +276,7 @@ void k100_sleep_after_get(uint8_t *value_data);
 void k100_sleep_after_set(uint8_t *value_data);
 
 /** @brief Decides whether the lighting should be dark, once per trip round the main loop. */
-void k100_lighting_sleep_task(void);
-
-/** @brief Whether the frames have stopped, as of that decision. See lighting_sleep.c. */
-bool k100_host_is_gone(void);
+void k100_lighting_sleep_task(enum k100_host_presence presence);
 
 /**
  * @brief   Wakes a sleeping host when somebody touches the keyboard.

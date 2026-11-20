@@ -85,11 +85,12 @@ void notify_usb_device_state_change_user(struct usb_device_state state) {
     (void)state;
 }
 
-bool k100_host_is_gone(void) {
-    return host_gone;
-}
-
 #include "fault_log.c"
+
+/* One pass of the main loop, with the host the test has set up. */
+static void log_task(void) {
+    k100_log_task(host_gone ? K100_HOST_GONE : K100_HOST_SENDING);
+}
 
 /* Everything a reset clears, with the EEPROM left as it is. */
 static void boot(void) {
@@ -196,7 +197,7 @@ static void test_usb_states_become_events(void) {
     const usb_configure_state_t queued_before_start = usb_state_queued;
     boot();
     usb_state_queued = queued_before_start;
-    k100_log_task();
+    log_task();
     REQUIRE(event_at(0).kind == K100_EVENT_BOOT);
 
     static const usb_configure_state_t states[] = {
@@ -214,7 +215,7 @@ static void test_usb_states_become_events(void) {
     /* Queued in the hook and written by the task, in order, with nothing between them lost. */
     const uint16_t sequence = event_at(0).sequence;
     REQUIRE(usb_state_count == 4U);
-    k100_log_task();
+    log_task();
     REQUIRE(usb_state_count == 0U);
     for (uint8_t age = 0; age < 4U; age++) {
         REQUIRE(event_at(age).kind == expected[3U - age]);
@@ -226,17 +227,17 @@ static void test_host_presence_becomes_events(void) {
     erase_everything(0U);
     boot();
 
-    k100_log_task();
+    log_task();
     REQUIRE(event_at(0).kind == K100_EVENT_BOOT);
 
     host_gone = true;
-    k100_log_task();
-    k100_log_task();
+    log_task();
+    log_task();
     REQUIRE(event_at(0).kind == K100_EVENT_HOST_GONE);
     REQUIRE(event_at(1).kind == K100_EVENT_BOOT);
 
     host_gone = false;
-    k100_log_task();
+    log_task();
     REQUIRE(event_at(0).kind == K100_EVENT_HOST_BACK);
     REQUIRE(event_at(1).kind == K100_EVENT_HOST_GONE);
 }
@@ -410,13 +411,13 @@ static void test_clear(void) {
     k100_log_clear();
     REQUIRE(k100_log_clear_is_running());
     const uint32_t before = total_programs;
-    k100_log_task();
+    log_task();
     REQUIRE(total_programs - before == 1U);
     record_event(K100_EVENT_USB_RESET);
     REQUIRE(total_programs - before == 1U);
     while (k100_log_clear_is_running()) {
         const uint32_t pass = total_programs;
-        k100_log_task();
+        log_task();
         REQUIRE(total_programs - pass <= 1U);
     }
 
@@ -451,7 +452,7 @@ static void test_clear_interrupted_by_a_reset(void) {
     /* The oldest slots go first, so what is left is still the newest part, still in order. */
     k100_log_clear();
     for (int pass = 0; pass < 5; pass++) {
-        k100_log_task();
+        log_task();
     }
     boot();
     REQUIRE(event_at(0).kind == K100_EVENT_BOOT);

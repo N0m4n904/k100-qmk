@@ -346,9 +346,9 @@ static void record_usb_states(void) {
     }
 }
 
-static void record_host_presence(void) {
+static void record_host_presence(enum k100_host_presence presence) {
     static bool recorded = false;
-    const bool  gone     = k100_host_is_gone();
+    const bool  gone     = presence == K100_HOST_GONE;
 
     if (gone != recorded) {
         k100_log_event(gone ? K100_EVENT_HOST_GONE : K100_EVENT_HOST_BACK);
@@ -381,11 +381,11 @@ bool k100_log_clear_is_running(void) {
     return clear_cursor < CLEAR_ENTRIES;
 }
 
-void k100_log_task(void) {
+void k100_log_task(enum k100_host_presence presence) {
     last_pass_ms = timer_read32();
 
     record_usb_states();
-    record_host_presence();
+    record_host_presence(presence);
 
     if (k100_log_clear_is_running()) {
         clear_next_entry();
